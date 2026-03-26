@@ -1,10 +1,11 @@
 #!/bin/bash
-export TELEGRAM_TOKEN=8581446527:AAHjeOCY90XzTNgmzElaiaKL_SgOvDVuag0
-export OPENROUTER_API_KEY=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
+echo "🧠 Mímir ræsir (með PYTHONPATH)..."
 
-echo "🧠 Mímir ræsir..."
+# Segjum Python að leita í /workspace svo hann finni 'mimir_net' pakkann
+export PYTHONPATH=$PYTHONPATH:/workspace
+
 while true; do
-    python /workspace/mimir_bot_v2.py
+    python3 /workspace/mimir_net/mimir_bot_v2.py
     echo "⚠️ Mímir stöðvaðist - endurræsi eftir 10 sek..."
     sleep 10
 done

@@ -1,11 +1,18 @@
 from mimir_logger import log_conversation
 import telebot, requests, os, subprocess
+from dotenv import load_dotenv
 import whisper
 from collections import defaultdict
 from mimir_net.agents.meta_agent import graph
 
-TOKEN = "8581446527:AAHjeOCY90XzTNgmzElaiaKL_SgOvDVuag0"
+# 1. Hlaða inn stillingum frá algildri slóð samkvæmt SOP
+load_dotenv("/workspace/mimir_net/config/.env")
+
+# 2. Sækja lykilinn úr umhverfisbreytum
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
+
+# Restin af kóðanum þínum fylgir hér (við bætum honum við fyrir neðan)
 model = whisper.load_model("large-v3")
 conversation_history = defaultdict(list)
 
