@@ -1,0 +1,1 @@
+print('Mímir er lifandi')

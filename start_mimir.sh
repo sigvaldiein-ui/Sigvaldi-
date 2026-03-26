@@ -1,10 +1,11 @@
 #!/bin/bash
-echo "🧠 Mímir ræsir (með PYTHONPATH)..."
+echo "🧠 Mímir ræsir (með PYTHONPATH á /workspace)..."
 
-# Segjum Python að leita í /workspace svo hann finni 'mimir_net' pakkann
+# Segjum Python að leita í /workspace svo hann finni 'mimir_net' möppuna sem pakka
 export PYTHONPATH=$PYTHONPATH:/workspace
 
 while true; do
+    # Ræsum bótinn
     python3 /workspace/mimir_net/mimir_bot_v2.py
     echo "⚠️ Mímir stöðvaðist - endurræsi eftir 10 sek..."
     sleep 10
