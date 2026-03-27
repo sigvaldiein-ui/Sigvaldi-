@@ -76,27 +76,33 @@ def fetch_ruv_schedule(target_date: str | None = None) -> list[dict]:
         log.error(f"Gat ekki sótt dagskrá: {e}")
         return []
 
-    # Finnur spila-slóðir og titla
-    # Dæmi: [13:00 Fréttir](https://www.ruv.is/sjonvarp/dagskra/ruv/2026-03-27/5462563)
-    #        [https://www.ruv.is/sjonvarp/spila/.../bfcsod]
+    # Línubasert þáttunarferli — sleppur myndum á milli titils og spila-URL
     entries = []
+    lines = text.split('\n')
+    current_title = ''
 
-    # Finn dagskrá items með dagsetningunni
-    dagskra_pattern = re.compile(
-        r'\[(\d{2}:\d{2} [^\]]+)\]\(https://www\.ruv\.is/sjonvarp/dagskra/ruv/' +
-        re.escape(target_date) + r'/\d+\)\s*\n\s*\[(https://www\.ruv\.is/sjonvarp/spila/[^\]]+)\]',
-        re.MULTILINE
-    )
+    for line in lines:
+        # Leita að titil-línu með dagsetningunni
+        m = re.search(
+            r'\[(\d{2}:\d{2} [^\]]+)\]\(https://www\.ruv\.is/sjonvarp/dagskra/ruv/' +
+            re.escape(target_date) + r'/',
+            line
+        )
+        if m:
+            current_title = m.group(1).strip()
+            continue
 
-    for m in dagskra_pattern.finditer(text):
-        time_title = m.group(1).strip()
-        spila_url  = m.group(2).strip()
-        parts = time_title.split(" ", 1)
-        entries.append({
-            "time":  parts[0] if len(parts) > 1 else "",
-            "title": parts[1] if len(parts) > 1 else time_title,
-            "url":   spila_url,
-        })
+        # Leita að spila-URL línu
+        if current_title and 'sjonvarp/spila/' in line:
+            url_m = re.search(r'https://www\.ruv\.is/sjonvarp/spila/[^\)\]]+', line)
+            if url_m:
+                parts = current_title.split(' ', 1)
+                entries.append({
+                    'time':  parts[0] if len(parts) > 1 else '',
+                    'title': parts[1] if len(parts) > 1 else current_title,
+                    'url':   url_m.group().strip(),
+                })
+                current_title = ''
 
     log.info(f"Fann {len(entries)} klip á dagskrá {target_date}")
     return entries
