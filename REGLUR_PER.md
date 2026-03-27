@@ -49,5 +49,12 @@
 
 ---
 
+## Git
+- RunPod → GitHub. Alltaf ein leið, aldrei öfugt
+- Aldrei merge, aldrei rebase, aldrei blanda
+- Per push-ar aldrei beint á GitHub — aðeins RunPod gerir það
+
+---
+
 ## Markmið
 Mímir er sögulegt verkefni. **Gæði > Hraði. Alltaf.**
