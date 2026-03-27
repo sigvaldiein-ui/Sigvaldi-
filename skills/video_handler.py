@@ -65,7 +65,7 @@ def fetch_ruv_schedule(target_date: str | None = None) -> list[dict]:
     if target_date is None:
         target_date = date.today().isoformat()
 
-    jina_url = f"{JINA_PREFIX}https://www.ruv.is/dagskra"
+    jina_url = f"{JINA_PREFIX}https://www.ruv.is/sjonvarp/dagskra"
     log.info(f"Sæki dagskrá: {jina_url}")
 
     try:
@@ -84,8 +84,8 @@ def fetch_ruv_schedule(target_date: str | None = None) -> list[dict]:
     # Finn dagskrá items með dagsetningunni
     dagskra_pattern = re.compile(
         r'\[(\d{2}:\d{2} [^\]]+)\]\(https://www\.ruv\.is/sjonvarp/dagskra/ruv/' +
-        re.escape(target_date) + r'/\d+\).*?\n\[(https://www\.ruv\.is/sjonvarp/spila/[^\)]+)\]',
-        re.DOTALL
+        re.escape(target_date) + r'/\d+\)\s*\n\s*\[(https://www\.ruv\.is/sjonvarp/spila/[^\]]+)\]',
+        re.MULTILINE
     )
 
     for m in dagskra_pattern.finditer(text):
