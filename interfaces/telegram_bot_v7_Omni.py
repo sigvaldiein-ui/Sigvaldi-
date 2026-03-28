@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(BASE_DIR)
-
 from core.agent_core_v4 import analyze_query, ask_llm
 from skills.multimodal_reader import analyze_multimodal
 
@@ -21,133 +20,118 @@ os.makedirs(SANDBOX_DIR, exist_ok=True)
 
 MAX_MINNI = 10
 user_sessions = defaultdict(list)
+memory_lock = threading.Lock()
 
 SYSTEM_PROMPT = """Thu ert Mimir, rannsoknarforstjori Akademias - islenskur AI adstodarmadur.
-REGLUR:
-- Svaraou ALLTAF a islensku a vandaoan, fagaoan og hlyan hatt.
-- Stutt og skyrt i venjulegu spjalli (2-3 setningar).
-- Ef spurning er flokin eda oljós: spurou frekar til baka en skrifaou langa grein.
-- Man eftir samhenginu i samtalinu og notar thad.
-- Thegar thu hefur leitat ad upplysningum: dragou saman hvad thu fannt.
-- Aldrei bua til stadreynd - segdu 'Eg veit thad ekki' ef thu finnur ekki svar."""
+REGLUR: Svaraou ALLTAF a islensku. Stutt og skyrt. Manst eftir samhengi. Aldrei bua til stadreyndir."""
 
-FLOKKUNAR_PROMPT = """Thu ert flokkunarkerfi. Svaraou AETHEINS med einu ordi: SEARCH eda CHAT.
-SEARCH: Beidnin krefst nyrra stadreynda af netinu (frettir, verd, dagsetningar, 'hvad er X').
-CHAT: Venjulegt spjall, thakkir, framhaldsspurning um eitthvad sem nú thegar er i samtalinu.
+FLOKKUNAR_PROMPT = """Thu ert nakvamt flokkunarkerfi. Svaraou AETHEINS med einu ordi: SEARCH eda CHAT.
+Daemi 1: "Saell Mimir, eg heiti Sigvaldi." -> CHAT
+Daemi 2: "Hvad er nyjaста skjakortid fra NVIDIA?" -> SEARCH
+Daemi 3: "Hver er stan a hlutabrefum Tesla i dag?" -> SEARCH
+Daemi 4: "Geturdu dregid thessa ritgerd saman?" -> CHAT
+Daemi 5: "Hvad sagdi eg ao eg heti adan?" -> CHAT
+Daemi 6: "Finndu nyjastu frettir um gervigreind." -> SEARCH
+Regla: Ef spurning krefst nyrra stadreynd um fyrirtaeki, vorur, frettir eda taekni: SEARCH. Jafnvel thott thu haldur ao thu vitir! Annars CHAT.
 Beidni: {texti}
 Svar (SEARCH eda CHAT):"""
 
-def flokka_beidni(texti, saga):
+def flokka_beidni(texti):
     try:
-        samhengi = f"\nSamtal: {str(saga[-3:])}" if saga else ""
-        res = ask_llm("Svaraou AETHEINS: SEARCH eda CHAT", FLOKKUNAR_PROMPT.format(texti=texti) + samhengi, temp=0.0)
-        return "SEARCH" if "SEARCH" in res.upper() else "CHAT"
-    except:
-        return "SEARCH"
+        res = ask_llm("Svaraou AETHEINS: SEARCH eda CHAT", FLOKKUNAR_PROMPT.format(texti=texti), temp=0.0)
+        return "CHAT" if "CHAT" in res.upper() else "SEARCH"
+    except: return "SEARCH"
 
-def spjalla_med_minni(chat_id, texti):
-    saga = user_sessions[chat_id]
-    saga.append({"role": "user", "content": texti})
-    if len(saga) > MAX_MINNI:
-        saga = saga[-MAX_MINNI:]
+def get_history(chat_id):
+    with memory_lock: return list(user_sessions[chat_id])
+
+def add_memory(chat_id, role, content):
+    with memory_lock:
+        user_sessions[chat_id].append({"role": role, "content": content})
+        if len(user_sessions[chat_id]) > MAX_MINNI: del user_sessions[chat_id][0]
+
+def spjalla(chat_id, texti):
+    add_memory(chat_id, "user", texti)
+    saga = get_history(chat_id)
+    samtal = "\n".join([f"{'Notandi' if s['role']=='user' else 'Mimir'}: {s['content']}" for s in saga])
     try:
-        samtal = "\n".join([f"{'Notandi' if s['role']=='user' else 'Mimir'}: {s['content']}" for s in saga])
         svar = ask_llm(SYSTEM_PROMPT, samtal, temp=0.4)
-        saga.append({"role": "assistant", "content": svar})
-        user_sessions[chat_id] = saga[-MAX_MINNI:]
+        add_memory(chat_id, "assistant", svar)
         return svar
-    except Exception as e:
-        return f"Fyrirgefou, villa: {str(e)[:100]}"
+    except Exception as e: return f"Villa: {str(e)[:100]}"
 
-def leita_og_muna(chat_id, texti):
-    saga = user_sessions[chat_id]
+def leita(chat_id, texti):
+    add_memory(chat_id, "user", f"[Leit]: {texti}")
     try:
         svar = analyze_query(texti)
-        saga.append({"role": "user", "content": f"[Leit]: {texti}"})
-        stytt = svar[:2000] + "\n...[stytt]" if len(svar) > 2000 else svar
-        saga.append({"role": "assistant", "content": f"[LEITARNIÐURSTAÐA]: {stytt}"})
-        user_sessions[chat_id] = saga[-MAX_MINNI:]
+        add_memory(chat_id, "assistant", f"[LEITARNIÐURSTAÐA]: {svar[:1500]}")
         return svar
-    except Exception as e:
-        return f"Villa i leit: {str(e)[:100]}"
+    except Exception as e: return f"Villa i leit: {str(e)[:100]}"
 
-def safe_send_reply(chat_id, status_msg_id, texti):
-    if not texti:
-        texti = "Engin niðurstaða."
+def safe_reply(chat_id, msg_id, texti):
+    if not texti: texti = "Engin nidurstaeda."
     chunks = util.smart_split(texti, chars_per_string=3000)
     for i, chunk in enumerate(chunks):
-        if i == 0:
-            try: bot.edit_message_text(chunk, chat_id=chat_id, message_id=status_msg_id, parse_mode="Markdown")
-            except: bot.edit_message_text(chunk, chat_id=chat_id, message_id=status_msg_id)
-        else:
-            try: bot.send_message(chat_id, chunk, parse_mode="Markdown")
-            except: bot.send_message(chat_id, chunk)
+        try:
+            if i == 0: bot.edit_message_text(chunk, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
+            else: bot.send_message(chat_id, chunk, parse_mode="Markdown")
+        except:
+            if i == 0: bot.edit_message_text(chunk, chat_id=chat_id, message_id=msg_id)
+            else: bot.send_message(chat_id, chunk)
 
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    bot.reply_to(message, "Mimir v7.0 (Omni-Mind)\n\nEg man eftir samtalinu okkar og saeki nyjar upplysingar thegar thorf er a.\nSendu texta, skjol, myndir, video eda raddskilabod.")
+@bot.message_handler(commands=['start','help'])
+def welcome(m): bot.reply_to(m, "Mimir v7.1 Omni-Mind - Minnis-Las og Few-Shot Beinir virkur!")
 
-@bot.message_handler(commands=['gleymdu', 'reset'])
-def gleymdu_minni(message):
-    user_sessions[message.chat.id] = []
-    bot.reply_to(message, "Eg hef gleymt samtalssögunni. Byrjum upp a nytt!")
+@bot.message_handler(commands=['gleymdu','reset'])
+def gleymdu(m):
+    with memory_lock: user_sessions[m.chat.id].clear()
+    bot.reply_to(m, "Minni hreinsad. Byrjum upp a nytt!")
 
 @bot.message_handler(content_types=['text'])
-def handle_text(message):
-    texti = message.text.strip()
+def handle_text(m):
+    texti = m.text.strip()
     if texti.startswith('/'): return
-    status_msg = bot.reply_to(message, "Mimir hugsar...", parse_mode="Markdown")
-    def process():
+    sm = bot.reply_to(m, "Mimir hugsar...")
+    def run():
         try:
-            chat_id = message.chat.id
-            flokkun = flokka_beidni(texti, user_sessions[chat_id])
-            if flokkun == "SEARCH":
-                bot.edit_message_text("Kveiki a Ratsja...", chat_id=chat_id, message_id=status_msg.message_id)
-                svar = leita_og_muna(chat_id, texti)
-            else:
-                svar = spjalla_med_minni(chat_id, texti)
-            safe_send_reply(chat_id, status_msg.message_id, svar)
+            cid = m.chat.id
+            if flokka_beidni(texti) == "SEARCH":
+                bot.edit_message_text("Kveiki a Ratsja...", chat_id=cid, message_id=sm.message_id)
+                svar = leita(cid, texti)
+            else: svar = spjalla(cid, texti)
+            safe_reply(cid, sm.message_id, svar)
         except Exception as e:
-            try: bot.edit_message_text(f"Kerfisvilla: {str(e)[:200]}", chat_id=message.chat.id, message_id=status_msg.message_id)
+            try: bot.edit_message_text(f"Kerfisvilla: {str(e)[:200]}", chat_id=m.chat.id, message_id=sm.message_id)
             except: pass
-    threading.Thread(target=process).start()
+    threading.Thread(target=run).start()
 
 @bot.message_handler(content_types=['voice','audio','document','photo','video'])
-def handle_files(message):
-    status_msg = bot.reply_to(message, "Mottek skra...")
-    def process():
-        local_path = ""
+def handle_files(m):
+    sm = bot.reply_to(m, "Mottek skra...")
+    def run():
+        lp = ""
         try:
-            chat_id = message.chat.id
-            file_info_id = None
-            if message.content_type == 'photo': file_info_id = message.photo[-1].file_id
-            elif message.content_type == 'document': file_info_id = message.document.file_id
-            elif message.content_type == 'video': file_info_id = message.video.file_id
-            elif message.content_type in ['audio','voice']: file_info_id = getattr(message, message.content_type).file_id
-            if not file_info_id: return
-            fi = bot.get_file(file_info_id)
+            cid = m.chat.id
+            fid = m.photo[-1].file_id if m.content_type=='photo' else getattr(m, m.content_type).file_id
+            fi = bot.get_file(fid)
             data = bot.download_file(fi.file_path)
-            ext = fi.file_path.split('.')[-1]
-            local_path = os.path.join(SANDBOX_DIR, f"{message.content_type}_{message.message_id}.{ext}")
-            with open(local_path, 'wb') as f: f.write(data)
-            bot.edit_message_text("Greini skra...", chat_id=chat_id, message_id=status_msg.message_id)
-            user_prompt = message.caption or ""
-            svar = analyze_multimodal(local_path, user_prompt)
-            saga = user_sessions[chat_id]
-            saga.append({"role": "user", "content": f"[Skra: {message.content_type}] {user_prompt}"})
-            saga.append({"role": "assistant", "content": f"[Greining]: {svar[:1500]}"})
-            user_sessions[chat_id] = saga[-MAX_MINNI:]
-            safe_send_reply(chat_id, status_msg.message_id, svar)
+            lp = os.path.join(SANDBOX_DIR, f"{m.content_type}_{m.message_id}.{fi.file_path.split('.')[-1]}")
+            with open(lp,'wb') as f: f.write(data)
+            bot.edit_message_text("Greini skra...", chat_id=cid, message_id=sm.message_id)
+            svar = analyze_multimodal(lp, m.caption or "")
+            add_memory(cid, "user", f"[Skra: {m.content_type}]")
+            add_memory(cid, "assistant", f"[Greining]: {svar[:1500]}")
+            safe_reply(cid, sm.message_id, svar)
         except Exception as e:
-            try: bot.edit_message_text(f"Villa: {str(e)[:200]}", chat_id=message.chat.id, message_id=status_msg.message_id)
+            try: bot.edit_message_text(f"Villa: {str(e)[:200]}", chat_id=m.chat.id, message_id=sm.message_id)
             except: pass
         finally:
-            if local_path and os.path.exists(local_path):
-                try: subprocess.run(["shred","-u","-z",local_path], check=True)
-                except: os.remove(local_path)
-    threading.Thread(target=process).start()
+            if lp and os.path.exists(lp):
+                try: subprocess.run(["shred","-u","-z",lp], check=True)
+                except: os.remove(lp)
+    threading.Thread(target=run).start()
 
 if __name__ == "__main__":
-    print(f"Mimir v7.0 Omni-Mind raestur — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print("Snjall-Beinir: CHAT vs SEARCH virkt | RAM-minni | Multimodal | Zero-Data")
+    print(f"Mimir v7.1 raestur — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print("Thread-Safe minni og Few-Shot Beinir virkur!")
     bot.infinity_polling(skip_pending=True)
