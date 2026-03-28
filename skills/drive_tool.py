@@ -13,7 +13,6 @@ def get_drive_service():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         print(f"❌ VILLA: Lykillinn fannst ekki í {SERVICE_ACCOUNT_FILE}")
         return None
-    
     creds = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('drive', 'v3', credentials=creds)
@@ -26,24 +25,25 @@ def calculate_md5(file_path):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
-def sync_to_drive(local_path, folder_id):
+def sync_to_drive(local_path, folder_id, burn=True):
     """
-    Sendir skrá í Höllina (Drive), staðfestir MD5, og eyðir staðbundnum gögnum.
-    Bætt við: supportsAllDrives=True til að styðja Enterprise/Shared möppur.
+    Sendir skrá í Höllina (Drive) og staðfestir MD5.
+    burn=True  → eyðir staðbundnum gögnum eftir upload (sjálfgefið, fyrir viðskiptavini)
+    burn=False → geymir staðbundin gögn (fyrir gagnasöfnun og þjálfunargögn)
     """
     service = get_drive_service()
     if not service: return False
 
     file_name = os.path.basename(local_path)
     local_md5 = calculate_md5(local_path)
-    
+
     print(f"📦 Samstilli við Höllina: {file_name}")
 
     # 1. Athuga hvort skrá sé þegar til (MD5 vörn)
     query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
     try:
         results = service.files().list(
-            q=query, 
+            q=query,
             fields="files(id, md5Checksum)",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
@@ -54,7 +54,8 @@ def sync_to_drive(local_path, folder_id):
             drive_md5 = files[0].get('md5Checksum')
             if drive_md5 == local_md5:
                 print(f"✅ Gögn þegar til staðar og MD5 samsvarar. Sleppi upphali.")
-                burn_local_file(local_path)
+                if burn:
+                    burn_local_file(local_path)
                 return True
     except Exception as e:
         print(f"⚠️ Athugun á tilvist skráar mistókst: {e}")
@@ -62,23 +63,26 @@ def sync_to_drive(local_path, folder_id):
     # 2. Upphal (Ný skrá eða breytt)
     file_metadata = {'name': file_name, 'parents': [folder_id]}
     media = MediaFileUpload(local_path, resumable=True)
-    
+
     try:
         uploaded_file = service.files().create(
-            body=file_metadata, 
-            media_body=media, 
+            body=file_metadata,
+            media_body=media,
             fields='id, md5Checksum',
             supportsAllDrives=True
         ).execute()
-        
+
         if uploaded_file.get('md5Checksum') == local_md5:
             print(f"🚀 Upphal tókst! Drive ID: {uploaded_file.get('id')}")
-            burn_local_file(local_path)
+            if burn:
+                burn_local_file(local_path)
+            else:
+                print(f"💾 Gögn geymd á RunPod (burn=False)")
             return True
         else:
             print("❌ VILLA: MD5 staðfesting mistókst eftir flutning!")
             return False
-            
+
     except Exception as e:
         print(f"❌ VILLA í upphali: {e}")
         return False
