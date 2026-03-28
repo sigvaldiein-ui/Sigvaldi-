@@ -1,6 +1,10 @@
 #!/bin/bash
 echo "🧠 Mímir ræsir (með PYTHONPATH á /workspace)..."
 
+# Ræsum cron ef hann er ekki þegar í gangi
+service cron start 2>/dev/null || true
+echo "⏰ Cron í gangi"
+
 # Segjum Python að leita í /workspace svo hann finni 'mimir_net' möppuna sem pakka
 export PYTHONPATH=$PYTHONPATH:/workspace
 
