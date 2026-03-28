@@ -31,16 +31,20 @@ def ask_llm(system_prompt: str, user_prompt: str, temp: float = 0.1) -> str:
         return f"VILLA: {e}"
 
 def optimize_query(spurning: str) -> str:
+    from datetime import datetime
+    nuverandi_ar = datetime.now().year
     sys_prompt = (
-        "Þú ert OSINT leitarvélarsérfræðingur. Notandi spyr á íslensku. "
-        "Þitt EINA verkefni er að skila hnitmiðuðum, enskum leitarstreng (max 4-6 orð) "
-        "fyrir leitarvél til að finna hrágögn. Slepptu fylliorðum eins og 'news' eða 'specs'. "
-        "Dæmi: 'NVIDIA B200 AMD MI325X bandwidth FP8'. "
-        "Skilaðu AÐEINS enska leitarstrengnum."
+        f"Thu ert OSINT leitarvelarserfreaingur. Arid i dag er {nuverandi_ar}. "
+        "Notandi spyr a islensku. Thitt EINA verkefni er ao skila hnitmioudum, enskum leitarstreng (max 4-6 ord) "
+        "fyrir leitarvel til ao finna hragogn. Slepptu fyllioroum eins og 'news' eda 'specs'. "
+        f"MIKILVAEGT: Ef spurningin fjallar um eitthvad nytt, 'nyjaста' eda krefst nyrra upplysinga, "
+        f"baettu tha ARTALINU {nuverandi_ar} vid leitarstrenginn til ao fordast gomul gogn. "
+        f"Daemi: 'NVIDIA latest GPU {nuverandi_ar}'. "
+        "Skilaou AETHEINS enska leitarstrenginn an utskyringa."
     )
     ensk_leit = ask_llm(sys_prompt, spurning, temp=0.0)
     if "VILLA" in ensk_leit or len(ensk_leit) > 150:
-        return spurning 
+        return spurning
     return ensk_leit.replace('"', '').replace("'", "").strip()
 
 def get_radar_urls(query: str):
