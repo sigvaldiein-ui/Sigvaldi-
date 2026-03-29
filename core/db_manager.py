@@ -302,7 +302,9 @@ def generate_daily_report() -> str:
     """
     nu = datetime.now()
     fyrir_24 = nu - timedelta(hours=24)
-    dagsetning = nu.strftime("%d. %B %Y")
+    MANUDAIR = ["janúar","febrúar","mars","apríl","maí","júní",
+                "júlí","ágúst","september","október","nóvember","desember"]
+    dagsetning = f"{nu.day}. {MANUDAIR[nu.month-1]} {nu.year}"
 
     with tengja() as db:
         # Heildarfjöldi samtala
