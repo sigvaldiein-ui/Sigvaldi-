@@ -1,1 +1,0 @@
-print('Mímir er lifandi')

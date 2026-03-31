@@ -8,7 +8,7 @@ echo "Cron i gangi"
 export PYTHONPATH=$PYTHONPATH:/workspace
 
 while true; do
-    python3 /workspace/mimir_net/interfaces/telegram_bot_v7_Omni.py
+    python3 /workspace/mimir_net/interfaces/telegram_bot_v9_PROD.py
     echo "Mimir stadvaðist - endurraesi eftir 10 sek..."
     sleep 10
 done

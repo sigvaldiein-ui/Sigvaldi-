@@ -1,3 +1,17 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+tools.py
+--------
+Mimir verkfaeri - timi og toluvpostur
+Uppfaert skv. SOP v5.0 og urskurdi Adals Arkitektsins
+
+Reglur:
+- ALDREI hardkoda netfong eda lykilord - alltaf ur .env
+- Alltaf try/except - villa kraschar aldrei hradinn
+- sigvaldimimir@gmail.com er Mimis vinnunetfang
+"""
+
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -9,34 +23,60 @@ from dotenv import load_dotenv
 
 load_dotenv('/workspace/mimir_net/config/.env')
 
+
 @tool
 def get_current_time(query: str = "") -> str:
-    """Skilar nákvæmri dagsetningu og tíma á Íslandi."""
+    """Skilar nakvamri dagsetningu og tima a Islandi."""
     try:
         tz = zoneinfo.ZoneInfo("Atlantic/Reykjavik")
-    except:
+    except Exception:
         tz = zoneinfo.ZoneInfo("UTC")
     now = datetime.now(tz)
-    dagar = ["Mánudagur", "Þriðjudagur", "Miðvikudagur", "Fimmtudagur", "Föstudagur", "Laugardagur", "Sunnudagur"]
-    manudir = ["janúar", "febrúar", "mars", "apríl", "maí", "júní", "júlí", "ágúst", "september", "október", "nóvember", "desember"]
-    return f"Í dag er {dagar[now.weekday()]}, {now.day}. {manudir[now.month - 1]} {now.year}. Klukkan á Íslandi er nákvæmlega {now.strftime('%H:%M:%S')}."
+    dagar = ["Manudagur","Gridudagur","Midvikudagur","Fimmtudagur","Fostudagur","Laugardagur","Sunnudagur"]
+    manudir = ["januar","februar","mars","april","mai","juni","juli","agust","september","oktober","november","desember"]
+    return (f"I dag er {dagar[now.weekday()]}, {now.day}. {manudir[now.month-1]} {now.year}. "
+            f"Klukkan a Islandi er nakvaemlega {now.strftime('%H:%M:%S')}.")
+
 
 @tool
 def send_email(to_address: str, subject: str, body: str) -> str:
-    """Sendir tölvupóst í gegnum sigvaldiein@gmail.com."""
-    sender_email = "sigvaldiein@gmail.com" 
-    app_password = os.getenv("GMAIL_SEND_PASSWORD") 
-    if not app_password:
-        return "❌ Villa: GMAIL_SEND_PASSWORD vantar í .env."
-    msg = MIMEMultipart()
-    msg['From'] = f"Mímir AI <{sender_email}>"
-    msg['To'] = to_address
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    """Sendir toluvpost i gegnum Mimis vinnunetfang (sigvaldimimir@gmail.com)."""
+    # Saekja skilriki ur .env - aldrei hardkodad
+    sender = os.getenv("MIMIR_EMAIL_USER")
+    password = os.getenv("MIMIR_EMAIL_PASS")
+
+    if not sender or not password:
+        return "Villa: MIMIR_EMAIL_USER eda MIMIR_EMAIL_PASS vantar i .env"
+
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(sender_email, app_password)
+        msg = MIMEMultipart()
+        msg['From'] = f"Mimir AI <{sender}>"
+        msg['To'] = to_address
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        # Port 587 med STARTTLS - skv. urskurdi Adals
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(sender, password)
             server.send_message(msg)
-        return f"✅ Tölvupóstur sendur á {to_address}!"
+
+        return f"Toluvpostur sendur a {to_address}!"
+
+    except smtplib.SMTPAuthenticationError:
+        return "Villa: App Password ranlegt eda urunnid. Bua til nytt a myaccount.google.com/apppasswords"
+    except smtplib.SMTPRecipientsRefused:
+        return f"Villa: Netfangid {to_address} hafnadi postinum."
+    except smtplib.SMTPException as e:
+        return f"Villa i SMTP: {str(e)[:200]}"
+    except TimeoutError:
+        return "Villa: Gmail SMTP svarar ekki (timeout)."
     except Exception as e:
-        return f"❌ Mistókst að senda póst: {str(e)}"
+        return f"Ovaent villa: {str(e)[:200]}"
+
+
+if __name__ == "__main__":
+    print(get_current_time.invoke({}))
+    print("tools.py tilbuin")
