@@ -33,3 +33,4 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     except Exception as e:
         logger.error("Chat error: %s", e)
         return JSONResponse(status_code=502, content={"error": str(e)})
+# Sprint 61: Local vLLM virkar! 🎉
