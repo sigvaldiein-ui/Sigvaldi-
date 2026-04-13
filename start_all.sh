@@ -1,16 +1,46 @@
 #!/bin/bash
-pip install -r /workspace/requirements.txt -q
-pkill -f mimir_bot_v2.py
-pkill -f agent_core.py
-sleep 2
-nohup python /workspace/agent_core.py >> /workspace/mimir.log 2>&1 &
+# start_all.sh — Mímir uppsetning
+# Sprint 20: AlviturBot tunnel (490c85db) bætt við
+# Keyrir: agent_core + telegram bot + web_server + cloudflared tunnel
+
+set -e
+
+WORKSPACE=/workspace
+MIMIR=$WORKSPACE/mimir_net
+LOG=$WORKSPACE
+
+echo "=== Mímir uppsetning ==="
+
+# --- 1. Python pakkar ---
+pip install -q fastapi uvicorn pydantic httpx requests tavily-python 2>/dev/null || true
+
+# --- 2. Agent Core ---
+echo "Ræsi Agent Core..."
+cd $MIMIR
+nohup python3 -u core/agent_core_v4.py >> $LOG/agent_core.log 2>&1 &
 echo "Mímir Agent Core ræstur!"
-nohup python3 /workspace/mimir_bot_v2.py >> /workspace/mimir.log 2>&1 &
+
+# --- 3. Telegram Bot ---
+echo "Ræsi Telegram Bot..."
+nohup python3 -u interfaces/telegram_bot_v9_prod.py >> $LOG/telegram_bot.log 2>&1 &
 echo "Mímir Bot ræstur!"
-ln -sf $(python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())") /usr/local/bin/ffmpeg
-tar -czf /workspace/mimir_backup_$(date +%Y%m%d).tar.gz /workspace/mimir_bot_v2.py /workspace/agent_core.py /workspace/start_all.sh /workspace/requirements.txt /workspace/LEIDBEININGAR.md 2>/dev/null
-echo "Backup búinn!"
-pip install pyTelegramBotAPI requests openai langchain langchain-openai langgraph openai-whisper -q
-pip install python-dotenv -q
-pip install pyTelegramBotAPI python-dotenv langchain langchain-openai langgraph openai-whisper -q
-apt-get install -y tmux -q 2>/dev/null; nohup python /workspace/mimir_bot_v2.py > /workspace/mimir.log 2>&1 &
+
+# --- 4. Web Server ---
+echo "Ræsi Web Server..."
+cd $MIMIR/interfaces
+nohup python3 -u web_server.py >> $LOG/web_server.log 2>&1 &
+echo "Web Server ræstur á porti 8000!"
+
+# --- 5. Cloudflare Tunnel (AlviturBot) ---
+echo "Ræsi Cloudflare Tunnel..."
+sleep 3
+TOKEN=$(grep -o 'eyJ[^ ]*' $MIMIR/config/cf_token.txt 2>/dev/null || cat $MIMIR/config/cf_token.txt | tr -d '\n\r ')
+nohup cloudflared tunnel --no-autoupdate run --token $TOKEN \
+    >> $LOG/mimir_net/logs/cloudflared.log 2>&1 &
+echo "Cloudflare Tunnel ræstur!"
+
+echo ""
+echo "=== Allt ræst ==="
+echo "Web:      http://localhost:8000"
+echo "Tunnel:   AlviturBot (490c85db)"
+echo "Lén:      https://alvitur.is"

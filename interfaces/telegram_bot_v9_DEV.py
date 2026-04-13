@@ -1,17 +1,62 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+telegram_bot_v9_DEV.py
+----------------------
+Mímir DEV bot með Straumur paywall (Sprint 15.3).
+
+BREYTINGAR (Sprint 15.3):
+- Nýr import: payment_handler (Straumur Hosted Checkout)
+- senda_greidslubod() → inline takkar með plan vali
+- Nýr callback handler: plan val → Straumur checkout URL
+- Ný skipun: /askrift — sýna verðskrá og velja plan
+- Ný skipun: /stada — sýna notandastöðu (premium/fríar prufur)
+
+BREYTINGAR (Sprint 15.4):
+- agent_core_v4 skipt út fyrir agent_core_v5 (Supervisor/Router)
+- Mímir getur nú leitað á netinu í raunstæðu með Deep Hunter
+- Flokkun: SEARCH → Deep Hunter, CHAT → v4 kjarni
+
+ATHUGASEMDIR:
+- Þetta er DEV útgáfa — notar .env.dev
+- Ósnertanlegar skrár: agent_core_v4.py, telegram_bot_v5.py, telegram_bot_v7_Omni.py
+- Per vinnur ALLTAF í DEV, aldrei PROD
+"""
 import os,sys,threading,subprocess,time
 from collections import defaultdict
 from datetime import datetime
 import telebot
 from telebot import util
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
 BASE_DIR=os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))
 sys.path.append(BASE_DIR)
+# Sprint 15.4 — V5 Supervisor (importar v4 í gegnum v5)
+try:
+    from core.agent_core_v5 import MimirCoreV5
+    MIMIR_V5 = MimirCoreV5()
+    V5_VIRKUR = True
+    print("✅ agent_core_v5 (Supervisor) hlaðinn")
+except ImportError as e:
+    V5_VIRKUR = False
+    print(f"⚠️  agent_core_v5 vantar: {e} — nota v4 fallback")
+
+# Fallback — alltaf hafa v4 til taðs
 from core.agent_core_v4 import analyze_query,ask_llm
 from skills.multimodal_reader import analyze_multimodal
 from core.db_manager import (is_user_allowed,get_free_queries_left,nota_frja_prufu,
-    skra_samtal,saekja_profile,uppfaera_profile,setja_upp_gagnagrunn)
+    skra_samtal,saekja_profile,uppfaera_profile,setja_upp_gagnagrunn,saekja_notanda)
+
+# Sprint 15.3 — Straumur greiðslustjóri
+try:
+    from core.payment_handler import (bua_til_checkout, athuga_stodu,
+        fa_verdskra_texta, fa_plan_upplysingar, VERDSKRA)
+    STRAUMUR_VIRKUR = True
+    print("✅ payment_handler hlaðinn")
+except ImportError as e:
+    STRAUMUR_VIRKUR = False
+    print(f"⚠️  payment_handler vantar: {e} — paywall óvirkur")
 
 load_dotenv(os.path.join(BASE_DIR,'config','.env.dev'))
 TELEGRAM_TOKEN=os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('TELEGRAM_TOKEN')
@@ -66,24 +111,147 @@ def athuga_adgang(chat_id):
         return False,0
     except Exception: return True,5
 
+
+# =============================================================
+# STRAUMUR PAYWALL — Sprint 15.3
+# =============================================================
+
 def senda_greidslubod(chat_id):
-    texti=("Thu hefur notad allar 5 friar prufur Mimis.\n\n"
-        "Mimir er islenskt AI rannsoknarverkfaeri med:\n"
-        "- Lokad herbergi - oll gogn eytt eftir hverja lotu\n"
-        "- Ratsjartaekni - leitar a netid i rauntima\n"
-        "- Fullkomid islensku\n\n"
-        "Veldu pakka:\n"
-        "Kynning: 990 kr/man\n"
-        "Einstaklingsadgangur: 1.990 kr/man\n"
-        "Midgildi: 4.990 kr/man\n"
-        "Fyrirtaekjapakki: Serstatt\n\n"
-        "Hafa samband: sigvaldi@fjarmalin.is")
-    bot.send_message(chat_id,texti)
+    """
+    Sendir greiðslutilboð með inline takkum þegar fríar prufur klárast.
+    Ef Straumur er ekki virkur → falla til baka í gamlan texta.
+    """
+    if not STRAUMUR_VIRKUR:
+        # Fallback — gamli textinn ef payment_handler vantar
+        texti=("Þú hefur notað allar 5 fríar prufur Mímis.\n\n"
+            "Mímir er íslenskt AI rannsóknarverkfæri með:\n"
+            "• Lokað herbergi — öll gögn eytt eftir hverja lotu\n"
+            "• Ratsjártækni — leitar á netið í rauntíma\n"
+            "• Fullkomið íslensku\n\n"
+            "Hafa samband: sigvaldi@fjarmalin.is")
+        bot.send_message(chat_id,texti)
+        return
+
+    # Straumur virkur — sýna verðskrá með inline takkum
+    texti = ("🔒 Þú hefur notað allar 5 fríar prufur Mímis.\n\n"
+             "Mímir er íslenskt AI rannsóknarverkfæri með:\n"
+             "• Lokað herbergi — öll gögn eytt eftir hverja lotu\n"
+             "• Ratsjártækni — leitar á netið í rauntíma\n"
+             "• Fullkomið íslensku\n\n"
+             "💰 *Veldu áskriftarpakka:*")
+
+    # Búa til inline takka fyrir hvern pakka
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton("⭐ Kynning — 990 kr/mán", callback_data="plan_kynning"),
+        InlineKeyboardButton("⭐ Einstaklingsaðgangur — 1.990 kr/mán", callback_data="plan_einstakling"),
+        InlineKeyboardButton("💎 Miðgildi — 4.990 kr/mán", callback_data="plan_midgildi"),
+    )
+
+    try:
+        bot.send_message(chat_id, texti, parse_mode="Markdown", reply_markup=markup)
+    except:
+        bot.send_message(chat_id, texti, reply_markup=markup)
+
 
 def senda_prufu_kynning(chat_id,frir):
-    if frir==4: bot.send_message(chat_id,"Velkomin! 5 friar prufur. Mimir er lokad AI verkfaeri - oll gogn eytt eftir hverja lotu (Zero-Data).")
-    elif frir==2: bot.send_message(chat_id,"2 friar prufur eftir. Til ad halda afram: sigvaldi@fjarmalin.is")
-    elif frir==0: bot.send_message(chat_id,"Thetta var thinn sidasti frji svar. Til ad halda afram tharftu ad kaupa adgang.")
+    if frir==4: bot.send_message(chat_id,"Velkomin! 5 fríar prufur. Mímir er lokað AI verkfæri — öll gögn eytt eftir hverja lotu (Zero-Data).")
+    elif frir==2: bot.send_message(chat_id,"⏳ 2 fríar prufur eftir. Sláðu inn /askrift til að sjá áskriftarleiðir.")
+    elif frir==0: bot.send_message(chat_id,"⏳ Þetta var þitt síðasta fría svar. Sláðu inn /askrift til að halda áfram.")
+
+
+# =============================================================
+# CALLBACK HANDLER — Straumur plan val
+# =============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
+def handle_plan_val(call):
+    """Meðhöndlar þegar notandi smellir á áskriftartakka."""
+    chat_id = call.message.chat.id
+    plan = call.data.replace("plan_", "")
+
+    if not STRAUMUR_VIRKUR:
+        bot.answer_callback_query(call.id, "Greiðslukerfi óvirkt — hafa samband við sigvaldi@fjarmalin.is")
+        return
+
+    # Svara callback strax (fjarlægja „hleður..." á takka)
+    bot.answer_callback_query(call.id, "Bý til greiðslulotu...")
+
+    # Sækja plan upplýsingar
+    pakki = fa_plan_upplysingar(plan)
+    if not pakki:
+        bot.send_message(chat_id, "❌ Ógilt plan — reyndu aftur með /askrift")
+        return
+
+    # Búa til Straumur checkout lotu
+    nidurstada = bua_til_checkout(chat_id, plan)
+
+    if nidurstada.get("villa"):
+        bot.send_message(chat_id, f"⚠️ Villa við greiðslu: {nidurstada['villa']}\n\nHafa samband: sigvaldi@fjarmalin.is")
+        return
+
+    # Senda greiðsluhlekk sem inline takki
+    checkout_url = nidurstada.get("url", "")
+    if checkout_url:
+        texti = (f"✅ *Greiðslulota stofnuð*\n\n"
+                 f"📦 Pakki: {pakki['nafn']}\n"
+                 f"💰 Verð: {pakki['verd_isk']:,} kr/mán\n\n"
+                 f"Smelltu á takkann til að ljúka greiðslu:")
+
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("💳 Greiða núna", url=checkout_url))
+
+        try:
+            bot.send_message(chat_id, texti, parse_mode="Markdown", reply_markup=markup)
+        except:
+            bot.send_message(chat_id, texti, reply_markup=markup)
+    else:
+        bot.send_message(chat_id, "⚠️ Gat ekki búið til greiðsluhlekk — reyndu aftur síðar.")
+
+
+# =============================================================
+# SKIPANIR — /askrift og /stada
+# =============================================================
+
+@bot.message_handler(commands=['askrift'])
+def askrift_skipun(m):
+    """Sýnir verðskrá og plan valmöguleika."""
+    senda_greidslubod(m.chat.id)
+
+
+@bot.message_handler(commands=['stada'])
+def stada_skipun(m):
+    """Sýnir stöðu notanda — premium/fríar prufur."""
+    chat_id = m.chat.id
+
+    if chat_id == MASTER_ID:
+        bot.reply_to(m, "👑 Sigvaldi — ótakmarkaður aðgangur (Master)")
+        return
+
+    try:
+        notandi = saekja_notanda(chat_id)
+        if notandi and notandi.get("is_premium"):
+            lokadagur = notandi.get("subscription_end", "Ótímabundið")
+            plan = notandi.get("subscription_plan", "?")
+            texti = (f"✅ *Premium notandi*\n"
+                     f"📦 Pakki: {plan}\n"
+                     f"📅 Gildir til: {lokadagur[:10] if lokadagur else 'Ótímabundið'}")
+        else:
+            frir = get_free_queries_left(chat_id)
+            texti = (f"ℹ️ *Ókeypis aðgangur*\n"
+                     f"📊 Fríar prufur eftir: {frir}/5\n\n"
+                     f"Sláðu inn /askrift til að uppfæra í premium.")
+        try:
+            bot.reply_to(m, texti, parse_mode="Markdown")
+        except:
+            bot.reply_to(m, texti)
+    except Exception as e:
+        bot.reply_to(m, f"Villa: {str(e)[:100]}")
+
+
+# =============================================================
+# KJARNAFALL — óbreytt frá v9 (nema smávægilegar lagfæringar)
+# =============================================================
 
 def smida_system_prompt(chat_id):
     try:
@@ -143,14 +311,29 @@ def safe_reply(chat_id,msg_id,texti):
             if i==0: bot.edit_message_text(chunk,chat_id=chat_id,message_id=msg_id)
             else: bot.send_message(chat_id,chunk)
 
+
+# =============================================================
+# HANDLERS — text og skrár
+# =============================================================
+
 @bot.message_handler(commands=['start','help'])
 def welcome(m):
-    bot.reply_to(m,"Mimir v8.0 Gatekeeper\n\nEg man eftir samtalinu og svarar a islensku.\nSendu texta, skjol, myndir, video eda raddskilabod.\n/gleymdu - hreinsa minni")
+    texti = ("🧠 *Mímir v9.1 DEV*\n\n"
+             "Ég man eftir samtalinu og svara á íslensku.\n"
+             "Sendu texta, skjöl, myndir, video eða raddskeyti.\n\n"
+             "📋 *Skipanir:*\n"
+             "/askrift — sjá áskriftarleiðir\n"
+             "/stada — sjá stöðu þína\n"
+             "/gleymdu — hreinsa minni")
+    try:
+        bot.reply_to(m, texti, parse_mode="Markdown")
+    except:
+        bot.reply_to(m, texti)
 
 @bot.message_handler(commands=['gleymdu','reset'])
 def gleymdu(m):
     with memory_lock: user_sessions[m.chat.id].clear()
-    bot.reply_to(m,"Minni hreinsad!")
+    bot.reply_to(m,"Minni hreinsað!")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(m):
@@ -164,15 +347,22 @@ def handle_text(m):
     if SANITIZER_VIRKUR and not is_safe_prompt(texti):
         bot.reply_to(m, get_rejection_message())
         return
-    sm=bot.reply_to(m,"Mimir hugsar...")
+    sm=bot.reply_to(m,"Mímir hugsar...")
     def run():
         try:
-            flokkun=flokka_beidni(texti)
-            if flokkun=="SEARCH":
-                bot.edit_message_text("Kveiki a Ratsja...",chat_id=chat_id,message_id=sm.message_id)
-                svar=leita_og_muna(chat_id,texti)
+            # Sprint 15.4 — V5 Supervisor tekur við ef virkur
+            if V5_VIRKUR:
+                bot.edit_message_text("🧠 Mímir V5 vinnur...",chat_id=chat_id,message_id=sm.message_id)
+                svar=MIMIR_V5.process_message(texti, user_id=chat_id)
+                flokkun="V5"
             else:
-                svar=spjalla_med_minni(chat_id,texti)
+                # Fallback á v4 rökfræði
+                flokkun=flokka_beidni(texti)
+                if flokkun=="SEARCH":
+                    bot.edit_message_text("Kveiki á Ratsjá...",chat_id=chat_id,message_id=sm.message_id)
+                    svar=leita_og_muna(chat_id,texti)
+                else:
+                    svar=spjalla_med_minni(chat_id,texti)
             safe_reply(chat_id,sm.message_id,svar)
             if chat_id!=MASTER_ID: senda_prufu_kynning(chat_id,frir)
             try: skra_samtal(chat_id,flokkun)
@@ -189,7 +379,7 @@ def handle_files(m):
     if not leyfður:
         senda_greidslubod(chat_id)
         return
-    sm=bot.reply_to(m,"Mottek skra...")
+    sm=bot.reply_to(m,"Móttekur skrá...")
     def run():
         lp=""
         try:
@@ -200,7 +390,7 @@ def handle_files(m):
             data=bot.download_file(fi.file_path)
             lp=os.path.join(SANDBOX_DIR,f"{m.content_type}_{m.message_id}.{fi.file_path.split('.')[-1]}")
             with open(lp,'wb') as f: f.write(data)
-            bot.edit_message_text("Greini skra...",chat_id=chat_id,message_id=sm.message_id)
+            bot.edit_message_text("Greini skrá...",chat_id=chat_id,message_id=sm.message_id)
             svar=analyze_multimodal(lp,m.caption or "")
             add_memory(chat_id,"user",f"[Skra: {m.content_type}]")
             add_memory(chat_id,"assistant",f"[Greining]: {svar[:1500]}")
@@ -217,18 +407,28 @@ def handle_files(m):
                 except: os.remove(lp)
     threading.Thread(target=run).start()
 
+
+# =============================================================
+# RÆSING
+# =============================================================
+
 if __name__=="__main__":
     setja_upp_gagnagrunn()
-    print(f"Mimir v8.0 Gatekeeper raestur — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Mímir v9.1 DEV (Straumur paywall) ræstur — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    if STRAUMUR_VIRKUR:
+        print("💳 Straumur paywall VIRKUR")
+    else:
+        print("⚠️  Straumur paywall ÓVIRKUR — fallback texti")
     # VORN GEGN 409 CONFLICT
     try:
         bot.remove_webhook()
         time.sleep(2)
-        print("Webhook hreinsat - 409 vorn virk")
+        print("Webhook hreinsat — 409 vorn virk")
     except Exception as e:
         print(f"Webhook: {e}")
     bot.infinity_polling(skip_pending=True)
 
 # ============================================================
 # SPRINT 12 — Öryggi (bætt við v9 DEV)
+# SPRINT 15.3 — Straumur paywall (inline takkar + /askrift)
 # ============================================================

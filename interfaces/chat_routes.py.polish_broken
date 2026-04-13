@@ -1,0 +1,255 @@
+# interfaces/chat_routes.py
+"""
+Sprint 45 — Production /api/chat endpoint.
+Sprint 46 Phase 1 — Token observability + Cloudflare IP quota fix.
+Sprint 46 Phase 2 — RAG retrieval frá igc_law_pilot Qdrant collection.
+Sprint 47 — Domain routing + specialist prompts.
+Sprint 53a — Ekki-US módel (MiniMax, Qwen) + DeepSeek V3 polish lag.
+Sprint 53b — Nota config.py fyrir módel stillingar.
+Sprint 56 — Nota TranslateSkill í stað _polish().
+Sprint 60 — Hotfix: attached_files, tími, SentenceTransformer cache, max_tokens, RAG domain guard.
+
+Routes through pipeline_adapter with fallback to direct LLM via OpenRouter.
+RAG retrieval (IGC-Law pilot) er keyrt á fallback path áður en LLM er kallað.
+Domain classification (Qwen3.5-27B) og specialist prompt val á fallback path.
+Polish lag (DeepSeek V3-0324) þýðir LLM svar yfir á fallega íslensku.
+"""
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import os
+import httpx
+import logging
+from datetime import datetime, timezone
+from interfaces.config import MODEL_LEIDA_A as _MODEL_A, MODEL_LEIDA_B as _MODEL_B
+from interfaces.skills.translate import TranslateSkill as _TranslateSkill
+_translate_skill = _TranslateSkill()
+
+logger = logging.getLogger("alvitur.web")
+
+# Sprint 56: _polish() wrapper — notar TranslateSkill
+async def _polish(text: str, key: str) -> str:
+    """Wrapper fyrir baksamhæfi — notar TranslateSkill.run()."""
+    return await _translate_skill.run(text=text, key=key)
+
+
+# Sprint 60: SentenceTransformer cache — hlaðið einu sinni við ræsingu
+_st_model = None
+
+def _get_st_model():
+    """Skilar cached SentenceTransformer model — hleður aðeins einu sinni."""
+    global _st_model
+    if _st_model is None:
+        from sentence_transformers import SentenceTransformer
+        _st_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+        logger.info("[ALVITUR] SentenceTransformer model hlaðið í cache")
+    return _st_model
+
+
+# Qdrant RAG config — local pilot only
+_QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/mimir_net/data/qdrant_store")
+_RAG_COLLECTION = "igc_law_pilot"
+_RAG_TOP_K = 3
+_RAG_SCORE_THRESHOLD = 0.40  # Lágmarksscore — undir þessu er heimild ekki notuð
+
+# Sprint 60: RAG er eingöngu notað fyrir legal domain
+_RAG_DOMAINS = {"legal"}
+
+
+def _rag_retrieve(query: str, domain: str = "general") -> list[dict]:
+    """
+    Sækja top-K chunks úr igc_law_pilot Qdrant collection.
+    Sprint 60: Skilar [] ef domain er ekki legal — RAG er aðeins fyrir lög.
+    Skilar lista af dicts með text, title, source, date, score.
+    Skilar [] ef Qdrant er ekki til eða villa kemur upp — graceful degradation.
+    """
+    # Sprint 60: Ekki kalla RAG fyrir domains sem hafa ekki lögheimildir
+    if domain not in _RAG_DOMAINS:
+        return []
+
+    try:
+        from qdrant_client import QdrantClient
+
+        model = _get_st_model()  # Sprint 60: nota cached model
+        vector = model.encode([query], convert_to_numpy=True)[0]
+
+        client = QdrantClient(path=_QDRANT_PATH)
+        cols = [c.name for c in client.get_collections().collections]
+        if _RAG_COLLECTION not in cols:
+            logger.warning("[ALVITUR] RAG: collection %s ekki til", _RAG_COLLECTION)
+            return []
+
+        results = client.query_points(
+            collection_name=_RAG_COLLECTION,
+            query=vector.tolist(),
+            limit=_RAG_TOP_K,
+        )
+        hits = []
+        for h in results.points:
+            if h.score < _RAG_SCORE_THRESHOLD:
+                continue
+            hits.append({
+                "text": h.payload.get("text", ""),
+                "title": h.payload.get("title", ""),
+                "source": h.payload.get("source", ""),
+                "date": h.payload.get("date", ""),
+                "domain": h.payload.get("domain", ""),
+                "score": round(h.score, 4),
+            })
+        logger.info("[ALVITUR] RAG retrieved=%d query=%r", len(hits), query[:60])
+        return hits
+
+    except Exception as e:
+        logger.warning("[ALVITUR] RAG villa (graceful degradation): %s", e)
+        return []
+
+
+def _build_rag_context(hits: list[dict]) -> str:
+    """Byggja [Heimild] blokk úr RAG hits fyrir system prompt."""
+    if not hits:
+        return ""
+    lines = ["\n\n[Heimildir úr íslenskum lögum og þingskjölum]"]
+    for i, h in enumerate(hits, 1):
+        lines.append(
+            f"\nHeimild {i} (score={h['score']}, domain={h['domain']}, dagsetning={h['date']}):\n"
+            f"Titill: {h['title']}\n"
+            f"Slóð: {h['source']}\n"
+            f"Texti: {h['text'][:400]}"
+        )
+    lines.append("\n[Lok heimilda]")
+    return "\n".join(lines)
+
+
+def _build_file_context(files: list[dict]) -> str:
+    """
+    Sprint 60: Byggja [Skjöl] blokk úr meðfylgjandi skjölum fyrir LLM.
+    files: listi af dicts með filename og content.
+    """
+    if not files:
+        return ""
+    lines = ["\n\n[Meðfylgjandi skjöl frá notanda]"]
+    for i, f in enumerate(files, 1):
+        name = f.get("filename", f"Skjal {i}")
+        content = f.get("content", "")[:3000]  # Takmark per skjal
+        lines.append(f"\nSkjal {i} — {name}:\n{content}")
+    lines.append("\n[Lok skjala]")
+    return "\n".join(lines)
+
+
+
+def build_bilingual_prompt(domain: str, now_str: str, rag_context: str, file_context: str) -> str:
+    """System prompt: Think in English, reply in Icelandic."""
+    base = get_specialist_prompt(domain, now_str)
+    bilingual = """
+    
+IMPORTANT PROCESSING RULES:
+1. INTERNAL REASONING: Think through the problem in English for accuracy.
+2. FINAL OUTPUT: ALWAYS reply in clear, professional Icelandic when the user writes in Icelandic.
+3. TERMINOLOGY: Use proper Icelandic legal/financial terms.
+4. SOURCES: If [Heimildir] or [Skjöl] are provided, cite them naturally in Icelandic.
+5. UNCERTAINTY: If unsure, acknowledge limitations in Icelandic.
+"""
+    return base + bilingual + rag_context + file_context
+
+async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list[dict] | None = None) -> JSONResponse:
+    """
+    Production chat handler.
+    Sprint 60: attached_files tekið við og sent til LLM.
+    1. Try pipeline adapter (master_pipeline)
+    2. Fall back to direct LLM if pipeline unavailable
+       2a. RAG retrieval frá igc_law_pilot (Sprint 46 Phase 2) — legal domain only
+       2b. Direct LLM með RAG context + skjalassamhengi í system prompt
+    """
+    from interfaces.pipeline_adapter import run_via_pipeline
+
+    llm_model = _MODEL_B if tier == "vault" else _MODEL_A
+    files = attached_files or []
+
+    # Build request dict for master pipeline
+    request_dict = {
+        "lane": "leið_b" if tier == "vault" else "leið_a",
+        "domain_candidate": "general",
+        "input_text": query,
+        "input_type": "text",
+        "tier": tier,
+        "attached_files": files,
+    }
+
+    # Try pipeline first
+    pipeline_result = run_via_pipeline(request_dict)
+    if pipeline_result and pipeline_result.get("content"):
+        return JSONResponse(content={
+            "success": True,
+            "summary": pipeline_result["content"],
+            "tier": tier,
+            "pipeline": "master_pipeline",
+            "model": pipeline_result.get("model_chosen", llm_model),
+        })
+
+    # Sprint 60: Tími og dagsetning í system prompt
+    _now = datetime.now(timezone.utc)
+    _now_str = _now.strftime("%Y-%m-%d %H:%M UTC")
+
+    logger.info("[ALVITUR] chat fallback model=%s tier=%s files=%d", llm_model, tier, len(files))
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        return JSONResponse(status_code=503, content={"error": "LLM unavailable"})
+
+    # Sprint 47: Domain classification
+    from interfaces.specialist_prompts import classify, get_specialist_prompt
+    domain = await classify(query)
+
+    # Sprint 46 Phase 2: RAG retrieval — Sprint 60: domain-gated
+    rag_hits = _rag_retrieve(query, domain=domain)
+    rag_context = _build_rag_context(rag_hits)
+    rag_sources = [
+        {"title": h["title"], "source": h["source"], "score": h["score"], "date": h["date"]}
+        for h in rag_hits
+    ]
+
+    # Sprint 60: Skjalassamhengi
+    file_context = _build_file_context(files)
+
+    system_prompt = build_bilingual_prompt(domain, _now_str, rag_context, file_context)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "HTTP-Referer": "https://alvitur.is",
+                },
+                json={
+                    "model": llm_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query},
+                    ],
+                    "max_tokens": 1500,  # Sprint 60: 800 → 1500
+                },
+                timeout=60.0,  # Sprint 60: 30 → 60 sek vegna stærri skjala
+            )
+            r.raise_for_status()
+            resp_json = r.json()
+            summary = resp_json["choices"][0]["message"]["content"]
+
+            # Sprint 53a: Polish lag — þýða yfir á fallega íslensku
+            summary = await _polish(summary, key)
+
+            # Sprint 46 Phase 1: Token observability
+            usage = resp_json.get("usage", {})
+            input_tokens = usage.get("prompt_tokens", 0)
+            output_tokens = usage.get("completion_tokens", 0)
+            if "gpt-4o-mini" in llm_model:
+                cost_usd = (input_tokens * 0.15 + output_tokens * 0.60) / 1_000_000
+            elif "claude-sonnet" in llm_model:
+                cost_usd = (input_tokens * 3.00 + output_tokens * 15.00) / 1_000_000
+            else:
+                cost_usd = 0.0
+            logger.info(
+                "[ALVITUR] token_obs pipeline=rag_fallback model=%s tier=%s "
+                "input_tok=%d output_tok=%d cost_usd=%.6f rag_hits=%d files=%d",
+                llm_model, tier, input_tokens, output_tokens, cost_usd, len(rag_hits), len(files),
+            )
+
+        

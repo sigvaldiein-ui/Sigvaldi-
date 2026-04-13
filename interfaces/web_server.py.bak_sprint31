@@ -1,0 +1,3597 @@
+"""
+Alvitur.is — Enterprise AI Landing Page
+FastAPI server serving a one-page B2B SaaS funnel for Icelandic AI document analysis.
+
+Sprint 16 breytingar:
+  A) Web Chat Fasi 1 samþætt á /minarsidur (mock svör, engin V5 tenging)
+  B) Sölutexti uppfærður — breiðari markhópur (lögfræðistofur, fjármálafyrirtæki, ráðgjafar)
+  C) Dæmisögur ("Notendur segja") bætt við forsíðuna
+  D) SecurityHeadersMiddleware bætt við (HSTS, CSP, X-Frame-Options, o.fl.)
+
+Sprint 17 hotfix — Öryggi + UX:
+  1) Netfang skipt: sigvaldi@fjarmalin.is / sigvaldiein@gmail.com → info@alvitur.is
+  2) Beta upplýsingakassi bætt við forsíðuna undir hero (Telegram hlekkur)
+  3) Session einangrun staðfest á /api/chat: engin shared state milli notenda
+
+Sprint 18 — Hreinsa vefspjall / Web chat cleanup:
+  1) Fjarlægður 'Mínar Síður' hlekkur úr nav
+  2) Fjarlægður 'Opna á Telegram' hnappur úr nav (einungis Alvitur .is merki og valmynd eftir)
+  3) Skipt út tveimur hnöppum undir beta kassa fyrir einn: ''
+  4) /minarsidur route og build_minarsidur_page() commentuð út (geymd til sögunnar)
+  5) Öll /minarsidur tenglar á forsíðu skipt út fyrir Telegram / mailto: hlekki
+  6) Static mount (/static) commentuð út — var eingöngu notuð fyrir /minarsidur
+  7) /api/chat route haldið (virkt — til framtíðarnotkunar á Fasa 2)
+
+Sprint 19 — UI Hotfix (Aðal áætlun, innleiðsla Per):
+  1) Telegram hraðhnappur aftur í navbar (sýnilegur á desktop + mobile)
+  2) Hero padding þétt — meira efni above-the-fold
+  3) Status pilla (hero-badge) smækkuð — minni visual weight
+  4) Beta kassi fágaður — mildari litir, premium dökkt útlit
+  5) Mobile-first fókus — Telegram hnappur alltaf sýnilegur, þéttara hero
+
+Sprint 20 — V5.1 B2B Evidence Engine (Aðal áætlun, innleiðsla Per):
+  1) H1 breytt í 'Alvitur – Við greinum gögnin sem skipta máli.'
+  2) Undirfyrirsögn: Zero-Data, B2B markhópur
+  3) Aðalhnappur: 'Óska eftir prufuaðgangi' → mailto:info@alvitur.is
+  4) Drag-and-Drop PDF svæði bætt við (óvirkt viðmót, Evidence Engine tónn)
+  5) Meta title og description uppfært
+"""
+
+import asyncio
+import logging
+import os
+import random
+import time
+from collections import defaultdict
+from datetime import datetime, timezone
+from typing import Optional
+
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel, Field, validator
+from starlette.middleware.base import BaseHTTPMiddleware
+import uvicorn
+
+# ─── Lög stillingar ───────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("alvitur.web")
+
+# ─── Gæðatak (Rate Limiting) ──────────────────────────────────────────────────
+# Hámark 20 beiðnir á mínútu á hvert IP
+GÆÐATAK_HÁMARK = int(os.environ.get("RATE_LIMIT", 20))
+GÆÐATAK_GLUGGI = 60  # sekúndur
+
+# Geymir: {ip_address: [tímastimplar]} fyrir síðustu 60 sekúndur
+_gæðatak_minni: dict[str, list[float]] = defaultdict(list)
+
+
+def athuga_gæðatak(ip: str) -> bool:
+    """
+    Sannprófar hvort IP tala sé yfir gæðataki.
+    Skilar True ef beiðni er leyfð, False ef yfir mörk.
+    Notar gluggatíma (sliding window) — einfaldasta útfærslan án Redis.
+    """
+    núna = time.time()
+    _gæðatak_minni[ip] = [t for t in _gæðatak_minni[ip] if núna - t < GÆÐATAK_GLUGGI]
+    if len(_gæðatak_minni[ip]) >= GÆÐATAK_HÁMARK:
+        return False
+    _gæðatak_minni[ip].append(núna)
+    return True
+
+
+def sækja_ip(request: Request) -> str:
+    """Sækir raunverulegt IP-tölu notanda, tekur tillit til proxy."""
+    for haus in ("cf-connecting-ip", "x-real-ip"):
+        if ip := request.headers.get(haus):
+            return ip.split(",")[0].strip()
+    return request.client.host if request.client else "0.0.0.0"
+
+
+# ─── D) Öryggishausar Middleware ──────────────────────────────────────────────
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Bætir við öryggishausum í hverja HTTP svörun.
+
+    Hausar sem eru settir:
+      - Strict-Transport-Security (HSTS)     : HTTPS alltaf, 1 ár
+      - Content-Security-Policy              : XSS vörn
+      - X-Frame-Options                      : Kemur í veg fyrir clickjacking
+      - X-Content-Type-Options               : Kemur í veg fyrir MIME sniffing
+      - Referrer-Policy                      : Takmarkar referrer upplýsingar
+      - Permissions-Policy                   : Takmarkar vafra API aðgang
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        svar = await call_next(request)
+
+        # HSTS — krefjast HTTPS í 1 ár með undirlénum
+        svar.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+        # CSP — takmarkar hvaðan efni má sækja
+        # Athugasemd: unsafe-inline er í stílar vegna innilagðra stíla (Fasi 1).
+        # Í Fasa 2 færum við CSS í utanaðkomandi skrá og fjarlægjum unsafe-inline.
+        svar.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; "
+            "font-src 'self' https://fonts.gstatic.com https://api.fontshare.com data:; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self';"
+        )
+
+        # X-Frame-Options — kemur í veg fyrir að síðan sé sett í iframe (clickjacking)
+        svar.headers["X-Frame-Options"] = "DENY"
+
+        # X-Content-Type-Options — kemur í veg fyrir MIME tegundaspá
+        svar.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Referrer-Policy — takmarkar hvaðan referrer er sent
+        svar.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Permissions-Policy — takmarkar vafra API aðgang
+        svar.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=(), payment=()"
+        )
+
+        return svar
+
+
+# ─── FastAPI forrit ────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="Alvitur Enterprise AI",
+    docs_url=None,   # Slökkva á Swagger UI í framleiðslu
+    redoc_url=None,  # Slökkva á ReDoc í framleiðslu
+)
+
+# Gzip þjöppun (sparar bandbreidd)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# D) Öryggishausar á allar beiðnir
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
+# from fastapi.staticfiles import StaticFiles
+# import os as _os
+# _static_dir = "/workspace/mimir_net/static"
+# _os.makedirs(_static_dir, exist_ok=True)
+# app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+
+# ─── A) Gagnalíkön fyrir Web Chat API ────────────────────────────────────────
+
+class ChatBeidni(BaseModel):
+    """Inntak fyrir /api/chat."""
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="Skilaboð frá notanda",
+    )
+    user_id: str = Field(
+        default="anonymous",
+        max_length=64,
+        description="Notandaauðkenni (tímabundið, skipt út á Fasa 3)",
+    )
+
+    @validator("message")
+    def hreinsa_skilabus(cls, v: str) -> str:
+        """Þrífa og sannreyna skilaboð."""
+        hrein = v.strip()
+        if not hrein:
+            raise ValueError("Skilaboð má ekki vera tómt")
+        return hrein
+
+
+class ChatSvar(BaseModel):
+    """Úttak frá /api/chat."""
+    response: str
+    timestamp: str
+    # [FASI-2] Bæta við: model_used, tokens_used, search_used
+    # [FASI-3] Bæta við: query_remaining
+
+
+class HeilsusvarModel(BaseModel):
+    """Úttak frá /api/health."""
+    status: str
+    version: str
+    timestamp: str
+    fasi: str
+
+
+# ─── A) Mock svörþjónusta ─────────────────────────────────────────────────────
+# [FASI-2]: Skipta þessum mock svörum út fyrir MimirCoreV5.process_message()
+
+# Íslenskt velkomnarboð
+VELKOMIN_BOÐ = (
+    "Góðan daginn! Ég er **Alvitur**, íslenskur gervigreindaraðstoðarmaður "
+    "sérhæfður í skjalagreiningu og lögfræðilegri rannsókn.\n\n"
+    "Ég get aðstoðað þig með:\n"
+    "- Greiningu á **ársreikningum** og fjárhagslegum skjölum\n"
+    "- Leit og samantekt úr **íslenskum lögum og reglugerðum**\n"
+    "- Samanburð á **samningum** og lagalegum gögnum\n"
+    "- **Minnisblöð** og skýrslugerð á sekúndum\n\n"
+    "Hvað get ég gert fyrir þig í dag?"
+)
+
+# Mock svör eftir lykilorðum í skilaboðum
+MOCK_SVÖR = {
+    "skjal": (
+        "**Skjalagreining með Alvitur**\n\n"
+        "Ég get greint eftirfarandi tegundir skjala:\n\n"
+        "- **PDF ársreikningar** — Dregur út lykilupplýsingar: tekjur, gjöld, "
+        "eignir, skuldir, og sjóðstreymi\n"
+        "- **Samningar** — Greinir skilyrði, gildistíma, og áhættuákvæði\n"
+        "- **Fundargerðir** — Samantekt á ákvörðunum og verkefnum\n"
+        "- **Skattskjöl** — Sannprófar tölur og gefur til kynna frávik\n\n"
+        "Til að senda skjal: Notaðu 📎 táknið neðst til að hlaða upp PDF "
+        "(þessi virkni er í þróun og kemur fljótlega).\n\n"
+        "Á meðan geturðu límt texta beint inn hér og ég greini hann."
+    ),
+    "ársreikn": (
+        "**Ársreikningsgreining**\n\n"
+        "Ég get framkvæmt ítarlega greiningu á ársreikningum:\n\n"
+        "**Fjárhagslegur grunnur:**\n"
+        "- Rekstrarreikningur: Hagnaður/tap, EBITDA, brúttóframlegð\n"
+        "- Efnahagsreikningur: Eiginfjárhlutfall, skuldsetning, lausafjárhlutfall\n"
+        "- Sjóðstreymisyfirlit: Rekstrarsjóðstreymi, fjárfestingar\n\n"
+        "**Samanburður:**\n"
+        "- Þróun yfir 3-5 ár\n"
+        "- Iðnaðarviðmið (þegar tiltækt)\n\n"
+        "Sendu mér ársreikninginn (texta eða PDF) og ég byrja greiningu."
+    ),
+    "lög": (
+        "**Lögfræðileg leit með Alvitur**\n\n"
+        "Ég hef aðgang að eftirfarandi íslenskum lagasöfnum:\n\n"
+        "- **Lög og reglugerðir** frá Alþingi (uppfærð reglulega)\n"
+        "- **Dómar og úrskurðir** frá Hæstarétti og Landsrétti\n"
+        "- **Skattalög** — lög um tekjuskatt, virðisaukaskatt, tryggingagjald\n"
+        "- **Hlutafélagalög** og lög um einkahlutafélög\n"
+        "- **Reikningsskilalög** og IFRS staðla (með glósum)\n\n"
+        "Hvað viltu leita að? Gefðu mér lagaheiti, efnisatriði, eða spurning "
+        "og ég finn viðeigandi lagaákvæði."
+    ),
+    "reglu": (
+        "**Regluverk og reglugerðir**\n\n"
+        "Alvitur er sérþjálfaður til að fara yfir íslenskt regluverk:\n\n"
+        "- **ESB-reglugerðir** (GDPR, AML, DORA) með íslenskum útfærslum\n"
+        "- **Skattalegar reglur** og framkvæmd þeirra\n"
+        "- **Fjármálaeftirlitsreglur** (FME leiðbeiningar)\n"
+        "- **Samkeppnisreglur** (Samkeppniseftirlitið)\n\n"
+        "Spurðu um sérstakt regluverk eða ferli og ég útskýri kröfurnar "
+        "á einföldu íslensku með tilvísun í heimildir."
+    ),
+    "verð": (
+        "**Alvitur áskriftarleikar**\n\n"
+        "| Pakki | Verð | Hámörk |\n"
+        "|---|---|---|\n"
+        "| 🥉 Brons | Frítt | 5 fyrirspurnir/mán |\n"
+        "| 🥈 Silfur | 4.990 kr/mán | 250 fyrirspurnir |\n"
+        "| 🥇 Gull | 14.990 kr/mán | 3-5 notendur, eigið tenant_id |\n"
+        "| 💎 Platína | Sérsett | Engin hámörk, API aðgangur |\n\n"
+        "**Öll gögn geymd á Íslandi** — fullnægjandi GDPR og lög um "
+        "persónuvernd nr. 90/2018.\n\n"
+        "Til að hefja áskrift eða fá frekari upplýsingar, "
+        "hafðu samband: info@alvitur.is"
+    ),
+    "áskrift": (
+        "**Alvitur áskriftarleikar**\n\n"
+        "| Pakki | Verð | Hámörk |\n"
+        "|---|---|---|\n"
+        "| 🥉 Brons | Frítt | 5 fyrirspurnir/mán |\n"
+        "| 🥈 Silfur | 4.990 kr/mán | 250 fyrirspurnir |\n"
+        "| 🥇 Gull | 14.990 kr/mán | 3-5 notendur, eigið tenant_id |\n"
+        "| 💎 Platína | Sérsett | Engin hámörk, API aðgangur |\n\n"
+        "Hafðu samband: info@alvitur.is"
+    ),
+    "samning": (
+        "**Samningsgreining með Alvitur**\n\n"
+        "Ég get greint og borið saman samninga:\n\n"
+        "- **Kaupsamningar** — skilyrði, afhendingarskilyrði, ábyrgðarákvæði\n"
+        "- **Þjónustusamningar** — greiðsluskilmálar, uppsagnarskilyrði\n"
+        "- **Leigusamningar** — verð, gildistími, endurnýjunarmöguleikar\n"
+        "- **NDA** — gildissvið, undanþágur, brot\n\n"
+        "Límdu samningsefnið inn eða hladdu upp PDF skjali til greiningar."
+    ),
+    "fjármál": (
+        "**Fjárhagsleg greining með Alvitur**\n\n"
+        "Ég er sérþjálfaður í fjárhagslegri greiningu:\n\n"
+        "- **KPI greining** — reikna og túlka lykilárangursmælikvarða\n"
+        "- **Hlutfallsgreining** — lausafjár-, skuldsettingar- og arðsemishlutföll\n"
+        "- **Þróunargreining** — yfir 3-5 ára tímabil\n"
+        "- **Iðnaðarsamanburður** — þegar viðmiðunargildi eru tiltæk\n\n"
+        "Sendu mér tölurnar eða skjalið og ég set upp greiningu."
+    ),
+}
+
+# Sjálfgefið svar ef ekkert lykilorð passar
+SJÁLFGEFIÐ_SVAR = (
+    "Ég er **Alvitur** — íslenskur gervigreindaraðstoðarmaður sérþjálfaður "
+    "í skjalagreiningu og lagalegri rannsókn.\n\n"
+    "Ég skil íslenskt fagtungumál og get aðstoðað þig með:\n\n"
+    "- 📄 **Skjalagreining** — ársreikningar, samningar, skattskjöl\n"
+    "- ⚖️ **Lögfræðileg leit** — lög, reglugerðir, dómar\n"
+    "- 📊 **Fjárhagsleg greining** — KPI, samanburður, þróunargreining\n"
+    "- 📝 **Skýrslugerð** — minnisblöð, samantektir, útdráttar\n\n"
+    "Spurðu mig um eitthvað eða sendu mér skjal til greiningar. "
+    "Ég er hér til að aðstoða!"
+)
+
+
+def velja_mock_svar(skilabus: str) -> str:
+    """
+    Velur viðeigandi mock svar á grundvelli lykilorða í skilaboðum.
+    Þetta fall er EINUNGIS notað í Fasa 1.
+    [FASI-2]: Skipta þessu falli út fyrir MimirCoreV5.process_message()
+    """
+    skilabus_litlar = skilabus.lower()
+    for lykilord, svar in MOCK_SVÖR.items():
+        if lykilord in skilabus_litlar:
+            return svar
+    return SJÁLFGEFIÐ_SVAR
+
+
+async def fá_svar(skilabus: str, user_id: str) -> str:
+    """
+    Aðalfall sem sækir svar við skilaboðum notanda.
+    Fasi 1: Mock svör með 1-2 sekúndna töf.
+
+    [FASI-2] UPPFÆRSLA:
+    Skipta þessum kóða út:
+    ┌──────────────────────────────────────────────────────────┐
+    │  # Fjarlægja þessar rowr:                              │
+    │  await asyncio.sleep(random.uniform(1.0, 2.0))          │
+    │  return velja_mock_svar(skilabus)                       │
+    │                                                          │
+    │  # Bæta við þessum:                                     │
+    │  from core.agent_core_v5 import MimirCoreV5            │
+    │  _mimir = MimirCoreV5()  # Einu sinni við ræsingu      │
+    │                                                          │
+    │  loop = asyncio.get_event_loop()                         │
+    │  return await loop.run_in_executor(                      │
+    │      None,                                               │
+    │      _mimir.process_message,                            │
+    │      skilabus,                                           │
+    │      int(user_id) if user_id.isdigit() else 0,         │
+    │  )                                                       │
+    └──────────────────────────────────────────────────────────┘
+    """
+    # [FASI-1] Mock töf — líkir eftir raunverulegri AI vinnslu
+    tof = random.uniform(1.0, 2.0)
+    await asyncio.sleep(tof)
+    return velja_mock_svar(skilabus)
+
+
+# ─── Shared Styles & Components ───────────────────────────────────────────────
+
+SHARED_HEAD = """
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Alvitur – Traust og örugg íslensk gervigreind fyrir lögfræði, fjármál og stjórnsýslu. Við finnum frávik og samhengi á sekúndubrotum í lokuðu Zero-Data umhverfi.">
+<meta property="og:title" content="Alvitur – Við greinum gögnin sem skipta máli.">
+<meta property="og:description" content="Sérþjálfað gervigreindarkerfi fyrir íslenskar fagstofur. Greindu íslensk lög, samninga og ársreikninga á sekúndum.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://alvitur.is">
+<meta property="og:locale" content="is_IS">
+<meta property="og:site_name" content="Alvitur">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Alvitur — Íslensk gervigreind">
+<meta name="twitter:description" content="Sérþjálfað gervigreindarkerfi fyrir endurskoðendur, lögfræðistofur og fjármálafyrirtæki.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&display=swap" rel="stylesheet">
+"""
+
+SHARED_STYLES = """
+<style>
+  /* ─── Reset & Base ─────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:              #080B12;
+    --bg-elevated:     #0F1623;
+    --bg-card:         #111827;
+    --bg-card-hover:   #1a2436;
+    --text-primary:    #F1F5F9;
+    --text-secondary:  #94A3B8;
+    --text-muted:      #64748B;
+    --accent:          #6366F1;
+    --accent-light:    #818CF8;
+    --accent-glow:     rgba(99, 102, 241, 0.15);
+    --accent-glow-strong: rgba(99, 102, 241, 0.25);
+    --border:          rgba(148, 163, 184, 0.1);
+    --border-strong:   rgba(148, 163, 184, 0.2);
+    --green:           #34D399;
+    --green-bg:        rgba(52, 211, 153, 0.1);
+    --green-border:    rgba(52, 211, 153, 0.2);
+    --font-display:    'Cabinet Grotesk', 'Inter', system-ui, sans-serif;
+    --font-body:       'Inter', system-ui, sans-serif;
+    --font-mono:       'JetBrains Mono', monospace;
+    --radius-sm:       0.375rem;
+    --radius-md:       0.5rem;
+    --radius-lg:       0.75rem;
+    --radius-xl:       1rem;
+    --transition:      180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background: var(--bg);
+  }
+
+  ::selection {
+    background: var(--accent-glow-strong);
+    color: var(--text-primary);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  img, picture, video, svg { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; text-decoration: none; }
+  button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
+  h1, h2, h3, h4, h5, h6 { text-wrap: balance; line-height: 1.15; }
+  p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
+
+  /* ─── Skip Link ────────────────────────────── */
+  .skip-link {
+    position: absolute;
+    top: -100%;
+    left: 1rem;
+    z-index: 100;
+    padding: 0.75rem 1.5rem;
+    background: var(--accent);
+    color: white;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .skip-link:focus {
+    top: 1rem;
+  }
+
+  /* ─── Container ────────────────────────────── */
+  .container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  /* ─── Nav ───────────────────────────────────── */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(8, 11, 18, 0.85);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    transition: box-shadow var(--transition);
+  }
+  .nav.scrolled {
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 4rem;
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .nav-logo svg {
+    width: 28px;
+    height: 28px;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .nav-link {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: color var(--transition);
+  }
+  .nav-link:hover { color: var(--text-primary); }
+
+  /* Sprint 19 hotfix: Telegram hraðhnappur í navbar */
+  .nav-telegram-btn {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-md);
+  }
+  .nav-telegram-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* ─── Buttons ──────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 0 0 0 var(--accent-glow);
+  }
+  .btn-primary:hover {
+    background: var(--accent-light);
+    box-shadow: 0 0 24px var(--accent-glow-strong);
+    transform: translateY(-1px);
+  }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+    background: rgba(255,255,255,0.03);
+  }
+  .btn-lg {
+    padding: 0.875rem 1.75rem;
+    font-size: 1rem;
+  }
+
+  /* ─── Hero ─────────────────────────────────── */
+  /* Sprint 19 hotfix: þéttara hero padding — meira above-the-fold */
+  .hero {
+    position: relative;
+    padding: clamp(3.5rem, 8vw, 7rem) 0 clamp(2.5rem, 5vw, 5rem);
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 600px;
+    background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .hero-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  /* Sprint 19 hotfix: smækkuð status pilla — ýtir minna innihaldi niður */
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    border-radius: var(--radius-xl);
+    letter-spacing: 0.03em;
+  }
+  .hero-badge-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+  }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+  }
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--accent-light), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-sub {
+    font-size: clamp(1rem, 1.5vw, 1.25rem);
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto 2.5rem;
+    line-height: 1.7;
+  }
+  .hero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  /* ─── Sections ─────────────────────────────── */
+  section {
+    padding: clamp(4rem, 8vw, 7rem) 0;
+  }
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--accent-light);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+  }
+  .section-desc {
+    font-size: 1.0625rem;
+    color: var(--text-secondary);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+  .section-header {
+    text-align: center;
+    margin-bottom: clamp(3rem, 5vw, 4rem);
+  }
+  .section-header .section-desc {
+    margin: 0 auto;
+  }
+
+  /* ─── Glass Cards ──────────────────────────── */
+  .glass-card {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.8), rgba(15, 22, 35, 0.6));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 2rem;
+    transition: all var(--transition);
+    backdrop-filter: blur(8px);
+  }
+  .glass-card:hover {
+    border-color: var(--border-strong);
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.9), rgba(15, 22, 35, 0.7));
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+
+  /* ─── Trust Section ────────────────────────── */
+  .trust-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+  .trust-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-glow);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-lg);
+    margin-bottom: 1.25rem;
+    color: var(--accent-light);
+  }
+  .trust-title {
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .trust-desc {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* ─── Features Section ─────────────────────── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+  .feature-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .feature-card.featured {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: center;
+  }
+  .feature-number {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+    font-weight: 500;
+  }
+  .feature-title {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .feature-desc {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  .feature-visual {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    min-height: 200px;
+    background: rgba(99, 102, 241, 0.03);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(99, 102, 241, 0.08);
+  }
+  .code-block {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.8;
+    text-align: left;
+    white-space: pre;
+  }
+  .code-block .kw { color: var(--accent-light); }
+  .code-block .fn { color: var(--green); }
+  .code-block .str { color: #F59E0B; }
+  .code-block .cm { color: var(--text-muted); }
+
+  /* ─── Problem/Solution ─────────────────────── */
+  .problem-section {
+    background: linear-gradient(180deg, transparent, rgba(99, 102, 241, 0.03), transparent);
+  }
+  .ps-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+    align-items: start;
+  }
+  .ps-card {
+    padding: 2.5rem;
+    border-radius: var(--radius-xl);
+  }
+  .ps-card.problem {
+    background: rgba(239, 68, 68, 0.03);
+    border: 1px solid rgba(239, 68, 68, 0.1);
+  }
+  .ps-card.solution {
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+  }
+  .ps-card h3 {
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .ps-card.problem h3 { color: #F87171; }
+  .ps-card.solution h3 { color: var(--accent-light); }
+  .ps-card p {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+  .ps-list {
+    list-style: none;
+    padding: 0;
+  }
+  .ps-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+  }
+  .ps-list li svg {
+    flex-shrink: 0;
+    margin-top: 0.2rem;
+  }
+
+  /* ─── Pricing ──────────────────────────────── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+  .pricing-card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(17, 24, 39, 0.8), rgba(15, 22, 35, 0.5));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 2rem;
+    transition: all var(--transition);
+  }
+  .pricing-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+  .pricing-card.popular {
+    border-color: var(--accent);
+    box-shadow: 0 0 40px var(--accent-glow);
+  }
+  .pricing-card.popular::before {
+    content: 'Vinsælast';
+    position: absolute;
+    top: -0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.25rem 1rem;
+    background: var(--accent);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--radius-xl);
+    white-space: nowrap;
+  }
+  .pricing-medal {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .pricing-name {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+  .pricing-target {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+  }
+  .pricing-price {
+    margin-bottom: 1.5rem;
+  }
+  .pricing-amount {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .pricing-period {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .pricing-features {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+  .pricing-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .pricing-features li svg {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    color: var(--accent-light);
+  }
+  .pricing-cta {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* ─── C) Dæmisögur (Testimonials) ─────────────────────── */
+  .testimonials-section {
+    background: linear-gradient(180deg, transparent, rgba(99, 102, 241, 0.02), transparent);
+  }
+  .testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+  .testimonial-card {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.8), rgba(15, 22, 35, 0.6));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 2rem;
+    position: relative;
+    transition: all var(--transition);
+  }
+  .testimonial-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+  .testimonial-quote {
+    font-size: 2rem;
+    color: var(--accent);
+    opacity: 0.4;
+    line-height: 1;
+    margin-bottom: 1rem;
+    font-family: Georgia, serif;
+  }
+  .testimonial-text {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+  }
+  .testimonial-author {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .testimonial-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-glow);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--accent-light);
+    flex-shrink: 0;
+    font-family: var(--font-display);
+  }
+  .testimonial-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.125rem;
+  }
+  .testimonial-role {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .testimonial-stars {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 1rem;
+  }
+  .testimonial-stars svg {
+    width: 14px;
+    height: 14px;
+    color: #F59E0B;
+    fill: #F59E0B;
+  }
+
+  /* ─── CTA Section ──────────────────────────── */
+  .cta-section {
+    text-align: center;
+    position: relative;
+  }
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-section .section-desc {
+    margin: 0 auto 2rem;
+  }
+
+  /* ─── Footer ───────────────────────────────── */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 3rem 0 2rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+  .footer-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+  }
+  .footer-logo {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .footer-links {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .footer-links a {
+    color: var(--text-muted);
+    transition: color var(--transition);
+  }
+  .footer-links a:hover { color: var(--text-secondary); }
+  .footer-legal {
+    color: var(--text-muted);
+    line-height: 1.8;
+  }
+  .footer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--green);
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    border-radius: var(--radius-xl);
+  }
+
+  /* ─── Beta Kassi ──────────────────────────── */
+  .beta-kassi {
+    margin: 0 auto 0;
+    padding: clamp(1.25rem, 3vw, 2rem) 0;
+  }
+  /* Sprint 19 hotfix: fágaður Beta kassi — mildara, premium dökkt útlit */
+  .beta-kassi-innði {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(20, 184, 166, 0.03));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-xl);
+    padding: clamp(1.25rem, 3vw, 1.75rem) clamp(1.25rem, 3vw, 2rem);
+    position: relative;
+    overflow: hidden;
+  }
+  .beta-kassi-innði::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(99,102,241,0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  /* Sprint 19 hotfix: mildari beta-merki litir */
+  .beta-kassi-merki {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 0.875rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .beta-kassi-merki-dot {
+    width: 5px;
+    height: 5px;
+    background: var(--accent-light);
+    border-radius: 50%;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  .beta-kassi-texti {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    margin-bottom: 1.25rem;
+    max-width: 72ch;
+  }
+  .beta-kassi-hnappur {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, #6366F1, #14B8A6);
+    border-radius: var(--radius-md);
+    transition: all var(--transition);
+    box-shadow: 0 0 0 0 rgba(99,102,241,0.3);
+    white-space: nowrap;
+  }
+  .beta-kassi-hnappur:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 28px rgba(99,102,241,0.35);
+    opacity: 0.93;
+  }
+  @media (max-width: 640px) {
+    .beta-kassi-hnappur {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  /* ─── Separator ────────────────────────────── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    margin: 0;
+  }
+
+  /* ─── Animations ───────────────────────────── */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  }
+  .fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ─── Mobile ───────────────────────────────── */
+  @media (max-width: 768px) {
+    .trust-grid { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
+    .feature-card.featured {
+      grid-column: span 1;
+      grid-template-columns: 1fr;
+    }
+    .ps-grid { grid-template-columns: 1fr; }
+    .pricing-grid {
+      grid-template-columns: 1fr;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .testimonials-grid { grid-template-columns: 1fr; }
+    .nav-link.desktop-only { display: none; }
+    .hero h1 { font-size: clamp(2rem, 7vw, 2.5rem); }
+    .container { padding: 0 1rem; }
+    .hero-actions { flex-direction: column; align-items: center; }
+  }
+
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+    .features-grid { grid-template-columns: 1fr; }
+    .feature-card.featured {
+      grid-column: span 1;
+      grid-template-columns: 1fr;
+    }
+    .testimonials-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ─── Mobile nav menu ──────────────────────── */
+  .mobile-menu-btn {
+    display: none;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+  }
+  /* Sprint 19 hotfix: mobile nav — Telegram hnappur sýnilegur, textatenglar í valmynd */
+  @media (max-width: 768px) {
+    .mobile-menu-btn { display: flex; }
+    .nav-links {
+      display: none;
+      position: absolute;
+      top: 4rem;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      background: rgba(8, 11, 18, 0.97);
+      backdrop-filter: blur(16px);
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
+    }
+    .nav-links.open { display: flex; }
+    .nav-links .nav-link,
+    .nav-links .btn {
+      width: 100%;
+      text-align: center;
+      padding: 0.75rem 1rem;
+    }
+    /* Telegram hraðhnappur alltaf sýnilegur á mobile */
+    .nav-telegram-btn {
+      padding: 0.35rem 0.7rem;
+      font-size: 0.75rem;
+      order: 2;
+    }
+    .mobile-menu-btn {
+      order: 3;
+    }
+    /* Þéttara hero á mobile */
+    .hero {
+      padding: 2rem 0 1.5rem;
+    }
+    .hero-badge {
+      font-size: 0.625rem;
+      padding: 0.2rem 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .hero h1 {
+      margin-bottom: 1rem;
+    }
+    .hero-sub {
+      margin-bottom: 1.5rem;
+    }
+  }
+
+  /* ─── Drag-and-Drop svæði — Sprint 20 V5.1 ─── */
+  .dnd-section {
+    padding: 2rem 0;
+  }
+  .dnd-zone {
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius-xl);
+    padding: clamp(2.5rem, 6vw, 4rem) clamp(1.5rem, 4vw, 3rem);
+    text-align: center;
+    background: rgba(99, 102, 241, 0.03);
+    transition: border-color var(--transition), background var(--transition);
+    cursor: default;
+    user-select: none;
+    position: relative;
+  }
+  .dnd-zone::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-xl);
+    background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .dnd-icon {
+    color: var(--accent-light);
+    opacity: 0.6;
+    margin-bottom: 1.25rem;
+  }
+  .dnd-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .dnd-sub {
+    font-size: 0.9375rem;
+    color: var(--text-muted);
+    max-width: 480px;
+    margin: 0 auto 1.25rem;
+    line-height: 1.6;
+  }
+  .dnd-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  @media (max-width: 768px) {
+    .dnd-zone { padding: 2rem 1rem; }
+    .dnd-title { font-size: 1.0625rem; }
+  }
+
+  /* ─── Legal page styles — Sprint 21 ─────────── */
+  .legal-date {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-style: italic;
+  }
+  .subpage-card h2 {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 2rem 0 0.625rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .subpage-card h2:first-of-type { border-top: none; margin-top: 1.5rem; }
+  .subpage-card p { color: var(--text-secondary); line-height: 1.75; margin-bottom: 1rem; }
+  .subpage-card a { color: var(--accent-light); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ─── Subpage styles ───────────────────────── */
+  .subpage-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    text-align: center;
+    padding: 2rem;
+  }
+  .subpage-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 3rem;
+    max-width: 500px;
+    width: 100%;
+  }
+  .subpage-card h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .subpage-card p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    line-height: 1.7;
+  }
+  .input-field {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    margin-bottom: 0.75rem;
+    transition: border-color var(--transition);
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .input-field::placeholder { color: var(--text-muted); }
+  .checkout-summary {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    text-align: left;
+  }
+  .checkout-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9375rem;
+    margin-bottom: 0.5rem;
+  }
+  .checkout-row .label { color: var(--text-secondary); }
+  .checkout-row .value { color: var(--text-primary); font-weight: 600; }
+  .checkout-total {
+    border-top: 1px solid var(--border);
+    padding-top: 0.75rem;
+    margin-top: 0.75rem;
+    font-size: 1.0625rem;
+    font-weight: 700;
+  }
+  .success-check {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1.5rem;
+    background: var(--green-bg);
+    border: 2px solid var(--green-border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--green);
+  }
+
+  /* ─── A) Web Chat stílar ─────────────────────── */
+  /* Notuð á /minarsidur síðunni */
+  .chat-page body {
+    overflow: hidden;
+  }
+  .chat-haus {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: 3.75rem;
+    background: rgba(8, 11, 18, 0.92);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 1.25rem;
+    gap: 0.75rem;
+  }
+  .chat-til-baka {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .chat-til-baka:hover {
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.05);
+  }
+  .chat-aðskilir {
+    width: 1px;
+    height: 1.25rem;
+    background: var(--border-strong);
+    flex-shrink: 0;
+  }
+  .chat-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    font-size: 1.0625rem;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    flex: 1;
+  }
+  .chat-merki {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chat-merki-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: þreifa 2s ease-in-out infinite;
+  }
+  @keyframes þreifa {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+  .chat-skipulag {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    padding-top: 3.75rem;
+  }
+  .chat-saga {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem 0;
+    scroll-behavior: smooth;
+  }
+  .chat-saga::-webkit-scrollbar { width: 6px; }
+  .chat-saga::-webkit-scrollbar-track { background: transparent; }
+  .chat-saga::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 3px;
+  }
+  .chat-innri {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .boð-lína {
+    display: flex;
+    gap: 0.75rem;
+    animation: renna-inn 0.25s ease-out;
+  }
+  @keyframes renna-inn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .boð-lína.ai-boð { justify-content: flex-start; }
+  .boð-lína.ai-boð .boð-bubble {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius-lg);
+    padding: 0.875rem 1rem;
+    max-width: 80%;
+    color: var(--text-primary);
+  }
+  .boð-lína.notenda-boð { justify-content: flex-end; }
+  .boð-lína.notenda-boð .boð-bubble {
+    background: #3730A3;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius-lg) 0 var(--radius-lg) var(--radius-lg);
+    padding: 0.875rem 1rem;
+    max-width: 80%;
+    color: white;
+    word-break: break-word;
+  }
+  .boð-merki {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .ai-merki {
+    background: linear-gradient(135deg, var(--accent), #7c3aed);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .boð-tími {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    margin-top: 0.375rem;
+    display: block;
+  }
+  .ai-boð .boð-tími { text-align: left; }
+  .notenda-boð .boð-tími { text-align: right; }
+  .boð-texti strong { font-weight: 600; }
+  .boð-texti em { font-style: italic; color: var(--text-secondary); }
+  .boð-texti code {
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+    background: rgba(255,255,255,0.08);
+    padding: 0.125em 0.375em;
+    border-radius: 3px;
+  }
+  .boð-texti pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.875rem;
+    overflow-x: auto;
+    margin: 0.625rem 0;
+  }
+  .boð-texti pre code { background: none; padding: 0; font-size: 0.8125em; }
+  .boð-texti ul, .boð-texti ol {
+    padding-left: 1.375rem;
+    margin: 0.375rem 0;
+  }
+  .boð-texti li { margin: 0.25rem 0; }
+  .boð-texti a { color: var(--accent-light); text-decoration: underline; text-underline-offset: 2px; }
+  .boð-texti p { margin: 0.375rem 0; }
+  .boð-texti p:first-child { margin-top: 0; }
+  .boð-texti p:last-child { margin-bottom: 0; }
+  .boð-texti table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75rem 0;
+    font-size: 0.875em;
+  }
+  .boð-texti th, .boð-texti td {
+    border: 1px solid var(--border-strong);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+  }
+  .boð-texti th {
+    background: rgba(255,255,255,0.05);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .boð-texti tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  .hladning-rowr {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.375rem 0;
+    min-height: 1.5rem;
+  }
+  .hladning-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: bopp 1.2s ease-in-out infinite;
+  }
+  .hladning-dot:nth-child(2) { animation-delay: 0.2s; }
+  .hladning-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bopp {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30%            { transform: translateY(-8px); opacity: 1; background: var(--accent-light); }
+  }
+  .inntak-sviði {
+    flex-shrink: 0;
+    background: rgba(8, 11, 18, 0.96);
+    border-top: 1px solid var(--border);
+    padding: 0.875rem 1.25rem 1rem;
+  }
+  .inntak-innri {
+    max-width: 800px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .inntak-rowr {
+    display: flex;
+    gap: 0.625rem;
+    align-items: flex-end;
+  }
+  .inntak-skrá-hnappurinn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.5;
+    transition: all var(--transition);
+  }
+  .inntak-þekja { flex: 1; position: relative; }
+  .inntak-textarea {
+    width: 100%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 0.625rem 0.875rem;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    resize: none;
+    min-height: 40px;
+    max-height: 200px;
+    overflow-y: auto;
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+  .inntak-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .inntak-textarea::placeholder { color: var(--text-muted); }
+  .inntak-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+  .inntak-senda-hnappurinn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    border-radius: var(--radius-md);
+    color: white;
+    cursor: pointer;
+    border: none;
+    transition: all var(--transition);
+  }
+  .inntak-senda-hnappurinn:hover:not(:disabled) {
+    background: var(--accent-light);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px var(--accent-glow-strong);
+  }
+  .inntak-senda-hnappurinn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .inntak-leiðbeiningar {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  @media (max-width: 640px) {
+    .chat-innri { padding: 0 0.75rem; }
+    .inntak-sviði { padding: 0.75rem 0.75rem 0.875rem; }
+    .boð-lína.ai-boð .boð-bubble,
+    .boð-lína.notenda-boð .boð-bubble { max-width: 92%; }
+    .chat-til-baka span { display: none; }
+    .chat-merki { display: none; }
+  }
+
+  /* Sprint 28: K4/K5 — Mobile polish for intake + results */
+  @media (max-width: 640px) {
+    /* Intake area */
+    .intake-section { padding: 1.5rem 1rem 2rem; }
+    .tier-toggle { flex-direction: column; gap: .375rem; }
+    .tier-btn { padding: .7rem 1rem; font-size: .875rem; }
+    .input-wrap { border-radius: .75rem; }
+    .textarea-area { padding: .875rem 1rem .75rem; }
+    .intake-textarea { font-size: 1rem; min-height: 5rem; }
+    .input-toolbar { padding: .625rem 1rem; gap: .5rem; flex-wrap: wrap; }
+    .attach-btn { font-size: .8125rem; padding: .4rem .75rem; }
+    .file-hint { display: none; }
+    .submit-row { padding: .625rem 1rem .875rem; }
+    .greina-btn { width: 100%; padding: .7rem 1rem; font-size: .9375rem; }
+    .vault-strip { font-size: .8125rem; padding: .625rem .875rem; }
+    /* Results on mobile */
+    #v7-results { font-size: .875rem; }
+    #v7-results > div { padding: .75rem .875rem; border-radius: .625rem; }
+    #v7-status { font-size: .8125rem; padding: .625rem .875rem; }
+    /* Section header */
+    .section-label { font-size: .625rem; }
+    .section-title { font-size: 1.375rem; }
+    .section-desc { font-size: .875rem; }
+    /* Trust strip */
+    .trust-grid { gap: .75rem; }
+    .glass-card { padding: 1.25rem; }
+    .trust-title { font-size: .9375rem; }
+    .trust-desc { font-size: .8125rem; }
+  }
+</style>
+"""
+
+# ─── SVG Logo ─────────────────────────────────────────────────────────────────
+SVG_LOGO = '''<svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Alvitur logo">
+  <path d="M14 2L4 24h6l1.5-4h5l1.5 4h6L14 2zm0 8l2.5 7h-5L14 10z" fill="currentColor" opacity="0.9"/>
+  <circle cx="14" cy="7" r="2.5" fill="#6366F1"/>
+</svg>'''
+
+# SVG logo fyrir chat haus (hexagon útgáfa)
+SVG_LOGO_CHAT = '''<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width:24px;height:24px;">
+  <path d="M16 2L28.7 9.5V24.5L16 32L3.3 24.5V9.5L16 2Z"
+        fill="rgba(99,102,241,0.15)"
+        stroke="#6366F1"
+        stroke-width="1.5"/>
+  <path d="M11 22L16 10L21 22M13 19H19"
+        stroke="#818CF8"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>'''
+
+# ─── Check SVG ────────────────────────────────────────────────────────────────
+CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+ACCENT_CHECK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="#818CF8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+# ─── Nav Script ───────────────────────────────────────────────────────────────
+NAV_SCRIPT = """
+<script>
+// Scroll-aware nav
+const nav = document.querySelector('.nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 20);
+}, {passive: true});
+
+// Mobile menu
+const menuBtn = document.querySelector('.mobile-menu-btn');
+const navLinks = document.querySelector('.nav-links');
+if (menuBtn) {
+  menuBtn.addEventListener('click', () => {
+    navLinks.classList.toggle('open');
+    const isOpen = navLinks.classList.contains('open');
+    menuBtn.setAttribute('aria-expanded', isOpen);
+    menuBtn.innerHTML = isOpen
+      ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+      : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>';
+  });
+}
+
+// Intersection Observer for fade-in
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+"""
+
+# ─── B) Uppfærð forsíða — breiðari markhópur ─────────────────────────────────
+# Breyttar lýsingar: bætt við lögfræðistofur, fjármálafyrirtæki, ráðgjafar
+
+HTML_PAGE = f"""<!DOCTYPE html>
+<html lang="is">
+<head>
+  <title>Alvitur – Við greinum gögnin sem skipta máli.</title>
+  {SHARED_HEAD}
+  {SHARED_STYLES}
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Fara beint í efni</a>
+
+  <!-- ─── Nav ─────────────────────────────── -->
+  <nav class="nav" role="navigation" aria-label="Aðalvalmynd">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo" aria-label="Alvitur forsíða">
+        {SVG_LOGO}
+        Alvitur<span style="color: var(--text-muted); font-weight: 400">.is</span>
+      </a>
+      <button class="mobile-menu-btn" aria-label="Opna valmynd" aria-expanded="false">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+      <div class="nav-links">
+        <!-- Sprint 19 hotfix: Telegram hraðhnappur aftur í nav + desktop-only textatenglar -->
+        <a href="/oryggi" class="nav-link desktop-only">Öryggi</a>
+        <a href="#features" class="nav-link desktop-only">Eiginleikar</a>
+        <!-- Beta: pricing hidden -->
+      </div></div>
+      </div>
+    </section>
+
+    <!-- Sprint 29: Trust Center Vault extended to PDF/Word/Excel, copy updated Backend hardening S1-S6: Hero — titill + ein lína, enginn hnappur -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="container hero-content">
+        <div class="hero-badge" role="status">
+          <span class="hero-badge-dot" aria-hidden="true"></span>
+          Kerfið er virkt
+        </div>
+        <h1 id="hero-heading">Alvitur &ndash; Við greinum<br><span>gögnin sem skipta máli.</span></h1>
+        <p class="hero-sub">
+          Traust og örugg íslensk gervigreind fyrir lögfræði, fjármál og stjórnsýslu.
+        </p>
+      </div>
+    </section>
+
+    <!-- ─── Beta Upplýsingakassi ──────────── -->
+    <!-- Sprint 17: Öryggis- og UX hotfix — beta fyrirvari og Telegram hlekkur -->
+    <div style="text-align:center;padding:.625rem 1.5rem;font-size:.775rem;color:var(--text-muted,#64748B);border-bottom:1px solid var(--border,rgba(148,163,184,.10));">
+      Alvitur er í prufufasa. Nýjar umbætur birtast reglulega.
+    </div>
+
+    <!-- Sprint 26: Intake v7g + page restructure — polish: neutral msgs, clean copy, toggle spacing -->
+    <div style="max-width:640px;margin:0 auto;padding:0 1.5rem;">
+
+      <!-- Section header — matches trust/features sections -->
+      <div style="margin-bottom:2rem;">
+        <span style="display:inline-flex;align-items:center;gap:.375rem;font-size:.6875rem;font-weight:600;color:var(--accent-light);text-transform:uppercase;letter-spacing:.1em;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.20);border-radius:20px;padding:.25rem .75rem;margin-bottom:1rem;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          Skjalagreining
+        </span>
+        <h2 style="font-family:var(--font-display,'Cabinet Grotesk','Inter',system-ui,sans-serif);font-size:clamp(1.5rem,3vw,2rem);font-weight:700;color:var(--text-primary,#F1F5F9);letter-spacing:-.025em;line-height:1.2;margin-bottom:.5rem;margin-top:.75rem;">Sendu skjal eða spurningu</h2>
+        <p style="font-size:.9375rem;color:var(--text-secondary,#94A3B8);line-height:1.6;">Settu inn skjal, spurðu beint eða sameina hvort tveggja.</p>
+      </div>
+
+      <!-- Tier toggle -->
+      <div id="v7-tog" style="display:flex;background:var(--bg-elevated,#0F1623);border:1px solid var(--border-strong,rgba(148,163,184,.20));border-radius:var(--radius-lg,.75rem);padding:.375rem;gap:.3rem;margin-bottom:1.125rem;">
+        <button id="v7-tb-a" onclick="v7SetTier('a')" type="button"
+          style="flex:1;padding:.65rem 1rem;border-radius:calc(var(--radius-lg,.75rem) - 2px);cursor:pointer;font-size:.8125rem;font-weight:500;text-align:center;transition:all var(--transition,180ms);border:1px solid rgba(99,102,241,.30);background:rgba(99,102,241,.15);color:#c7d2fe;font-family:var(--font-body,'Inter',system-ui);">
+          Almenn greining
+        </button>
+        <button id="v7-tb-b" onclick="v7SetTier('b')" type="button"
+          style="flex:1;padding:.65rem 1rem;border-radius:calc(var(--radius-lg,.75rem) - 2px);cursor:pointer;font-size:.8125rem;font-weight:500;text-align:center;transition:all var(--transition,180ms);border:1px solid transparent;background:transparent;color:var(--text-secondary,#94A3B8);font-family:var(--font-body,'Inter',system-ui);">
+          🔒 Trúnaðargreining
+        </button>
+      </div>
+
+      <!-- Tier description -->
+      <p id="v7-tdesc" style="font-size:.8125rem;color:var(--text-secondary,#94A3B8);margin-bottom:.875rem;min-height:1.3rem;line-height:1.6;transition:color var(--transition,180ms);">
+        Fyrir daglega vinnu, almenn skjöl og skýrar niðurstöður á einfaldan hátt.
+      </p>
+
+      <!-- Vault strip -->
+      <div id="v7-vault" style="display:none;align-items:flex-start;gap:.625rem;background:rgba(52,211,153,.06);border:1px solid var(--green-border,rgba(52,211,153,.20));border-left:3px solid var(--green,#34D399);border-radius:0 var(--radius-md,.5rem) var(--radius-md,.5rem) 0;padding:.75rem 1rem;font-size:.8rem;color:#34D399;margin-bottom:.875rem;line-height:1.55;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        Skjöl eru ekki geymd að lokinni vinnslu — gildir um PDF, Word og Excel.
+      </div>
+
+      <!-- Unified input wrapper -->
+      <div id="v7-wrap" style="background:var(--bg-elevated,#0F1623);border:1px solid var(--border-strong,rgba(148,163,184,.20));border-radius:var(--radius-xl,1rem);overflow:hidden;position:relative;transition:border-color var(--transition,180ms),box-shadow var(--transition,180ms);">
+        <!-- Subtle top accent line -->
+        <div id="v7-accent-line" style="position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(99,102,241,.4),transparent);pointer-events:none;"></div>
+
+        <!-- Textarea -->
+        <div style="padding:1.125rem 1.25rem .875rem;">
+          <textarea id="v7-txt" rows="3"
+            placeholder="Spurðu beint eða lýstu því sem þú leitar að..."
+            style="width:100%;background:transparent;border:none;outline:none;color:var(--text-primary,#F1F5F9);font-size:.9375rem;line-height:1.65;resize:none;font-family:var(--font-body,'Inter',system-ui);min-height:4.5rem;max-height:12rem;overflow-y:auto;"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+            onfocus="v7Focus(true)" onblur="v7Focus(false)"></textarea>
+        </div>
+
+        <div style="height:1px;background:var(--border,rgba(148,163,184,.10));margin:0 1.25rem;"></div>
+
+        <!-- Toolbar -->
+        <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1.25rem;flex-wrap:wrap;">
+          <button onclick="document.getElementById('v7-fi').click()" type="button"
+            style="display:inline-flex;align-items:center;gap:.375rem;font-size:.775rem;font-weight:500;color:var(--text-secondary,#94A3B8);cursor:pointer;background:rgba(148,163,184,.06);border:1px solid var(--border-strong,rgba(148,163,184,.20));border-radius:var(--radius-md,.5rem);padding:.35rem .75rem;transition:all var(--transition,180ms);font-family:var(--font-body,'Inter',system-ui);"
+            onmouseover="this.style.color='var(--text-primary,#F1F5F9)';this.style.background='rgba(148,163,184,.10)'"
+            onmouseout="this.style.color='var(--text-secondary,#94A3B8)';this.style.background='rgba(148,163,184,.06)'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            Hengja við PDF
+          </button>
+          <span id="v7-fname" style="font-size:.75rem;color:var(--text-secondary,#94A3B8);font-style:italic;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+          <span style="font-size:.7rem;color:var(--text-muted,#64748B);margin-left:auto;flex-shrink:0;">Styður PDF, Word og Excel</span>
+          <input type="file" id="v7-fi" accept=".pdf,.docx,.xlsx" style="display:none" onchange="v7FileSel(this.files[0])">
+        </div>
+
+        <div style="height:1px;background:var(--border,rgba(148,163,184,.10));margin:0 1.25rem;"></div>
+
+        <!-- Submit row -->
+        <div style="display:flex;justify-content:flex-end;align-items:center;padding:.75rem 1.25rem 1rem;">
+          <button id="v7-sbtn" onclick="v7Submit()" type="button"
+            style="padding:.575rem 1.75rem;border-radius:var(--radius-md,.5rem);font-size:.875rem;font-weight:600;border:none;cursor:pointer;background:var(--accent,#6366F1);color:#fff;transition:all var(--transition,180ms);letter-spacing:-.01em;font-family:var(--font-body,'Inter',system-ui);position:relative;overflow:hidden;"
+            onmouseover="if(!this.disabled){{this.style.background='var(--accent-light,#818CF8)';this.style.boxShadow='0 4px 20px var(--accent-glow-strong,rgba(99,102,241,.25))';this.style.transform='translateY(-1px)'}}"
+            onmouseout="if(!this.disabled){{this.style.transform='none';this.style.boxShadow='none';v7ResetBtnColor();}}">
+            Greina
+          </button>
+        </div>
+      </div>
+
+      <div id="v7-status" style="display:none;font-size:.8125rem;margin-top:1rem;padding:.75rem 1rem;border-radius:var(--radius-md,.5rem);line-height:1.5;border:1px solid transparent;"></div>
+      <div id="v7-results"></div>
+
+    </div>
+
+    <!-- Sprint 25f: Intake v7 JS -->
+    <script>
+    (function(){{
+    var _t="a",_f=null,_busy=false;
+    function v7SetTier(t){{
+      _t=t;var isB=t==="b";
+      var ta=document.getElementById("v7-tb-a"),tb=document.getElementById("v7-tb-b");
+      // Tier A styles
+      ta.style.background=isB?"transparent":"rgba(99,102,241,.15)";
+      ta.style.color=isB?"var(--text-muted,#64748B)":"#c7d2fe";
+      ta.style.borderColor=isB?"transparent":"rgba(99,102,241,.30)";
+      // Tier B styles
+      tb.style.background=isB?"rgba(52,211,153,.12)":"transparent";
+      tb.style.color=isB?"#6ee7b7":"var(--text-muted,#64748B)";
+      tb.style.borderColor=isB?"rgba(52,211,153,.28)":"transparent";
+      // Vault strip
+      document.getElementById("v7-vault").style.display=isB?"flex":"none";
+      // Tier desc
+      document.getElementById("v7-tdesc").textContent=isB
+        ?"Trúnaðargreining: PDF, Word og Excel. Skjöl eru ekki geymd að lokinni vinnslu."
+        :"Fyrir daglega vinnu, almenn skjöl og skýrar niðurstöður á einfaldan hátt.";
+      // Submit btn color
+      var sb=document.getElementById("v7-sbtn");
+      sb.style.background=isB?"#10b981":"var(--accent,#6366F1)";
+      // Accent line color
+      var al=document.getElementById("v7-accent-line");
+      al.style.background=isB
+        ?"linear-gradient(90deg,transparent,rgba(52,211,153,.4),transparent)"
+        :"linear-gradient(90deg,transparent,rgba(99,102,241,.4),transparent)";
+      v7Clear();
+    }}
+    window.v7SetTier=v7SetTier;
+    function v7ResetBtnColor(){{
+      var sb=document.getElementById("v7-sbtn");
+      sb.style.background=_t==="b"?"#10b981":"var(--accent,#6366F1)";
+    }}
+    window.v7ResetBtnColor=v7ResetBtnColor;
+    function v7Focus(on){{
+      var w=document.getElementById("v7-wrap");
+      if(on){{
+        if(_t==="b"){{
+          w.style.borderColor="rgba(52,211,153,.40)";
+          w.style.boxShadow="0 0 0 3px rgba(52,211,153,.08),0 8px 24px rgba(0,0,0,.25)";
+        }}else{{
+          w.style.borderColor="rgba(99,102,241,.45)";
+          w.style.boxShadow="0 0 0 3px rgba(99,102,241,.08),0 8px 24px rgba(0,0,0,.25)";
+        }}
+      }}else{{
+        w.style.borderColor="var(--border-strong,rgba(148,163,184,.20))";
+        w.style.boxShadow="none";
+      }}
+    }}
+    window.v7Focus=v7Focus;
+    function v7FileSel(f){{
+      if(!f)return;
+      if(!f.name.toLowerCase().endsWith(".pdf")){{
+        v7Stat("Skráin þörf sem PDF. Veldu .pdf skjal.","rgba(148,163,184,.05)","var(--text-secondary,#94A3B8)","rgba(148,163,184,.12)");return;
+      }}
+      if(f.size>20971520){{
+        v7Stat("Skjalið er yfir 20 MB — vinsamlegast minnkaðu eða veldu annað.","rgba(148,163,184,.05)","var(--text-secondary,#94A3B8)","rgba(148,163,184,.12)");return;
+      }}
+      _f=f;
+      var _n=f.name;document.getElementById("v7-fname").textContent=_n.length>26?_n.substring(0,22)+"…"+_n.slice(_n.lastIndexOf(".")):_n;
+      document.getElementById("v7-status").style.display="none";
+    }}
+    window.v7FileSel=v7FileSel;
+    function v7Submit(){{
+      if(_busy)return;
+      var txt=document.getElementById("v7-txt").value.trim();
+      if(!txt&&!_f){{
+        v7Stat("Settu inn skjal eða spurningu til að hefja greiningu.","rgba(148,163,184,.05)","var(--text-secondary,#94A3B8)","rgba(148,163,184,.12)");return;
+      }}
+      _busy=true;
+      document.getElementById("v7-sbtn").disabled=true;
+      v7Stat("Vinnur úr efninu...","rgba(99,102,241,.07)","var(--accent-light,#818CF8)","rgba(99,102,241,.20)");
+      if(_f){{
+        var fd=new FormData();
+        fd.append("file",_f);
+        if(txt)fd.append("query",txt);
+        fetch("/api/analyze-document",{{method:"POST",body:fd,
+          headers:{{"X-Alvitur-Tier":_t==="b"?"vault":"general"}}}}
+        ).then(function(r){{return r.json();}}).then(v7Result).catch(v7Err);
+      }}else{{
+        setTimeout(function(){{v7Result({{found:false,sidur:0}});}},900);
+      }}
+    }}
+    window.v7Submit=v7Submit;
+    function v7Result(d){{
+      _busy=false;
+      document.getElementById("v7-sbtn").disabled=false;
+      if(!d.found){{
+        v7Stat(_f?"Ekki tókst að vinna úr efninu í þtta sinn. Reyndu aftur."
+          :"Textafyrirspurnir eru í þroðun — sendu PDF skjal til að hefja greiningu.",
+          "none","var(--text-muted,#64748B)","var(--border,rgba(148,163,184,.10))");return;
+      }}
+      var bg=_t==="b"?"rgba(52,211,153,.05)":"rgba(99,102,241,.05)";
+      var fc=_t==="b"?"#6ee7b7":"#818CF8";
+      var m="Greining lokið — "+d.sidur+" síður.";
+      if(_t==="b")m+=" Skjal eytt.";
+      v7Stat(m,bg,fc,"var(--border-strong,rgba(148,163,184,.20))");
+      v7Render(d);
+    }}
+    function v7Err(){{
+      _busy=false;
+      document.getElementById("v7-sbtn").disabled=false;
+      v7Stat("Eitthvað fór úr lag. Reyndu aftur eftir augnablik.","rgba(148,163,184,.05)","var(--text-secondary,#94A3B8)","rgba(148,163,184,.12)");
+    }}
+    function v7Stat(msg,bg,col,bc){{
+      var el=document.getElementById("v7-status");
+      el.style.display="block";el.style.background=bg;
+      el.style.color=col;el.style.borderColor=bc||"transparent";
+      el.textContent=msg;
+    }}
+    function v7Clear(){{
+      document.getElementById("v7-status").style.display="none";
+      document.getElementById("v7-results").innerHTML="";
+      _f=null;
+      document.getElementById("v7-fname").textContent="";
+      document.getElementById("v7-txt").value="";
+    }}
+    function v7Esc(s){{return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}}
+    function v7Render(d){{
+      var h="";
+      if(d.summary)h+='<div style="background:var(--bg-elevated,#0F1623);border:1px solid '
+        +'var(--border-strong,rgba(148,163,184,.20));border-radius:var(--radius-lg,.75rem);'
+        +'padding:.875rem 1rem;margin-top:.75rem;font-size:.8rem;'
+        +'color:var(--text-secondary,#94A3B8);line-height:1.75;">'
+        +'<div style="font-size:.62rem;color:var(--text-muted,#64748B);text-transform:uppercase;'
+        +'letter-spacing:.07em;margin-bottom:.3rem;">Samantekt</div>'+v7Esc(d.summary)+'</div>';
+      if(d.citations&&d.citations.length){{
+        h+='<div style="font-size:.62rem;color:var(--text-muted,#64748B);text-transform:uppercase;'
+          +'letter-spacing:.08em;margin:1rem 0 .45rem;">Heimildir í skjali</div>';
+        var bc=_t==="b"?"rgba(52,211,153,.12)":"rgba(99,102,241,.12)";
+        var fc2=_t==="b"?"#6ee7b7":"#c7d2fe";
+        var bl=_t==="b"?"rgba(52,211,153,.4)":"rgba(99,102,241,.4)";
+        d.citations.forEach(function(c){{
+          h+='<div style="background:var(--bg-elevated,#0F1623);border:1px solid '
+            +'var(--border-strong,rgba(148,163,184,.20));border-left:2px solid '+bl+';'
+            +'border-radius:var(--radius-lg,.75rem);padding:.75rem .95rem;margin-bottom:.45rem;">';
+          h+='<div style="display:flex;gap:.35rem;align-items:center;margin-bottom:.25rem;">'
+            +'<span style="font-size:.63rem;font-weight:700;padding:.1rem .38rem;border-radius:3px;'
+            +'background:'+bc+';color:'+fc2+'">Bls. '+c.page+'</span>';
+          if(c.section)h+='<span style="font-size:.7rem;color:var(--text-muted,#64748B);'
+            +'font-style:italic;">'+v7Esc(c.section)+'</span>';
+          h+='</div><div style="font-size:.76rem;color:var(--text-secondary,#94A3B8);'
+            +'line-height:1.65;font-style:italic;">'+v7Esc(c.excerpt)+'</div></div>';
+        }});
+      }}
+      document.getElementById("v7-results").innerHTML=h;
+    }}
+    v7SetTier("a");
+    }})();
+    </script>
+    <style>
+      .citation-card{{background:#111;border:1px solid #222;border-left:3px solid #4f46e5;border-radius:6px;padding:1rem 1.25rem;margin-bottom:.75rem}}
+      .citation-meta{{display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem}}
+      .page-badge{{background:#1e1b4b;color:#a5b4fc;font-size:.75rem;padding:.2rem .6rem;border-radius:4px;font-weight:600}}
+      .cite-sec{{color:#555;font-size:.8rem;font-style:italic}}
+      .citation-excerpt{{color:#bbb;font-size:.875rem;line-height:1.6;margin:0;font-style:italic}}
+      .citations-heading{{font-size:.8rem;color:#555;text-transform:uppercase;letter-spacing:.08em;margin:1.5rem 0 .75rem}}
+      #dnd-zone{{cursor:pointer;transition:border-color .2s}}
+      #dnd-zone:hover{{border-color:#4f46e5}}
+    </style>
+    <script>
+    function handleDrop(e){{
+      e.preventDefault();
+      var f=e.dataTransfer.files[0];
+      if(f) handleFile(f);
+    }}
+    function handleFile(file){{
+      if(!file||!file.name.toLowerCase().endsWith('.pdf')){{
+        showStat('Villa: aðeins PDF skjöl eru samþykkt.','#2a0f0f','#f87171');return;
+      }}
+      if(file.size>10485760){{
+        showStat('Villa: skjal of stórt (hámark 10MB).','#2a0f0f','#f87171');return;
+      }}
+      showStat('Greini skjal...','#1a1a2e','#818cf8');
+      var fd=new FormData();
+      fd.append('file',file);
+      fetch('/api/analyze-document',{{method:'POST',body:fd}})
+        .then(function(r){{return r.json();}})
+        .then(function(d){{
+          if(!d.found){{
+            showStat('Þessar upplýsingar fundust ekki í skjalinu.','#1a1a0f','#fbbf24');
+            document.getElementById('citations-container').innerHTML='<p style="color:#555;font-size:.85rem;margin-top:.5rem">Engin tilvísun fannst í innsendu skjali.</p>';
+            return;
+          }}
+          showStat('Greining lokið — '+d.sidur+' síður.','#0f2a1e','#34d399');
+          renderCits(d.citations);
+        }})
+        .catch(function(){{showStat('Tenging við þjón mistókst.','#2a0f0f','#f87171');}});
+    }}
+    function showStat(msg,bg,col){{
+      var el=document.getElementById('analysis-status');
+      el.style.display='block';el.style.background=bg;el.style.color=col;el.textContent=msg;
+    }}
+    function renderCits(cits){{
+      var c=document.getElementById('citations-container');
+      if(!cits||!cits.length){{c.innerHTML='';return;}}
+      var h='<h3 class="citations-heading">Heimildir í skjali</h3>';
+      for(var i=0;i<cits.length;i++){{
+        var ci=cits[i];
+        h+='<div class="citation-card"><div class="citation-meta"><span class="page-badge">Bls. '+ci.page+'</span>';
+        if(ci.section) h+='<span class="cite-sec">'+ci.section+'</span>';
+        h+='</div><p class="citation-excerpt">'+ci.excerpt+'</p></div>';
+      }}
+      c.innerHTML=h;
+    }}
+    </script>
+
+    <div class="divider"></div>
+
+    <!-- ─── Trust Signals ───────────────────── -->
+    <section id="trust" aria-labelledby="trust-heading">
+      <div class="container">
+        <div class="section-header fade-in">
+          <span class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Öryggi og traust
+          </span>
+          <h2 class="section-title" id="trust-heading">Hannað fyrir íslenskan markað</h2>
+          <p class="section-desc">Gögnin þín fara aldrei til þriðja aðila. Alvitur er byggð á staðbundnum þjónum samkvæmt ströngustu evrópskum reglum.</p>
+        </div>
+        <div class="trust-grid">
+          <div class="glass-card fade-in">
+            <div class="trust-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            </div>
+            <h3 class="trust-title">Zero-Data stefna</h3>
+            <p class="trust-desc">Engin gögn vistuð eftir greiningu. Fyrirspurnir og niðurstöður hverfa úr minni eftir notkun — ekkert safnast upp.</p>
+          </div>
+          <div class="glass-card fade-in">
+            <div class="trust-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <h3 class="trust-title">GDPR &amp; EU AI Act</h3>
+            <p class="trust-desc">Fullt samræmi við persónuverndarlög (GDPR) og nýja reglugerð ESB um gervigreind (EU AI Act). Undirbúið fyrir úttektir.</p>
+          </div>
+          <div class="glass-card fade-in">
+            <div class="trust-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+            </div>
+            <h3 class="trust-title">Einangrað vinnsla</h3>
+            <p class="trust-desc">Greining fer fram í einangruðu umhverfi. Gögn eru ekki döilt með öðrum notendum.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ─── Features ────────────────────────── -->
+    <!-- B) Eiginleikakort uppfærð með lögfræði- og fjármálalýsingum -->
+    <section id="features" aria-labelledby="features-heading" style="opacity:.5;">
+      <div class="container">
+        <div class="section-header fade-in">
+          <span class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Eiginleikar
+          </span>
+          <h2 class="section-title" id="features-heading">Hvað getur Alvitur gert?</h2>
+          <p class="section-desc">Gervigreindarkerfi sem sameinar skjalagreiningu, lagaleit og íslenskan málskilning — sérhæft fyrir íslenskar fagstofur.</p>
+        </div>
+        <div class="features-grid">
+          <!-- Featured card -->
+          <div class="glass-card feature-card featured fade-in">
+            <div>
+              <span class="feature-number">01</span>
+              <h3 class="feature-title">Skjalagreining með gervigreind</h3>
+              <p class="feature-desc">Hladdu upp PDF-, Word- eða Excel-skjölum. Alvitur les, flokkar og dregur saman lykilatriði á sekúndum. Sérstaklega þjálfað á íslenskum ársreikningum, samningum og opinberum skjölum — tilbúið fyrir endurskoðendur, lögfræðistofur og fjármálafyrirtæki.</p>
+            </div>
+            <div class="feature-visual" aria-hidden="true">
+              <div class="code-block"><span class="cm">// Dæmi um fyrirspurn</span>
+<span class="kw">user:</span> <span class="str">"Greindu þennan ársreikning"</span>
+
+<span class="kw">alvitur:</span> <span class="fn">analyzing</span>(doc)
+  → Rekstrartekjur: <span class="str">1.2ma kr</span>
+  → Hagnaður: <span class="str">+12% YoY</span>
+  → Áhættuþættir: <span class="str">3 fundir</span>
+  → <span class="fn">Samantekt tilbúin</span> ✓</div>
+            </div>
+          </div>
+          <!-- Feature 2 -->
+          <div class="glass-card feature-card fade-in">
+            <span class="feature-number">02</span>
+            <h3 class="feature-title">Lögfræðileg leit og samningsgreining</h3>
+            <p class="feature-desc">Lögfræðistofur geta notað Alvitur til að greina samningsákvæði, finna lagastoð og bera saman skjöl. Sparar klukkustundir við áreiðanleikakönnun og samningsrýni.</p>
+          </div>
+          <!-- Feature 3 -->
+          <div class="glass-card feature-card fade-in">
+            <span class="feature-number">03</span>
+            <h3 class="feature-title">Fjárhagsleg greining og KPI</h3>
+            <p class="feature-desc">Fjármálafyrirtæki og ráðgjafar geta fengið ítarlega KPI-greiningu, þróunargreiningu og iðnaðarsamanburð á sekúndum — beint úr ársreikningum og fjárhagslegum skjölum.</p>
+          </div>
+          <!-- Feature 4 -->
+          <div class="glass-card feature-card fade-in">
+            <span class="feature-number">04</span>
+            <h3 class="feature-title">Rauntímaleit í lögum og regluverki</h3>
+            <p class="feature-desc">Leitaðu í íslenskum lögum, reglugerðum og dómum. Alvitur finnur viðeigandi lagagreinar og útskýrir þær á mannamáli — með tilvísun í nákvæmar heimildir.</p>
+          </div>
+          <!-- Feature 5 -->
+          <div class="glass-card feature-card fade-in">
+            <span class="feature-number">05</span>
+            <h3 class="feature-title">Fjölnotendakerfi fyrir teymi</h3>
+            <p class="feature-desc">Deildu greiningum á öruggan hátt með samstarfsfólki. Fleiri samstarfsleiðir eru í þróun.</p>
+          </div>
+          <!-- Feature 6 -->
+          <div class="glass-card feature-card fade-in">
+            <span class="feature-number">06</span>
+            <h3 class="feature-title">API-aðgangur og samþætting</h3>
+            <p class="feature-desc">Platínuáskrift opnar REST API sem hægt er að samþætta beint við bókhaldskerfi, skjalastjórnunarkerfi eða innri verkflæði — fyrir sjálfstæða ráðgjafa og stór fyrirtæki.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ─── Pricing ─────────────────────────── -->
+    <!-- B) Verðkort uppfærð með víðari markhóp í lýsingum -->
+    <section id="pricing" aria-labelledby="pricing-heading" style="display:none" aria-hidden="true">
+      <div class="container">
+        <div class="section-header fade-in">
+          <span class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Verðskrá
+          </span>
+          <h2 class="section-title" id="pricing-heading">Málmapakkar — einfalt og gagnsætt verð</h2>
+          <p class="section-desc">Frá ókeypis prófunaráskrift til Enterprise-lausna. Uppfærðu þegar þarfir þínar vaxa.</p>
+        </div>
+        <div class="pricing-grid fade-in">
+          <!-- Brons -->
+          <div class="pricing-card">
+            <div class="pricing-medal" aria-hidden="true">🥉</div>
+            <div class="pricing-name">Brons</div>
+            <div class="pricing-target">Einstaklingar &amp; prófunaráskrift</div>
+            <div class="pricing-price">
+              <span class="pricing-amount">Frítt</span>
+            </div>
+            <ul class="pricing-features" role="list">
+              <li>{CHECK_SVG} 5 fyrirspurnir á mánuði</li>
+              <li>{CHECK_SVG} Grunnleit í lögum</li>
+              
+              <li>{CHECK_SVG} Íslenskur málskilningur</li>
+            </ul>
+            <!-- Sprint 18: /minarsidur skipt út fyrir Telegram -->
+            <a href="mailto:info@alvitur.is"  target="_blank" rel="noopener noreferrer" class="btn btn-secondary pricing-cta">Byrja ókeypis</a>
+          </div>
+          <!-- Silfur -->
+          <div class="pricing-card">
+            <div class="pricing-medal" aria-hidden="true">🥈</div>
+            <div class="pricing-name">Silfur</div>
+            <div class="pricing-target">Sjálfstæðir ráðgjafar &amp; sérfræðingar</div>
+            <div class="pricing-price">
+              <span class="pricing-amount">4.990 kr</span>
+              <span class="pricing-period"> / mán.</span>
+            </div>
+            <ul class="pricing-features" role="list">
+              <li>{CHECK_SVG} 250 fyrirspurnir á mánuði</li>
+              <li>{CHECK_SVG} Skjalagreining (PDF, DOCX, XLSX)</li>
+              <li>{CHECK_SVG} Framhaldssamtöl og saga</li>
+              <li>{CHECK_SVG} Forgangsþjónusta</li>
+            </ul>
+            <!-- Sprint 18: /minarsidur skipt út fyrir mailto -->
+            <a href="mailto:info@alvitur.is?subject=Alvitur%20Silfur%20áskrift" class="btn btn-secondary pricing-cta">Velja Silfur</a>
+          </div>
+          <!-- Gull -->
+          <div class="pricing-card popular">
+            <div class="pricing-medal" aria-hidden="true">🥇</div>
+            <div class="pricing-name">Gull</div>
+            <div class="pricing-target">Endurskoðendur, lögfræðistofur &amp; teymi</div>
+            <div class="pricing-price">
+              <span class="pricing-amount">14.990 kr</span>
+              <span class="pricing-period"> / mán.</span>
+            </div>
+            <ul class="pricing-features" role="list">
+              <li>{CHECK_SVG} 3–5 notendur</li>
+              <li>{CHECK_SVG} Lokað gagnaherbergi (tenant_id)</li>
+              <li>{CHECK_SVG} Ótakmörkuð skjalagreining</li>
+              <li>{CHECK_SVG} Samstarfstól og deildardrif</li>
+              <li>{CHECK_SVG} Forgangsstuðningur</li>
+            </ul>
+            <!-- Sprint 18: /minarsidur skipt út fyrir mailto -->
+            <a href="mailto:info@alvitur.is?subject=Alvitur%20Gull%20áskrift" class="btn btn-primary pricing-cta">Velja Gull</a>
+          </div>
+          <!-- Platína -->
+          <div class="pricing-card">
+            <div class="pricing-medal" aria-hidden="true">💎</div>
+            <div class="pricing-name">Platína</div>
+            <div class="pricing-target">Fjármálafyrirtæki &amp; stofnanir</div>
+            <div class="pricing-price">
+              <span class="pricing-amount">Sérsniðið</span>
+            </div>
+            <ul class="pricing-features" role="list">
+              <li>{CHECK_SVG} Ótakmarkaðir notendur</li>
+              <li>{CHECK_SVG} REST API-aðgangur</li>
+              <li>{CHECK_SVG} Notkun á afkastareikningi</li>
+              <li>{CHECK_SVG} Sérsniðin samþætting</li>
+              <li>{CHECK_SVG} Sérstakur tengiliður</li>
+            </ul>
+            <a href="mailto:info@alvitur.is?subject=Alvitur%20Plat%C3%ADna%20fyrirspurn" class="btn btn-secondary pricing-cta">Hafa samband</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ─── C) Dæmisögur — "Notendur segja" ───── -->
+    <section class="testimonials-section" aria-labelledby="testimonials-heading">
+      <div class="container">
+        <div class="section-header fade-in">
+          <span class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Notendur segja
+          </span>
+          <h2 class="section-title" id="testimonials-heading">Hvað segja þeir sem nota Alvitur?</h2>
+          <p class="section-desc">Dæmi frá fagfólki sem notar Alvitur í daglegri vinnu — nafnlausar vegna trúnaðar.</p>
+        </div>
+        <div class="testimonials-grid">
+
+          <!-- Dæmisaga 1: Endurskoðandi -->
+          <div class="glass-card testimonial-card fade-in">
+            <div class="testimonial-stars" aria-label="5 af 5 stjörnum">
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            </div>
+            <div class="testimonial-quote" aria-hidden="true">"</div>
+            <p class="testimonial-text">
+              Við erum með ársreikninga frá mörgum viðskiptavinum — oft í mismunandi sniðum. Alvitur les þá alla og gefur mér samanburð á sekúndum. Það sem tók mig tvo daga tekur nú klukkustund.
+            </p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" aria-hidden="true">E</div>
+              <div>
+                <div class="testimonial-name">Nafnlægt</div>
+                <div class="testimonial-role">Endurskoðandi hjá miðlungsstóru endurskoðunarfyrirtæki</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dæmisaga 2: Lögfræðingur -->
+          <div class="glass-card testimonial-card fade-in">
+            <div class="testimonial-stars" aria-label="5 af 5 stjörnum">
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            </div>
+            <div class="testimonial-quote" aria-hidden="true">"</div>
+            <p class="testimonial-text">
+              Við notum Alvitur við áreiðanleikakönnun á samningum. Kerfið skilur íslenskt lagamál á ótrúlegan hátt — fer rétt með samningsákvæðin og gefur upp nákvæmar tilvísanir í lög. Hefur sparað okkur gríðarlegan tíma.
+            </p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" aria-hidden="true">L</div>
+              <div>
+                <div class="testimonial-name">Nafnlægt</div>
+                <div class="testimonial-role">Lögfræðingur hjá íslenskri lögfræðistofu</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dæmisaga 3: Fjármálaráðgjafi -->
+          <div class="glass-card testimonial-card fade-in">
+            <div class="testimonial-stars" aria-label="5 af 5 stjörnum">
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            </div>
+            <div class="testimonial-quote" aria-hidden="true">"</div>
+            <p class="testimonial-text">
+              Sem sjálfstæður fjárhagsráðgjafi vinn ég með mörgum viðskiptavinum í einu. Alvitur hjálpar mér að setja upp fjárhagsgreiningar hraðar og nákvæmar — og trúnaðarmál eru í góðum höndum vegna íslenskrar gagnageymslu.
+            </p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" aria-hidden="true">F</div>
+              <div>
+                <div class="testimonial-name">Nafnlægt</div>
+                <div class="testimonial-role">Sjálfstæður fjárhagsráðgjafi</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ─── CTA Section ─────────────────────── -->
+    <section class="cta-section" aria-labelledby="cta-heading">
+      <div class="container" style="position: relative; z-index: 1;">
+        <div class="fade-in">
+          <span class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+            Tilbúin/n?
+          </span>
+          <h2 class="section-title" id="cta-heading">Prófaðu Alvitur ókeypis í dag</h2>
+          <!-- Sprint 20 v5.3: Einn hnappur í CTA — Hafa samband (Sigvaldi ákvð) -->
+          <p class="section-desc">5 ókeypis fyrirspurnir. Ekkert kreditkort. Engin binding. Prufaðu þjónustuna og byrjaðu strax.</p>
+          <div class="hero-actions" style="margin-top: 2rem;">
+            <a href="mailto:info@alvitur.is" class="btn btn-secondary btn-lg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              Hafa samband
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─── Footer ──────────────────────────── -->
+  <footer class="footer" role="contentinfo">
+    <div class="container footer-inner">
+      <div class="footer-logo">
+        {SVG_LOGO}
+        Alvitur.is
+      </div>
+      <!-- Sprint 18: 'Mínar Síður' hlekkur fjarlægður úr footer -->
+      <div class="footer-links">
+        <a href="#trust">Öryggi</a>
+        <a href="#features">Eiginleikar</a>
+        <a href="#pricing">Verð</a>
+        info@alvitur.is
+      </div>
+      <div class="footer-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Gögn hýst og unnin á Íslandi / innan EES
+      </div>
+      <!-- Sprint 21: Persónuverndarstefna og Skilmálar tenglar bætt við footer -->
+      <div class="footer-legal">
+        © 2026 Orkuskipti ehf · Kt. 510919-0330 · <a href="mailto:info@alvitur.is" style="text-decoration: underline; text-underline-offset: 2px;">info@alvitur.is</a><br>
+        <a href="/personuvernd" style="text-decoration: underline; text-underline-offset: 2px;">Persónuverndarstefna</a>
+        &nbsp;&middot;&nbsp;
+        <a href="/skilmalar" style="text-decoration: underline; text-underline-offset: 2px;">Skilmálar</a>
+      </div>
+    </div>
+  </footer>
+
+  {NAV_SCRIPT}
+</body>
+</html>"""
+
+# ─── A) Web Chat Fasi 1 — /minarsidur [FJARLÆGT Sprint 18] ────────────────────
+# Samþætt úr web_chat_fasi1.py — fullbúið UI með mock svörum
+# Sprint 18: build_minarsidur_page() og /minarsidur route commentuð út — vefspjall hreinað
+# [FASI-2]: Tengja við MimirCoreV5.process_message() í stað mock falls
+# def build_minarsidur_page() -> str:
+#     """
+#     Smíðar HTML síðuna fyrir vefspjallið á /minarsidur.
+#     Notar sömu CSS breytur og forsíðan (dark mode Enterprise hönnun).
+#     Fasi 1: Mock svör, engin JWT auðkenning, engin V5 tenging.
+#     """
+#     return f"""<!DOCTYPE html>
+# <html lang="is">
+# <head>
+#   <meta charset="UTF-8">
+#   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+#   <meta name="description" content="Alvitur — Íslenskur AI aðstoðarmaður fyrir skjalagreiningu">
+#   <meta name="robots" content="noindex, nofollow">
+#   <title>Alvitur — Lokað Gagnaherbergi</title>
+#   {SHARED_HEAD}
+#   {SHARED_STYLES}
+#   <style>
+#     /* Yfirskrifa body til fullskjás í spjalli */
+#     body {{
+#       overflow: hidden;
+#       min-height: 100dvh;
+#     }}
+#   </style>
+# </head>
+# <body>
+# 
+#   <!-- Aðgengistengill -->
+#   <a href="#spjall-inntak" class="skip-link">Fara beint í inntak</a>
+# 
+#   <!-- ─── HAUS ─────────────────────────────── -->
+#   <header class="chat-haus" role="banner">
+#     <a href="/" class="chat-til-baka" aria-label="Til baka á alvitur.is forsíðu">
+#       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+#         <path d="M10 12L6 8l4-4"/>
+#       </svg>
+#       <span>Til baka</span>
+#     </a>
+#     <div class="chat-aðskilir" aria-hidden="true"></div>
+#     <div class="chat-logo" aria-label="Alvitur">
+#       {SVG_LOGO_CHAT}
+#       Alvitur
+#     </div>
+#     <div class="chat-merki" role="status" aria-label="Þjónusta virk">
+#       <div class="chat-merki-dot" aria-hidden="true"></div>
+#       Lokað Gagnaherbergi
+#     </div>
+#   </header>
+# 
+#   <!-- ─── AÐALSVÆÐI ────────────────────────── -->
+#   <div class="chat-skipulag">
+# 
+#     <!-- Spjallsaga -->
+#     <main class="chat-saga" id="spjall-saga" role="log" aria-live="polite" aria-label="Spjallsaga" tabindex="0">
+#       <div class="chat-innri" id="spjall-innri">
+# 
+#         <!-- Velkomnarboð (birtist við hleðslu) -->
+#         <div class="boð-lína ai-boð" id="velkomin-boð">
+#           <div class="boð-merki ai-merki" aria-hidden="true">
+#             <svg width="16" height="16" viewBox="0 0 32 32" fill="none">
+#               <path d="M16 2L28.7 9.5V24.5L16 32L3.3 24.5V9.5L16 2Z" fill="rgba(99,102,241,0.3)" stroke="#818CF8" stroke-width="1.5"/>
+#               <path d="M11 22L16 10L21 22M13 19H19" stroke="#818CF8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+#             </svg>
+#           </div>
+#           <div>
+#             <div class="boð-bubble">
+#               <div class="boð-texti" id="velkomin-texti"></div>
+#             </div>
+#             <span class="boð-tími" id="velkomin-timi" aria-label="Tímastimpill"></span>
+#           </div>
+#         </div>
+# 
+#       </div>
+#     </main>
+# 
+#     <!-- Inntakssvæðið -->
+#     <form id="chat-form" class="inntak-sviði" role="region" aria-label="Skilaboðainntak" onsubmit="return false;">
+#       <div class="inntak-innri">
+#         <div class="inntak-rowr">
+#           <!-- Skráarsendir (óvirkur í Fasa 1) -->
+#           <button
+#             class="inntak-skrá-hnappurinn"
+#             disabled
+#             aria-label="Hlaða upp skjali (kemur fljótlega)"
+#             title="Skráarsendir kemur í Fasa 4"
+#           >
+#             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+#               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+#             </svg>
+#           </button>
+# 
+#           <!-- Textasvæðið -->
+#           <div class="inntak-þekja">
+#             <textarea
+#               id="spjall-inntak"
+#               class="inntak-textarea"
+#               placeholder="Skrifaðu spurninguna þína hér..."
+#               rows="1"
+#               aria-label="Spjallinntak"
+#               aria-multiline="true"
+#             ></textarea>
+#           </div>
+# 
+#           <!-- Sendahnappur -->
+#           <button
+#             id="senda-hnappurinn"
+#             class="inntak-senda-hnappurinn"
+#             aria-label="Senda skilaboð"
+#             onclick="if(typeof handleSend==='function')handleSend();"
+#           >
+#             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+#               <path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z" stroke-linecap="round" stroke-linejoin="round"/>
+#             </svg>
+#           </button>
+#         </div>
+#         <p class="inntak-leiðbeiningar">
+#           <kbd>Enter</kbd> sendir · <kbd>Shift+Enter</kbd> = nýlína ·
+#           <span style="color: var(--accent-light)">Fasi 1 — Mock svör</span>
+#         </p>
+#       </div>
+#     </form>
+# 
+#   </div>
+# 
+#   <!-- ─── A) VEFSPJALL JAVASCRIPT ──────────────── -->
+#   <script>
+#   // ================================================================
+#   // Alvitur Vefspjall — Fasi 1 (Mock svör)
+#   // Sprint 16.4 — samþætt úr web_chat_fasi1.py
+#   //
+#   // [FASI-2]: Skipta /api/chat kalli út fyrir MimirCoreV5 tengingu
+#   // [FASI-3]: Bæta við JWT auðkenningu og lotustjórnun
+#   // [FASI-4]: SSE streyming, PDF upphleðsla
+#   // ================================================================
+# 
+#   // ─── Hjálparföll ──────────────────────────────────────────────
+#   function currentTime() {{
+#     return new Date().toLocaleTimeString('is-IS', {{
+#       hour: '2-digit',
+#       minute: '2-digit'
+#     }});
+#   }}
+# 
+#   // Einföldur Markdown þáttur (Fasi 1 — regex)
+#   // [FASI-2]: Skipta út fyrir marked.js CDN
+#   function parseMarkdown(texti) {{
+#     // Þrífa og varða HTML
+#     let html = texti
+#       .replace(/&/g, '&amp;')
+#       .replace(/</g, '&lt;')
+#       .replace(/>/g, '&gt;');
+# 
+#     // Markdown → HTML umbreytingar (röð skiptir máli)
+#     html = html
+#       // Kóðablokk (```...```)
+#       .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+#       // Inline kóði (`...`)
+#       .replace(/`([^`]+)`/g, '<code>$1</code>')
+#       // Feitletrað (**...**)
+#       .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+#       // Skáletrað (*...*)
+#       .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
+#       // Markdown tafla — einföldun
+#       .replace(/\\|(.+)\\|/g, (match) => {{
+#         const frumur = match.split('|').filter(s => s.trim() !== '');
+#         const isSeparator = frumur.every(s => /^[-:\\s]+$/.test(s));
+#         if (isSeparator) return '';
+#         const td = frumur.map(s => `<td>${{s.trim()}}</td>`).join('');
+#         return `<tr>${{td}}</tr>`;
+#       }})
+#       // Pakka töflurowm
+#       .replace(/(<tr>.*<\\/tr>)+/gs, match => {{
+#         const rowr = match.match(/<tr>.*?<\\/tr>/gs) || [];
+#         if (rowr.length === 0) return match;
+#         const haus = rowr[0].replace(/<td>/g, '<th>').replace(/<\\/td>/g, '</th>');
+#         const tbody = rowr.slice(1).join('');
+#         return `<table><thead>${{haus}}</thead><tbody>${{tbody}}</tbody></table>`;
+#       }})
+#       // Listi (- atriði)
+#       .replace(/^- (.+)$/gm, '<li>$1</li>')
+#       .replace(/(<li>.*<\\/li>\\n?)+/gs, match => `<ul>${{match}}</ul>`)
+#       // Númeraður listi
+#       .replace(/^\\d+\\.(.+)$/gm, '<li>$1</li>')
+#       // Tenglar [texti](URL)
+#       .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+#       // Línufall → efnisgrein
+#       .replace(/\n\n/g, '</p><p>')
+#       // Einföldur rowfall
+#       .replace(/\n/g, '<br>');
+# 
+#     // Pakka í efnisgrein ef ekki þegar pakkað
+#     if (!html.startsWith('<')) {{
+#       html = `<p>${{html}}</p>`;
+#     }}
+# 
+#     return html;
+#   }}
+# 
+#   // ─── Búa til boðarow ──────────────────────────────────────────
+#   function createAiMsg(texti, er_hlaðning = false) {{
+#     const row = document.createElement('div');
+#     row.className = 'boð-lína ai-boð';
+# 
+#     const merki = document.createElement('div');
+#     merki.className = 'boð-merki ai-merki';
+#     merki.setAttribute('aria-hidden', 'true');
+#     merki.innerHTML = `<svg width="16" height="16" viewBox="0 0 32 32" fill="none">
+#       <path d="M16 2L28.7 9.5V24.5L16 32L3.3 24.5V9.5L16 2Z" fill="rgba(99,102,241,0.3)" stroke="#818CF8" stroke-width="1.5"/>
+#       <path d="M11 22L16 10L21 22M13 19H19" stroke="#818CF8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+#     </svg>`;
+# 
+#     const efni = document.createElement('div');
+#     const bubble = document.createElement('div');
+#     bubble.className = 'boð-bubble';
+# 
+#     const msgText = document.createElement('div');
+#     msgText.className = 'boð-texti';
+# 
+#     if (er_hlaðning) {{
+#       // Þrír boppandi punktar meðan beðið er
+#       msgText.innerHTML = `<div class="hladning-rowr" aria-label="Alvitur er að hugsa...">
+#         <div class="hladning-dot"></div>
+#         <div class="hladning-dot"></div>
+#         <div class="hladning-dot"></div>
+#       </div>`;
+#     }} else {{
+#       msgText.innerHTML = parseMarkdown(texti);
+#     }}
+# 
+#     bubble.appendChild(msgText);
+# 
+#     const timi = document.createElement('span');
+#     timi.className = 'boð-tími';
+#     timi.textContent = currentTime();
+#     timi.setAttribute('aria-label', `Sent kl. ${{currentTime()}}`);
+# 
+#     efni.appendChild(bubble);
+#     efni.appendChild(timi);
+#     row.appendChild(merki);
+#     row.appendChild(efni);
+# 
+#     return {{ row, msgText }};
+#   }}
+# 
+#   function createUserMsg(texti) {{
+#     const row = document.createElement('div');
+#     row.className = 'boð-lína notenda-boð';
+# 
+#     const efni = document.createElement('div');
+#     const bubble = document.createElement('div');
+#     bubble.className = 'boð-bubble';
+#     bubble.textContent = texti;
+# 
+#     const timi = document.createElement('span');
+#     timi.className = 'boð-tími';
+#     timi.textContent = currentTime();
+# 
+#     efni.appendChild(bubble);
+#     efni.appendChild(timi);
+#     row.appendChild(efni);
+# 
+#     return row;
+#   }}
+# 
+#   // ─── Skruna neðst ──────────────────────────────────────────────
+#   function scrollBottom() {{
+#     const saga = document.getElementById('spjall-saga');
+#     saga.scrollTop = saga.scrollHeight;
+#   }}
+# 
+#   // ─── Senda skilaboð til API ────────────────────────────────────
+#   // [FASI-2]: /api/chat kallar á MimirCoreV5
+#   async function sendMessage(texti) {{
+#     try {{
+#       const svar = await fetch('/api/chat', {{
+#         method: 'POST',
+#         headers: {{ 'Content-Type': 'application/json' }},
+#         body: JSON.stringify({{
+#           message: texti,
+#           user_id: 'web_user_fasi1'  // [FASI-3]: Skipta út fyrir JWT user_id
+#         }})
+#       }});
+# 
+#       if (!svar.ok) {{
+#         const villa = await svar.json().catch(() => ({{}}));
+#         throw new Error(villa.detail || `HTTP villa: ${{svar.status}}`);
+#       }}
+# 
+#       const data = await svar.json();
+#       return data.response;
+# 
+#     }} catch (villa) {{
+#       console.error('Spjallvilla:', villa);
+#       if (villa.message.includes('429')) {{
+#         return 'Þú hefur sent of margar beiðnir. Bíddu smástund og reyndu aftur.';
+#       }}
+#       return `**Villa kom upp:** ${{villa.message}}\\n\\nReyndu aftur eða hafðu samband við okkur.`;
+#     }}
+#   }}
+# 
+#   // ─── Aðalfall: meðhöndla sending ──────────────────────────────
+#   let isSending = false;
+# 
+#   async function handleSend() {{
+#     if (isSending) return;
+# 
+#     const inntak = document.getElementById('spjall-inntak');
+#     const texti = inntak.value.trim();
+#     if (!texti) return;
+# 
+#     isSending = true;
+#     const sendaHnappur = document.getElementById('senda-hnappurinn');
+#     sendaHnappur.disabled = true;
+#     inntak.disabled = true;
+# 
+#     // Birta notendaboð
+#     const innri = document.getElementById('spjall-innri');
+#     const userRow = createUserMsg(texti);
+#     innri.appendChild(userRow);
+#     inntak.value = '';
+#     inntak.style.height = 'auto';
+#     scrollBottom();
+# 
+#     // Birta hlaðningu
+#     const {{ row: hlaðningLína, msgText: hlaðningTexti }} = createAiMsg('', true);
+#     innri.appendChild(hlaðningLína);
+#     scrollBottom();
+# 
+#     try {{
+#       // Sækja svar frá API
+#       const svarTexti = await sendMessage(texti);
+# 
+#       // Skipta hlaðningu út fyrir raunverulegt svar
+#       hlaðningTexti.innerHTML = parseMarkdown(svarTexti);
+# 
+#     }} catch (villa) {{
+#       hlaðningTexti.innerHTML = parseMarkdown('**Villa kom upp.** Reyndu aftur.');
+#     }} finally {{
+#       isSending = false;
+#       sendaHnappur.disabled = false;
+#       inntak.disabled = false;
+#       inntak.focus();
+#       scrollBottom();
+#     }}
+#   }}
+# 
+#   // ─── Uppsetning þegar DOM er tilbúið ──────────────────────────
+#   document.addEventListener('DOMContentLoaded', function() {{
+# 
+#     // Birta velkomnarboð með lykilsetningum úr mock svörum
+#     const velkomin = `Góðan daginn! Ég er **Alvitur**, íslenskur gervigreindaraðstoðarmaður sérhæfður í skjalagreiningu og lögfræðilegri rannsókn.
+# 
+# Ég get aðstoðað þig með:
+# - Greiningu á **ársreikningum** og fjárhagslegum skjölum
+# - Leit og samantekt úr **íslenskum lögum og reglugerðum**
+# - Samanburð á **samningum** og lagalegum gögnum
+# - **Minnisblöð** og skýrslugerð á sekúndum
+# 
+# Hvað get ég gert fyrir þig í dag?`;
+# 
+#     const velkoninTexti = document.getElementById('velkomin-texti');
+#     const velkoninTimi = document.getElementById('velkomin-timi');
+#     if (velkoninTexti) {{
+#       velkoninTexti.innerHTML = parseMarkdown(velkomin);
+#     }}
+#     if (velkoninTimi) {{
+#       velkoninTimi.textContent = currentTime();
+#     }}
+# 
+#     // Stillta inntak og takka
+#     const inntak = document.getElementById('spjall-inntak');
+#     const sendaHnappur = document.getElementById('senda-hnappurinn');
+# 
+#     // Virkja senda takka þegar texti er til staðar
+#     inntak.addEventListener('input', function() {{
+#       const hefurTexta = this.value.trim().length > 0;
+#       sendaHnappur.disabled = !hefurTexta || isSending;
+# 
+#       // Sjálfvirk hæðarstilling á textarea
+#       this.style.height = 'auto';
+#       this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+#     }});
+# 
+#     // Enter sendir, Shift+Enter brýtur row
+#     inntak.addEventListener('keydown', function(e) {{
+#       if (e.key === 'Enter' && !e.shiftKey) {{
+#         e.preventDefault();
+#         if (!sendaHnappur.disabled) {{
+#           handleSend();
+#         }}
+#       }}
+#     }});
+# 
+#     // Smella á senda takka
+#     sendaHnappur.addEventListener('click', handleSend);
+# 
+#     // Form submit (mobile vafrar)
+#     const chatForm = document.getElementById('chat-form');
+#     if (chatForm) {{
+#       chatForm.addEventListener('submit', function(e) {{
+#         e.preventDefault();
+#         if (!sendaHnappur.disabled) {{
+#           handleSend();
+#         }}
+#       }});
+#     }}
+# 
+#     // Touch event á senda takka (mobile)
+#     sendaHnappur.addEventListener('touchend', function(e) {{
+#       e.preventDefault();
+#       if (!this.disabled) {{
+#         handleSend();
+#       }}
+#     }});
+# 
+#     // Setja fókus á inntak
+#     inntak.focus();
+#     scrollBottom();
+#   }});
+#   </script>
+# 
+# </body>
+# </html>"""
+# 
+# 
+# ─── Mock Checkout ────────────────────────────────────────────────────────────
+
+def build_checkout_page(plan: str, amount: int, user_id: str) -> str:
+    plan_names = {
+        "brons": "Brons",
+        "silfur": "Silfur",
+        "gull": "Gull",
+        "platina": "Platína",
+    }
+    plan_display = plan_names.get(plan.lower(), plan.capitalize())
+    amount_display = f"{amount:,}".replace(",", ".") + " kr" if amount > 0 else "Frítt"
+
+    return f"""<!DOCTYPE html>
+<html lang="is">
+<head>
+  <title>Greiðsla — {plan_display} — Alvitur</title>
+  {SHARED_HEAD}
+  {SHARED_STYLES}
+</head>
+<body>
+  <div class="subpage-center">
+    <div class="subpage-card">
+      <div style="font-size: 2rem; margin-bottom: 0.5rem;">💳</div>
+      <h1>Greiðsla</h1>
+      <p>Þetta er prófunargreiðslusíða (mock checkout) — engin raunveruleg greiðsla fer fram.</p>
+
+      <div class="checkout-summary">
+        <div class="checkout-row">
+          <span class="label">Áskrift</span>
+          <span class="value">{plan_display}</span>
+        </div>
+        <div class="checkout-row">
+          <span class="label">Notandi</span>
+          <span class="value" style="font-family: var(--font-mono); font-size: 0.8125rem;">{user_id}</span>
+        </div>
+        <div class="checkout-row checkout-total">
+          <span class="label">Samtals</span>
+          <span class="value">{amount_display} / mán.</span>
+        </div>
+      </div>
+
+      <form action="/api/webhook/mock_success" method="POST">
+        <input type="hidden" name="plan" value="{plan}">
+        <input type="hidden" name="amount" value="{amount}">
+        <input type="hidden" name="user_id" value="{user_id}">
+        <input class="input-field" type="text" placeholder="Nafn á korti" autocomplete="cc-name" required>
+        <input class="input-field" type="text" placeholder="0000 0000 0000 0000" autocomplete="cc-number" required>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <input class="input-field" type="text" placeholder="MM/ÁÁ" autocomplete="cc-exp" required>
+          <input class="input-field" type="text" placeholder="CVC" autocomplete="cc-csc" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width: 100%; justify-content: center; margin-top: 0.75rem;">
+          Staðfesta greiðslu (próf)
+        </button>
+      </form>
+
+      <a href="/" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 0.75rem;">← Hætta við</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+# ─── Mock Success ─────────────────────────────────────────────────────────────
+
+def build_success_page(plan: str, user_id: str) -> str:
+    plan_names = {
+        "brons": "Brons",
+        "silfur": "Silfur",
+        "gull": "Gull",
+        "platina": "Platína",
+    }
+    plan_display = plan_names.get(plan.lower(), plan.capitalize())
+
+    return f"""<!DOCTYPE html>
+<html lang="is">
+<head>
+  <title>Greiðsla móttekin — Alvitur</title>
+  {SHARED_HEAD}
+  {SHARED_STYLES}
+</head>
+<body>
+  <div class="subpage-center">
+    <div class="subpage-card">
+      <div class="success-check">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </div>
+      <h1>Greiðsla móttekin!</h1>
+      <p>Þetta er prófunarstaðfesting. Í raun myndi kerfið virkja <strong>{plan_display}</strong> áskrift fyrir notanda <code style="font-family: var(--font-mono); font-size: 0.8125rem; background: var(--bg-elevated); padding: 0.125rem 0.375rem; border-radius: var(--radius-sm);">{user_id}</code>.</p>
+
+      <div class="checkout-summary" style="text-align: left;">
+        <div class="checkout-row">
+          <span class="label">Staða</span>
+          <span class="value" style="color: var(--green);">✓ Staðfest (mock)</span>
+        </div>
+        <div class="checkout-row">
+          <span class="label">Áskrift</span>
+          <span class="value">{plan_display}</span>
+        </div>
+        <div class="checkout-row">
+          <span class="label">Notandi</span>
+          <span class="value" style="font-family: var(--font-mono); font-size: 0.8125rem;">{user_id}</span>
+        </div>
+      </div>
+
+      <!-- Sprint 18: /minarsidur skipt út fyrir Telegram -->
+      <a href="#" onclick="var el=document.getElementById(\'v5-txt\');if(el)el.scrollIntoView({{behavior:\'smooth\'}});return false;"  target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg" style="width: 100%; justify-content: center; margin-bottom: 0.75rem;">
+        
+      </a>
+      <a href="/" class="btn btn-secondary" style="width: 100%; justify-content: center;">← Til baka á forsíðu</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+# ─── Routes ───────────────────────────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    """Forsíða — B) Uppfærður sölutexti með breiðari markhóp."""
+    return HTMLResponse(content=HTML_PAGE)
+
+
+def build_subpage(titill: str, texti: str) -> str:
+    """Sprint 21: Hjálparfall — smíðar einföldu undirsíðu með sama grunn og forsíðan."""
+    return HTML_PAGE.replace(
+        '<main id="main-content" tabindex="-1">',
+        f'<main id="main-content" tabindex="-1"><div class="subpage-card"><h1>{titill}</h1>{texti}</div>',
+    ).replace(
+        '</main>',
+        '</main>',
+        1
+    )
+
+
+# ─── Sprint 21: Persónuvernd og Skilmálar ─────────────────────────────
+
+@app.get("/personuvernd", response_class=HTMLResponse)
+async def personuvernd():
+    """Persónuverndarstefna — Sprint 21, lagatexti frá Aðal & Sigvalda."""
+    page = build_subpage(
+        titill="Persónuverndarstefna Alviturs",
+        texti="""
+        <p class="legal-date">Síðast uppfært: 6. apríl 2026</p>
+        <p>Hjá Alvitri byggjum við allar okkar lausnir á einni meginreglu: <strong>Þín gögn eru þín, og aðeins þín.</strong> Við skiljum að upplýsingarðu sem þú treystir okkur fyrir, sem greiningarvél fyrir stjórnsýslu og atvinnulífið, eru oft afar viðkvæmar.</p>
+
+        <h2>1. Engin geymsla gagna (Zero-Retention Policy)</h2>
+        <p>Þegar þú nýtir skjalagreiningarvél Alviturs (Alvitur Analyze) til að vinna úr skjölum (svo sem PDF, Word eða texta), eru gögnin aðeins unnin í dulkóðuðu vinnsluminni á meðan greining stendur yfir. Um leið og niðurstaða hefur verið afhent, er frumgögnunum tafarlaust eytt af netþjónum okkar. Við geymum aldrei skjöl þín nema beinlínis sé óskað eftir því í lokuðum Enterprise-samningum um varðveislu gagna.</p>
+
+        <h2>2. Engin þjálfun á þínum gögnum (No-Training Policy)</h2>
+        <p>Við notum gögn viðskiptavina okkar <strong>ALDREI</strong> til að þjálfa okkar eigin gervigreindarlíkön, né leyfum við þriðja aðila að gera slíkt. Þegar Alvitur nýtir stór erlend API líkön í gegnum bakenda okkar, tryggja “Zero-Data” API-samningar við þá þjónustuaðila að engin inntaksgögn eru notuð í neins konar þjálfunarskyni.</p>
+
+        <h2>3. Gagnaflutningur og dulkóðun</h2>
+        <p>Öll samskipti milli þín og netþjóna okkar fara fram bak við lokaða “Zero-Trust” innviði (Cloudflare Tunnels) með fullkominni TLS 1.3 dulkóðun. Engin kerfi okkar eru opin beint út á internetið.</p>
+
+        <p>Fyrir fyrirspurnir varðandi meðferð gagna, eða til að nýta rétt þinn til að gleymast samkvæmt persónuverndarlögum (GDPR), vinsamlegast hafið samband á <a href="mailto:info@alvitur.is">info@alvitur.is</a>.</p>
+        """
+    )
+    return HTMLResponse(content=page)
+
+
+@app.get("/skilmalar", response_class=HTMLResponse)
+async def skilmalar():
+    """Notkunarskilmálar — Sprint 21, lagatexti frá Aðal & Sigvalda."""
+    page = build_subpage(
+        titill="Notkunarskilmálar Alvitur.is",
+        texti="""
+        <p class="legal-date">Síðast uppfært: 6. apríl 2026</p>
+        <p>Með þ ví að heimsækja eða nota þ jónustu Alvitur.is samþykkir þú eftirfarandi skilmála. Alvitur er ætlað sem B2B og B2G greiningartól, hannað til vinnslu gagna, skjala og texta.</p>
+
+        <h2>1. Takmörkun ábyrgðar</h2>
+        <p>Alvitur beitir háþróuðum gervigreindarlíkönum til að greina gögn og draga saman samhengi. Notandi samþykkir og gerir sér grein fyrir því að gervigreind er hugbúnaður sem byggir á líkindareikningi og getur sætt svokölluðum “ofskynjunum” (hallucinations) eða rangtúlkunum.</p>
+        <p>Allar niðurstöður frá Alvitri eru <strong>EINGÖNGU</strong> til stuðnings við ákvarðanaatöku. Alvitur getur aldrei komið í stað formlegrar faglegar, lögfræðilegrar, læknisfræðilegrar eða fjárhagslegrar ráðgjafar. Notandi ber einn og alfarið alla ábyrgð á því að yfirfara og staðfesta upplýsingar áður en þær eru nýttar. Alvitur.is ehf. ber enga fjárhagslega eða lagalega ábyrgð á beinni eða óbeinni tjóni sem kann að hljótast af notkun þjónustunnar.</p>
+
+        <h2>2. Uppruni gagna og höfundarréttur</h2>
+        <p>Notandi ábyrgist að hann hafi fullan og lögmætan rétt til að hlaða upp og vinna með þau gögn sem hann setur í kerfi Alviturs.</p>
+
+        <h2>3. Umgengni og misnotkun</h2>
+        <p>Það er með öllu óheimilt að reyna að afhjúpa eða bakfæra (reverse engineer) kerfisarkitektúr Alviturs. Óheimilt er að beita árásum eða inngripum (svo sem “Prompt Injection”) á gervigreindina eða nýta API lykla okkar utan viðskiptasamninga. Slík brot varða umsvifalausri lokun reiknings og hugsanlegum skaðabótakröfum.</p>
+
+        <p>Spurningar: <a href="mailto:info@alvitur.is">info@alvitur.is</a></p>
+        """
+    )
+    return HTMLResponse(content=page)
+
+
+# @app.get("/minarsidur", response_class=HTMLResponse)
+# async def minarsidur():
+#     """A) Web Chat Fasi 1 — v1 minimal (sér .js skrá, engin inline JS)"""
+#     html_path = "/workspace/mimir_net/static/minarsidur_v1.html"
+#     try:
+#         with open(html_path, "r", encoding="utf-8") as f:
+#             return HTMLResponse(content=f.read())
+#     except FileNotFoundError:
+#         return HTMLResponse(content=build_minarsidur_page())
+# 
+
+# ─── A) Web Chat API ──────────────────────────────────────────────────────────
+
+@app.post("/api/chat")
+async def chat_api(beidni: ChatBeidni, request: Request):
+    """
+    Web Chat API endpoint.
+    Fasi 1: Mock svör með 1-2 sekúndna töf.
+    [FASI-2]: Tengja við MimirCoreV5.process_message()
+    [FASI-3]: Bæta við JWT auðkenningu og query_limit athugum
+
+    SESSION EINANGRUN (Sprint 17 úttekt):
+    ─────────────────────────────────────
+    Í Fasa 1 er engin þjónahlið geymsla á spjallsögu eða notendagögnum.
+    Hvert /api/chat kall er fullkomlega óháð öðrum — ekkert global state
+    er deilt milli notenda. _gæðatak_minni er IP-miðað (lögleg deiling).
+
+    user_id='web_user_fasi1' (hardcoded í JS) kemur ekki í veg fyrir einangrun
+    vegna þess að fá_svar() geymir ekkert milli kalla — það reiknar svar
+    á staðnum og skilar því án geymslu.
+
+    [FASI-3]: Þegar JWT er innleitt verður user_id tekið úr token og
+    spjallsaga geymd í einangraðri Redis/PostgreSQL töflu per notanda.
+    """
+    # ── Gæðatak sannprófun ────────────────────────────────────────────────
+    ip = sækja_ip(request)
+    if not athuga_gæðatak(ip):
+        logger.warning(f"Gæðatak yfirfarið fyrir IP: {ip}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Of margar beiðnir. Bíddu smástund og reyndu aftur.",
+        )
+
+    # ── Session einangrun: Tryggja að user_id sé aldrei deilt ────────────
+    # Í Fasa 1 er user_id 'web_user_fasi1' fyrir alla (mock mode).
+    # fá_svar() geymir EKKERT á milli kalla — engin shared state milli notenda.
+    # Staðfest: Eina global state er _gæðatak_minni (IP-miðað, lögleg).
+    user_id = beidni.user_id or "anonymous"
+
+    logger.info(f"Spjallbeiðni frá {ip} (user_id={user_id!r}): {len(beidni.message)} stafir")
+
+    # Fá svar (Fasi 1: mock, Fasi 2: V5)
+    svar_texti = await fá_svar(beidni.message, user_id)
+
+    tímastimpill = datetime.now(timezone.utc).isoformat()
+    return JSONResponse(content={
+        "response": svar_texti,
+        "timestamp": tímastimpill,
+    })
+
+
+@app.get("/api/health")
+async def health():
+    """Heilsufarsskoðun — notað af monitoring og load balancer."""
+    return JSONResponse(content={
+        "status": "ok",
+        "version": "sprint16",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "fasi": "1-mock",
+    })
+
+
+# ─── Sprint 21: PDF Analyze Endpoint ─────────────────────────────
+
+# ── Sprint 28: K1/K2 — .docx and .xlsx parsers ───────────────────────────────
+MAX_DOC_SIZE = 20 * 1024 * 1024  # 20 MB (same as PDF)
+
+MAGIC_BYTES = {
+    b'%PDF': 'pdf',
+    b'PK\x03\x04': 'office',  # .docx and .xlsx are ZIP-based Office formats
+}
+
+def _detect_filetype(data: bytes, filename: str) -> str:
+    """Return 'pdf', 'docx', 'xlsx', or raise HTTPException."""
+    ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    header = data[:4]
+    if header == b'%PDF':
+        if ext != 'pdf':
+            raise HTTPException(status_code=415,
+                detail="Skráin er merkt sem PDF en innihald stemmir ekki.")
+        return 'pdf'
+    if header[:2] == b'PK':
+        if ext == 'docx':
+            return 'docx'
+        if ext == 'xlsx':
+            return 'xlsx'
+        raise HTTPException(status_code=415,
+            detail="Office skjal þekkt en skráarending er óþêkkt. Sendu .docx eða .xlsx.")
+    raise HTTPException(status_code=415,
+        detail="Skráargerð ekki stuðd. Styður PDF, Word (.docx) og Excel (.xlsx).")
+
+
+def _parse_docx(data: bytes) -> tuple[int, list[str]]:
+    """Extract text from .docx. Returns (page_estimate, text_parts)."""
+    from docx import Document
+    import io
+    doc = Document(io.BytesIO(data))
+    parts = []
+    for i, para in enumerate(doc.paragraphs):
+        t = para.text.strip()
+        if t:
+            parts.append(t)
+    # Estimate pages: ~3000 chars per page
+    total_chars = sum(len(p) for p in parts)
+    page_estimate = max(1, total_chars // 3000)
+    return page_estimate, parts
+
+
+def _parse_xlsx(data: bytes) -> tuple[int, list[str]]:
+    """Extract text from .xlsx. Returns (sheet_count, text_parts)."""
+    import openpyxl, io
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    parts = []
+    sheet_count = len(wb.sheetnames)
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows_text = []
+        row_count = 0
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(c) for c in row if c is not None and str(c).strip()]
+            if cells:
+                rows_text.append(" | ".join(cells))
+                row_count += 1
+            if row_count >= 500:  # cap at 500 rows per sheet
+                rows_text.append("[... fleiri raðir ...]")
+                break
+        if rows_text:
+            parts.append(f"[Blað: {sheet_name}]\n" + "\n".join(rows_text))
+    wb.close()
+    return sheet_count, parts
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ─ Sprint 27: S4 Wallet Circuit Breaker ───────────────────────────────────
+WALLET_MIN_USD       = float(os.environ.get("WALLET_MIN_USD", "5.0"))
+WALLET_MIN_VAULT_USD = float(os.environ.get("WALLET_MIN_VAULT_USD", "10.0"))
+_wallet_cache: dict  = {"balance": None, "ts": 0.0}
+_WALLET_TTL          = 120
+
+def _get_openrouter_balance():
+    import time as _t, requests as _rq
+    now = _t.time()
+    if _wallet_cache["balance"] is not None and now - _wallet_cache["ts"] < _WALLET_TTL:
+        return _wallet_cache["balance"]
+    try:
+        _k = os.environ.get("OPENROUTER_API_KEY", "")
+        r = _rq.get("https://openrouter.ai/api/v1/auth/key",
+                    headers={"Authorization": f"Bearer {_k}"}, timeout=5)
+        if r.status_code == 200:
+            d = r.json().get("data", {})
+            bal = round(float(d.get("limit") or 0) - float(d.get("usage") or 0), 4)
+            _wallet_cache["balance"] = bal
+            _wallet_cache["ts"] = now
+            return bal
+    except Exception:
+        pass
+    return None
+
+def _wallet_preflight(is_vault=False):
+    bal = _get_openrouter_balance()
+    if bal is None: return
+    threshold = WALLET_MIN_VAULT_USD if is_vault else WALLET_MIN_USD
+    if bal < threshold:
+        logger.warning(f"Wallet circuit breaker: balance=${bal:.2f} < ${threshold:.2f}")
+        raise HTTPException(status_code=503,
+            detail="Þ jónustan er tímabundið ótilðæk. Reyndu aftur eftir augnablik.")
+
+# ───────────────────────────────────────────────────────────
+SECURE_DOCS_DIR = Path("/workspace/mimir_net/secure_docs")
+SECURE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
+
+@app.post("/api/analyze-document")
+async def analyze_document(request: Request, file: UploadFile = File(...)):
+    """
+    Sprint 21 — PDF Analyze Endpoint (Lag 1).
+    Tekur við PDF skrá, les texta með PyMuPDF og búr til grófótta greiningu.
+    Zero-Data: Skrá er eyð um leið og vinnslu ljúkur.
+    """
+    import fitz  # PyMuPDF
+
+    # — 1. Staðfesta skrártegund —
+    _ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    if _ext not in ("pdf", "docx", "xlsx"):
+        raise HTTPException(status_code=400, detail="Skráargerð ekki stuð. Sendu PDF, Word eða Excel.")
+
+    # S2: Stream size check before full read
+    _cl = None
+    if hasattr(file, "headers") and file.headers:
+        _cl = file.headers.get("content-length")
+    if _cl and int(_cl) > MAX_PDF_SIZE:
+        raise HTTPException(status_code=413,
+            detail="Skjalið er yfir 20 MB — minnkaðu eða veldu annað.")
+    efni = await file.read(MAX_PDF_SIZE + 1)
+    if len(efni) > MAX_PDF_SIZE:
+        raise HTTPException(status_code=413,
+            detail="Skjalið er yfir 20 MB — minnkaðu eða veldu annað.")
+
+    # K1/K2/S3: Filetype detection (magic bytes + extension)
+    _filetype = _detect_filetype(efni, file.filename)
+
+    # S4: Wallet circuit breaker
+    _tier = request.headers.get("X-Alvitur-Tier", "general").lower().strip() if request else "general"
+    _is_vault = (_tier == "vault")
+    _wallet_preflight(is_vault=_is_vault)
+
+    # S5+S6: Parse with timeout, Leith B=zero-disk, Leith A=disk+unlink
+    import concurrent.futures as _cf
+
+    def _parse(data):
+        parts, pages = [], 0
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            pages = len(doc)
+            for idx, pg in enumerate(doc):
+                t = pg.get_text().strip()
+                if t: parts.append(f"[Síða {idx+1}]\n{t}")
+        return pages, parts
+
+    texti_hlutar, sidur = [], 0
+    if _is_vault:
+        # VAULT: zero disk write
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_parse, efni)
+            try:
+                sidur, texti_hlutar = fut.result(timeout=90)
+            except _cf.TimeoutError:
+                raise HTTPException(status_code=504,
+                    detail="Vinnsla tók of langan tíma. Prófaðu minna skjal.")
+    else:
+        # GENERAL: disk write + cleanup
+        skra_id   = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        skra_slod = SECURE_DOCS_DIR / f"doc_{skra_id}.pdf"
+        try:
+            skra_slod.write_bytes(efni)
+            with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(_parse, efni)
+                try:
+                    sidur, texti_hlutar = fut.result(timeout=90)
+                except _cf.TimeoutError:
+                    raise HTTPException(status_code=504,
+                        detail="Vinnsla tók of langan tíma. Prófaðu minna skjal.")
+        finally:
+            if skra_slod.exists(): skra_slod.unlink()
+
+    heildartexti = "\n\n".join(texti_hlutar)
+
+    if not heildartexti.strip():
+        return JSONResponse(content={
+            "success": False,
+            "error": "Ekki tókst að lesa texta úr PDF (gæti verið skannað mynd).",
+            "sidur": sidur,
+        })
+
+    # — 6. Skila grunnupplýsingum (LLM greining kemur í Lag 2) —
+    # Sprint 28: Einföld fitz-greining (CitationExtractor fjarlægður)
+    import fitz as _fitz_inner
+    with _fitz_inner.open(stream=efni, filetype="pdf") as _doc:
+        sidur = len(_doc)
+        _parts = []
+        for _pg in _doc:
+            _t = _pg.get_text().strip()
+            if _t: _parts.append(_t)
+    result = {"summary": " ".join(_parts[:3000]), "citations": [], "found": bool(_parts)}
+    import os as _os
+    _tier = request.headers.get("X-Alvitur-Tier", "general").lower()
+    _summary = None
+    if _tier == "general":
+        try:
+            import httpx as _httpx
+            _key = _os.environ.get("OPENROUTER_API_KEY", "")
+            _zdr = _os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") == "true"
+            _full = " ".join(extractor._page_texts) if hasattr(extractor, "_page_texts") else ""
+            if _key and _zdr and _full:
+                _msg = f"Greindu þes skjal stuttlega á íslensku (max 3 setningar):\n{_full[:3000]}"
+                _r = _httpx.post("https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {_key}", "X-No-Cache": "true",
+                             "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
+                    json={"model": "openai/gpt-4o-mini",
+                          "messages": [{"role": "user", "content": _msg}],
+                          "max_tokens": 300}, timeout=20.0)
+                _summary = _r.json()["choices"][0]["message"]["content"]
+        except Exception:
+            _summary = None
+    response = {
+        "success": True,
+        "filename": file.filename,
+        "sidur": sidur,
+        "zero_data": True,
+        "tier": _tier,
+        "summary": _summary or result.get("summary", ""),
+        "citations": result.get("citations", []),
+        "found": result.get("found", False),
+        "status": "ready_for_analysis",
+    }
+    return JSONResponse(content=response)
+
+
+# ── Sprint 28: K6 — /oryggi trust page ───────────────────────────────────────
+@app.get("/oryggi", response_class=HTMLResponse)
+async def oryggi_page():
+    """Sprint 29 T1 — Trust Center"""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="is">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Öryggi og traust — Alvitur</title>
+<meta name="description" content="Hvernig Alvitur meðhöndlar gögn, trúnað og skjalasendingar.">
+<meta property="og:title" content="Öryggi og traust — Alvitur">
+<meta property="og:description" content="Ekkert vistast í trúnaðarham. Sjálfvirk gagnaeyðing. GDPR-samræmt.">
+<meta property="og:url" content="https://alvitur.is/oryggi">
+<meta property="og:type" content="website">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#080B12;--bg-elevated:#0F1623;--bg-card:#111827;--text-primary:#F1F5F9;--text-secondary:#94A3B8;--text-muted:#64748B;--accent:#6366F1;--accent-light:#818CF8;--green:#34D399;--border:rgba(148,163,184,.10);--border-strong:rgba(148,163,184,.20);--font-display:'Cabinet Grotesk','Inter',system-ui,sans-serif;--font-body:'Inter',system-ui,sans-serif;--radius-lg:.75rem;--radius-xl:1rem}
+body{background:var(--bg);color:var(--text-primary);font-family:var(--font-body);line-height:1.7}
+nav{position:sticky;top:0;z-index:100;background:rgba(8,11,18,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 1.5rem;height:60px;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{font-family:var(--font-display);font-weight:700;font-size:1.05rem;color:var(--text-primary);text-decoration:none;display:flex;align-items:center;gap:.5rem}
+.nav-back{font-size:.875rem;color:var(--text-secondary);text-decoration:none}.nav-back:hover{color:var(--text-primary)}
+main{max-width:740px;margin:0 auto;padding:3rem 1.5rem 6rem}
+.page-label{display:inline-flex;align-items:center;gap:.375rem;font-size:.6875rem;font-weight:600;color:var(--accent-light);text-transform:uppercase;letter-spacing:.1em;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.20);border-radius:20px;padding:.25rem .75rem;margin-bottom:1rem}
+h1{font-family:var(--font-display);font-size:clamp(1.75rem,4vw,2.5rem);font-weight:700;letter-spacing:-.025em;line-height:1.15;margin-bottom:.75rem}
+.lead{font-size:1rem;color:var(--text-secondary);margin-bottom:2.5rem;max-width:58ch}
+.divider{height:1px;background:var(--border);margin:2.5rem 0}
+h2{font-family:var(--font-display);font-size:1.2rem;font-weight:700;margin-bottom:1rem;letter-spacing:-.015em}
+h3{font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:.5rem}
+p{font-size:.9375rem;color:var(--text-secondary);margin-bottom:1rem;max-width:66ch}
+.card{background:var(--bg-card);border:1px solid var(--border-strong);border-radius:var(--radius-xl);padding:1.5rem;margin-bottom:1rem}
+.card-label{display:inline-block;font-size:.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-radius:4px;padding:.15rem .5rem;margin-bottom:.75rem}
+.label-a{background:rgba(99,102,241,.12);color:#c7d2fe}
+.label-b{background:rgba(52,211,153,.10);color:#6ee7b7}
+.vault-note{background:rgba(52,211,153,.06);border-left:3px solid var(--green);border-radius:0 var(--radius-lg) var(--radius-lg) 0;padding:.875rem 1rem;font-size:.875rem;color:var(--green);margin-top:.875rem}
+ul{padding-left:1.25rem;color:var(--text-secondary);font-size:.9375rem}
+ul li{margin-bottom:.5rem}
+.faq-item{border-bottom:1px solid var(--border);padding:1.25rem 0}
+.faq-item:last-child{border-bottom:none}
+.faq-q{font-size:.9375rem;font-weight:600;color:var(--text-primary);margin-bottom:.5rem}
+.faq-a{font-size:.875rem;color:var(--text-secondary);line-height:1.65}
+.beta-note{background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:var(--radius-lg);padding:1rem 1.25rem;font-size:.8125rem;color:var(--text-muted);margin-top:2.5rem}
+@media(max-width:640px){main{padding:2rem 1rem 4rem}h1{font-size:1.75rem}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="nav-logo"><svg viewBox="0 0 28 28" fill="none" width="22" height="22"><path d="M14 2L4 24h6l1.5-4h5l1.5 4h6L14 2zm0 8l2.5 7h-5L14 10z" fill="currentColor" opacity=".9"/></svg>Alvitur<span style="color:var(--text-muted);font-weight:400">.is</span></a>
+  <a href="/" class="nav-back">&larr; Til baka</a>
+</nav>
+<main>
+  <span class="page-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Öryggi og traust</span>
+  <h1>Hvernig Alvitur meðhöndlar gögn þín</h1>
+  <p class="lead">Þssi síða útskrýrir hvað gerist þegar þú sendir skjal eða spurningu — og hvað gerist ekki.</p>
+  <div class="divider"></div>
+  <h2>Tvær vinnsluleiðir</h2>
+  <p>Þú velur sjálfur hvernig greiningin fer fram. Munurinn er í meðhöndlun, ekki gæðum.</p>
+  <div class="card">
+    <span class="card-label label-a">Almenn greining</span>
+    <h3>Fyrir almenn skjöl og daglegar spurningar</h3>
+    <p>Skjalið er lesið og greint. Þegar vinnslu lýkur er efninu eyðt. Styður PDF, Word (.docx) og Excel (.xlsx).</p>
+  </div>
+  <div class="card">
+    <span class="card-label label-b">🔒 Trúnaðargreining</span>
+    <h3>Fyrir viðkvæm gögn og trúnaðarskjöl</h3>
+    <p>Greiningin fer fram eingöngu í vinnsluminni. Skjalið er aldrei skrifað á disk. Styður PDF, Word (.docx) og Excel (.xlsx).</p>
+    <div class="vault-note">Ekkert vistast í trúnaðarham. Sjálfvirk gagnaeyðing að lokinni vinnslu.</div>
+  </div>
+  <div class="divider"></div>
+  <h2>Hvað við geymum ekki</h2>
+  <ul>
+    <li>Skjöl sem þú sendir inn (PDF, Word, Excel) — þau eru eyðt við lok vinnslu</li>
+    <li>Innihald fyrirspurna eða niðurstaðna</li>
+    <li>Persónugreinanlegar upplýsingur úr skjölum</li>
+    <li>Notendaprófílar — þjónustan krefst ekki innskráningar</li>
+  </ul>
+  <div class="divider"></div>
+  <h2>Hvernig á að velja rétta leið</h2>
+  <p>Ef skjalið inniheldur persónuupplýsingur eða trúnaðarefni — veldu Trúnaðargreiningu. Almenn greining hentar þegar skjölin eru ekki viðkvæm.</p>
+  <div class="divider"></div>
+  <h2>Tæknilegur grunnur</h2>
+  <p>Þjónar Alviturs eru staðsettir á evrópskum gagnamíðstöðvum sem uppfylla kröfur GDPR og EU AI Act. Þjónustan styður við kröfur ISO 42001 um ábyrga notkun gervigreindar.</p>
+  <p>Alvitur notar OpenRouter API með Zero Data Retention (ZDR) — þriftj aðili geymir ekki inntakgögn.</p>
+  <div class="divider"></div>
+  <h2>Algengar spurningar</h2>
+  <div class="faq-item">
+    <div class="faq-q">Er greiningin sönn eða gæti hún innihaldið villur?</div>
+    <div class="faq-a">Alvitur er gervigreindartæki sem kann að gera villur. Niðurstöður eru til stuðnings — ekki í stað faglegrar úttetar. Við mælum alltaf með að fagmaður fari yfir mikirlvægar niðurstöður.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Get ég sent skjöl með persónuupplýsingum?</div>
+    <div class="faq-a">Já, með Trúnaðargreiningu. Hún vinnur efnið eingöngu í vinnsluminni og eyðir því strax.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Er Alvitur GDPR-samræmt?</div>
+    <div class="faq-a">Alvitur er hannað með GDPR í huga. Engin persónuleg gögn eru geymd að lokinni vinnslu. Þjónustan krefst ekki innskráningar.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Hvaða skráargerðir eru studdar?</div>
+    <div class="faq-a">PDF, Word (.docx) og Excel (.xlsx) í báðum vinnsluleiðum.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Er þjónustan tilbúin til notkunar?</div>
+    <div class="faq-a">Alvitur er í prufufasa og í virkri þróun. Við mælum með að nota hana sem stuðningstæki, ekki sem eina heimildir í mikirlvægum ákvörðunum.</div>
+  </div>
+  <div class="divider"></div>
+  <div class="beta-note"><strong>Alvitur er í prufufasa.</strong> Niðurstöður kerfisins koma ekki í stað faglegrar ráðgjöfur eða lokautúr ðektar af hálfu sérfræðings.</div>
+</main>
+</body>
+</html>""")
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/mock-checkout/{plan}/{amount}/{user_id}", response_class=HTMLResponse)
+async def checkout(plan: str, amount: int, user_id: str):
+    return HTMLResponse(content="<h2 style='font-family:system-ui;color:#e5e5e5;background:#0a0a0a;padding:3rem;text-align:center'>Áskriftarlegar eru ekki opnar enn. Hafðu samband: info@alvitur.is</h2>", status_code=503)
+
+
+@app.post("/api/webhook/mock_success", response_class=HTMLResponse)
+async def mock_success(request: Request):
+    # Samþykkja bæði form gögn og JSON
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        data = await request.json()
+    else:
+        form = await request.form()
+        data = dict(form)
+
+    plan = data.get("plan", "unknown")
+    user_id = data.get("user_id", "unknown")
+    return HTMLResponse(content=build_success_page(plan, user_id))
+
+
+if __name__ == "__main__":
+    uvicorn.run("web_server:app", host="0.0.0.0", port=8000)

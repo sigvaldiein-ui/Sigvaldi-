@@ -1,3 +1,4 @@
+cat > /workspace/mimir_net/core/db_manager.py << 'ENDASKRA'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -20,11 +21,6 @@ BREYTINGAR (Sprint 15.1):
 - Bætt við: tenant_id, subscription_plan
 - subscription_end óbreytt (nýtist áfram)
 - Migration fall: keyranleg mörgum sinnum án villu
-
-BREYTINGAR (Sprint 15.7):
-- Bætt við: query_count, query_limit, compute_tokens_used
-- Nýt föll: haekka_teljara(), athuga_kvota(), endurstilla_manadi()
-- Brons=30, Silfur=250, Gull=1000, Platína=engin takmörk
 """
 
 import sqlite3
@@ -158,60 +154,6 @@ def keyra_migration() -> None:
         print("✅ Sprint 15.1 migration lokið")
 
 
-def keyra_migration_15_7() -> None:
-    """
-    Sprint 15.7 migration.
-    Bætir við usage limit dálkum fyrir Málmapakka (Brons/Silfur/Gull/Platína).
-    Öruggt að keyra mörgum sinnum — try/except per ALTER query.
-    """
-    with tengja() as db:
-        # 1. query_count — heildarfjöldi fyrirspurna í þessum mánuði
-        try:
-            db.execute("ALTER TABLE users ADD COLUMN query_count INTEGER DEFAULT 0")
-            print("✅ Dálkur bættur við: query_count")
-        except sqlite3.OperationalError:
-            print("ℹ️  query_count er þegar til")
-
-        # 2. query_limit — hámark fyrirspurna per mánuð skv. pakka
-        #    Sjálfgefið 5 (fríar prufur), Brons=30, Silfur=250, Gull=1000, Platína=0 (ótakm.)
-        try:
-            db.execute("ALTER TABLE users ADD COLUMN query_limit INTEGER DEFAULT 5")
-            print("✅ Dálkur bættur við: query_limit")
-        except sqlite3.OperationalError:
-            print("ℹ️  query_limit er þegar til")
-
-        # 3. compute_tokens_used — fyrir Platína (pay-per-compute)
-        try:
-            db.execute("ALTER TABLE users ADD COLUMN compute_tokens_used INTEGER DEFAULT 0")
-            print("✅ Dálkur bættur við: compute_tokens_used")
-        except sqlite3.OperationalError:
-            print("ℹ️  compute_tokens_used er þegar til")
-
-        # 4. query_reset_date — hvenær teljarinn var síðast endurstilltur
-        try:
-            db.execute("ALTER TABLE users ADD COLUMN query_reset_date TEXT")
-            print("✅ Dálkur bættur við: query_reset_date")
-        except sqlite3.OperationalError:
-            print("ℹ️  query_reset_date er þegar til")
-
-        # 5. Uppfæra query_limit eftir subscription_plan fyrir núverandi notendur
-        PLAN_LIMITS = {
-            'free': 5,
-            'kynning': 30,
-            'einstakling': 250,
-            'midgildi': 1000,
-            'fyrirtaeki': 0,  # 0 = ótakm.
-        }
-        for plan, limit in PLAN_LIMITS.items():
-            db.execute(
-                "UPDATE users SET query_limit = ? WHERE subscription_plan = ? AND query_limit = 5",
-                (limit, plan)
-            )
-
-        db.commit()
-        print("✅ Sprint 15.7 migration lokið")
-
-
 # =============================================================
 # USERS — hjálparföll
 # =============================================================
@@ -246,102 +188,6 @@ def is_user_allowed(chat_id: int, master_id: int = 8547098998) -> bool:
                 return True
 
         return False
-
-
-# =============================================================
-# USAGE LIMITS — Sprint 15.7 (Málmapakkar)
-# =============================================================
-
-def athuga_kvota(chat_id: int, master_id: int = 8547098998) -> dict:
-    """
-    Athugar hvort notandi hafi náð hámarki fyrirspurna.
-
-    Skilar dict:
-      - leyfdr: True/False — hvort notandi megi senda fyrirspurn
-      - eftir: fjöldi eftir (0 ef lokið, -1 ef ótakm.)
-      - plan: áskriftarplan
-      - limit: hámark
-      - count: notað
-    """
-    # Master læsist aldrei úti
-    if chat_id == master_id:
-        return {"leyfdr": True, "eftir": -1, "plan": "master", "limit": 0, "count": 0}
-
-    with tengja() as db:
-        notandi = db.execute(
-            "SELECT query_count, query_limit, subscription_plan, query_reset_date "
-            "FROM users WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-
-        if not notandi:
-            # Nýr notandi — hefur fjórar prufur eftir
-            return {"leyfdr": True, "eftir": 5, "plan": "free", "limit": 5, "count": 0}
-
-        count = notandi["query_count"] or 0
-        limit = notandi["query_limit"] or 5
-        plan = notandi["subscription_plan"] or "free"
-
-        # Ótakm. (Platína) — limit = 0 þýðir engin takmörk
-        if limit == 0:
-            return {"leyfdr": True, "eftir": -1, "plan": plan, "limit": 0, "count": count}
-
-        # Athuga mánaðar reset
-        reset_date = notandi["query_reset_date"]
-        nu = datetime.now()
-        if reset_date:
-            try:
-                sidasti_reset = datetime.fromisoformat(reset_date)
-                # Ef nýr mánuður — endurstilla
-                if nu.month != sidasti_reset.month or nu.year != sidasti_reset.year:
-                    db.execute(
-                        "UPDATE users SET query_count = 0, query_reset_date = ? WHERE chat_id = ?",
-                        (nu.isoformat(), chat_id)
-                    )
-                    db.commit()
-                    count = 0
-            except ValueError:
-                pass
-
-        eftir = max(0, limit - count)
-        return {
-            "leyfdr": eftir > 0,
-            "eftir": eftir,
-            "plan": plan,
-            "limit": limit,
-            "count": count,
-        }
-
-
-def haekka_teljara(chat_id: int, tokens: int = 0) -> int:
-    """
-    Hækkar query_count um 1 og compute_tokens_used um tokens.
-    Stofnar notaða ef hann er ekki til.
-    Skilar nýr query_count.
-    """
-    nu = datetime.now().isoformat()
-    with tengja() as db:
-        notandi = db.execute(
-            "SELECT query_count FROM users WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-
-        if not notandi:
-            db.execute(
-                "INSERT INTO users (chat_id, query_count, compute_tokens_used, query_reset_date) "
-                "VALUES (?, 1, ?, ?)",
-                (chat_id, tokens, nu)
-            )
-            db.commit()
-            return 1
-
-        nyr_count = (notandi["query_count"] or 0) + 1
-        db.execute(
-            "UPDATE users SET query_count = ?, compute_tokens_used = compute_tokens_used + ?, "
-            "query_reset_date = COALESCE(query_reset_date, ?), updated_at = datetime('now') "
-            "WHERE chat_id = ?",
-            (nyr_count, tokens, nu, chat_id)
-        )
-        db.commit()
-        return nyr_count
 
 
 def get_free_queries_left(chat_id: int) -> int:
@@ -621,12 +467,10 @@ def cli():
     Dæmi:
       python3 db_manager.py setup        — setja upp gagnagrunn
       python3 db_manager.py migrate      — keyra Sprint 15.1 migration
-      python3 db_manager.py migrate_15_7 — keyra Sprint 15.7 migration (usage limits)
       python3 db_manager.py add 123456   — bæta við premium notanda
       python3 db_manager.py remove 123456 — fjarlægja premium
       python3 db_manager.py list         — lista premium notendur
       python3 db_manager.py check 123456 — athuga aðgang
-      python3 db_manager.py kvota 123456 — athuga kvótaststöðu
       python3 db_manager.py info 123456  — allar upplýsingar um notanda
       python3 db_manager.py report       — dagleg skýrsla
     """
@@ -644,9 +488,6 @@ def cli():
 
     elif skipun == "migrate":
         keyra_migration()
-
-    elif skipun == "migrate_15_7":
-        keyra_migration_15_7()
 
     elif skipun == "add":
         if len(args) < 2:
@@ -681,17 +522,6 @@ def cli():
         frir = get_free_queries_left(chat_id)
         print(f"Notandi {chat_id}: {'✅ Leyfður' if leyfður else '❌ Ekki leyfður'} | Fríar prufur eftir: {frir}")
 
-    elif skipun == "kvota":
-        if len(args) < 2:
-            print("Vantar chat_id: python3 db_manager.py kvota 123456")
-            return
-        stada = athuga_kvota(int(args[1]))
-        print(f"\n📊 Kvótastastaða {args[1]}:")
-        print(f"  Plan: {stada['plan']}")
-        print(f"  Notað: {stada['count']}/{stada['limit']} {'(ótakm.)' if stada['limit']==0 else ''}")
-        print(f"  Eftir: {stada['eftir']} {'' if stada['eftir']>=0 else '(ótakm.)'}")
-        print(f"  Leyfur: {'✅' if stada['leyfdr'] else '❌'}")
-
     elif skipun == "info":
         if len(args) < 2:
             print("Vantar chat_id: python3 db_manager.py info 123456")
@@ -722,3 +552,7 @@ if __name__ == "__main__":
         setja_upp_gagnagrunn()
         print("\n--- Próf skýrsla ---")
         print(generate_daily_report())
+ENDASKRA
+
+# Keyra migration:
+python3 /workspace/mimir_net/core/db_manager.py migrate

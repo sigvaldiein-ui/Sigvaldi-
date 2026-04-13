@@ -15,27 +15,18 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 def ask_llm(system_prompt: str, user_prompt: str, temp: float = 0.1) -> str:
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    # S7: models array gives automatic failover across providers
     payload = {
-        "models": [
-            "google/gemini-2.5-flash",          # primary: fast, cheap
-            "anthropic/claude-3.5-haiku",        # fallback 1
-            "openai/gpt-4o-mini",                # fallback 2
-        ],
+        "model": "google/gemini-2.5-flash",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": temp,
-        "max_tokens": 4096,  # prevent runaway cost per call
+        "temperature": temp
     }
     try:
-        # S5: 110s timeout — leaves 10s buffer before web_server 120s limit
-        r = requests.post(url, headers=headers, json=payload, timeout=110)
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.Timeout:
-        return "VILLA: Greining tók of langan tíma. Reyndu aftur með styttri fyrirspurn."
     except Exception as e:
         return f"VILLA: {e}"
 
