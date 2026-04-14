@@ -1,6 +1,11 @@
+# Secrets - ALDREI commit-a þessu!
 .env
-*.json
+*.env.local
+*.env.production
+config/cf_token.txt
+config/cloudflared_cert.pem
+*.bak*
+logs/
 __pycache__/
-config/.env
-config/.env.dev
-data/
+*.pyc
+*.log
