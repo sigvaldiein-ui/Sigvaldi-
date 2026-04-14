@@ -9,3 +9,7 @@ logs/
 __pycache__/
 *.pyc
 *.log
+
+# Telegram - ekki í notkun
+scripts/morning_brief.py
+interfaces/telegram_bot_*.py
