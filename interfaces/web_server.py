@@ -2765,7 +2765,7 @@ def build_success_page(plan: str, user_id: str) -> str:
 async def home():
     """Forsíða — þjónar index.html úr disk."""
     import os
-    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maintenance.html")
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -3111,7 +3111,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             "zero_data": True,
             "tier": _tier,
             "query": query.strip(),
-            "summary": _summary,
+            "response": _summary,
             "domain": _domain_txt,
             "citations": [],
             "found": True,
@@ -3139,6 +3139,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # K1/K2/S3: Filetype detection (magic bytes + extension)
     _filetype = _detect_filetype(efni, file.filename)
+
 
     # S4: Wallet circuit breaker
     _tier = request.headers.get("X-Alvitur-Tier", "general").lower().strip() if request else "general"
@@ -3171,45 +3172,68 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     elif _quota_count == 5 and not _is_admin:
         _quota_warning = "Þetta er þín síðasta ókeypis beiðni. Uppfærðu til að halda áfram."
 
-    # S5+S6: Parse with timeout, Leith B=zero-disk, Leith A=disk+unlink
-    import concurrent.futures as _cf
-
-    def _parse(data):
-        parts, pages = [], 0
-        with fitz.open(stream=data, filetype="pdf") as doc:
-            pages = len(doc)
-            for idx, pg in enumerate(doc):
-                t = pg.get_text().strip()
-                if t: parts.append(f"[Síða {idx+1}]\n{t}")
-        return pages, parts
-
-    texti_hlutar, sidur = [], 0
-    if _is_vault:
-        # VAULT: zero disk write
-        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-            fut = ex.submit(_parse, efni)
-            try:
-                sidur, texti_hlutar = fut.result(timeout=90)
-            except _cf.TimeoutError:
-                raise HTTPException(status_code=504,
-                    detail="Vinnsla tók of langan tíma. Prófaðu minna skjal.")
-    else:
-        # GENERAL: disk write + cleanup
-        skra_id   = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-        skra_slod = SECURE_DOCS_DIR / f"doc_{skra_id}.pdf"
+    # S5+S6: Unified Parser (Office + PDF)
+    # Office files (XLSX/DOCX)
+    if _filetype in ('xlsx', 'docx'):
+        import io
         try:
-            skra_slod.write_bytes(efni)
+            if _filetype == 'xlsx':
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(efni), read_only=True, data_only=True)
+                txt = []
+                for ws in wb.worksheets:
+                    for row in ws.iter_rows(values_only=True):
+                        clean = [str(c) if c is not None else "" for c in row]
+                        line = " | ".join(v for v in clean if v.strip())
+                        if line: txt.append(line)
+                heildartexti = "\n".join(txt)
+                sidur = len(wb.worksheets)
+            elif _filetype == 'docx':
+                from docx import Document
+                doc = Document(io.BytesIO(efni))
+                heildartexti = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                sidur = len(doc.paragraphs)
+        except Exception as e:
+            heildartexti = f"Villa við lestur: {str(e)}"
+            sidur = 0
+    else:
+        # PDF Logic (Original)
+        import concurrent.futures as _cf
+        
+        def _parse_pdf(data):
+            parts, pages = [], 0
+            with fitz.open(stream=data, filetype="pdf") as doc:
+                pages = len(doc)
+                for idx, pg in enumerate(doc):
+                    t = pg.get_text().strip()
+                    if t: parts.append(f"[Síða {idx+1}]\n{t}")
+            return pages, parts
+
+        texti_hlutar, sidur = [], 0
+        if _is_vault:
+            # VAULT: zero disk write
             with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                fut = ex.submit(_parse, efni)
+                fut = ex.submit(_parse_pdf, efni)
                 try:
                     sidur, texti_hlutar = fut.result(timeout=90)
                 except _cf.TimeoutError:
-                    raise HTTPException(status_code=504,
-                        detail="Vinnsla tók of langan tíma. Prófaðu minna skjal.")
-        finally:
-            if skra_slod.exists(): skra_slod.unlink()
-
-    heildartexti = "\n\n".join(texti_hlutar)
+                    raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
+        else:
+            # GENERAL: disk write + cleanup
+            skra_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+            skra_slod = SECURE_DOCS_DIR / f"doc_{skra_id}.pdf"
+            try:
+                skra_slod.write_bytes(efni)
+                with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(_parse_pdf, efni)
+                    try:
+                        sidur, texti_hlutar = fut.result(timeout=90)
+                    except _cf.TimeoutError:
+                        raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
+            finally:
+                if skra_slod.exists(): skra_slod.unlink()
+        
+        heildartexti = "\n\n".join(texti_hlutar)
 
     if not heildartexti.strip():
         return JSONResponse(content={
@@ -3227,7 +3251,12 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         for _pg in _doc:
             _t = _pg.get_text().strip()
             if _t: _parts.append(_t)
-    result = {"summary": " ".join(_parts[:3000]), "citations": [], "found": bool(_parts)}
+    # Default result fallback for all filetypes
+    result = {"response": heildartexti if "heildartexti" in dir() else "", "citations": [], "found": bool(heildartexti.strip()) if "heildartexti" in dir() else False}
+
+    # Build result dict for PDF fallback
+    if _filetype == 'pdf':
+        result = {"response": " ".join(_parts[:3000]), "citations": [], "found": bool(_parts)}
     import os as _os
     _tier = request.headers.get("X-Alvitur-Tier", "general").lower()
     _summary = None
@@ -3243,9 +3272,22 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             if _key and _zdr and _full:
                 if query and query.strip():
                     truncation_note = " [Skjal styttur vegna stærðar]" if len(heildartexti) > _context_limit else ""
-                    _msg = f"{query.strip()}\n\nSkjal{truncation_note}:\n{_full}"
+                    _msg = f"""SPURNING: {query.strip()}
+
+REGLUR:
+1. Svaraðu BEINT spurningunni hér að ofan á íslensku.
+2. Notaðu skjalið AÐEINS sem heimild til að styðja við svarið.
+3. EKKI endurskrifa skjalið, EKKI draga það saman nema beðið sé um það sérstaklega.
+4. Ef upplýsingar vantar í skjalinu, segðu það hreint út.
+
+SKJAL{truncation_note}:
+{_full}"""
                 else:
-                    _msg = f"Greindu þes skjal stuttlega á íslensku (max 3 setningar):\n{_full[:3000]}"
+                    _msg = f"""Greindu þetta skjal stuttlega á íslensku (max 3 setningar).
+Áhersla á meginþætti og ályktanir.
+
+SKJAL:
+{_full[:3000]}"""
                 _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
                 # Sprint 47: Domain classification + specialist prompt
                 # Sprint 60c: None guard + honesty instruction
@@ -3293,7 +3335,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         "zero_data": True,
         "tier": _tier,
         "query": query or "",
-        "summary": _summary or result.get("summary", ""),
+        "response": _summary or result.get("response", ""),
         "domain": _domain_doc if "_domain_doc" in dir() else "general",
         "citations": result.get("citations", []),
         "found": result.get("found", False),
