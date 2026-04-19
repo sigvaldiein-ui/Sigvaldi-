@@ -13,3 +13,23 @@ __pycache__/
 # Telegram - ekki í notkun
 scripts/morning_brief.py
 interfaces/telegram_bot_*.py
+
+# Secrets (ALDREI commit)
+config/mimir-drive-key.json
+config/*.key
+config/*.pem
+*.env
+.env*
+
+# Runtime files
+nohup.out
+*.log
+
+# Large data stores
+data/qdrant_store/
+data/bronze/
+
+# Safety backups (við höfum Git tags)
+interfaces/web_server.py.bak*
+interfaces/web_server.py.before-*
+interfaces/web_server.py.backup.*
