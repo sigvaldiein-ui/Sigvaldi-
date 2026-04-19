@@ -2765,7 +2765,7 @@ def build_success_page(plan: str, user_id: str) -> str:
 async def home():
     """Forsíða — þjónar index.html úr disk."""
     import os
-    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maintenance.html")
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())

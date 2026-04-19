@@ -119,3 +119,66 @@ GOOGLE_JSON_KEY_FILE, GUMROAD_LIST, MIMIR_APP_PASSWORD
 
 **Höfundur:** Opus 4.5 í samstarfi við Sigvaldi Einarsson
 **Motto dagsins:** Aim for the stars 🌟
+
+---
+
+## 🟡 KNOWN ISSUES eftir live switch (19. apríl 2026, 11:49 GMT)
+
+### 1. XLSX greining virkar ekki í núverandi production útgáfu
+- **Einkenni**: Upload á `.xlsx` skilar ekki vænum greiningum
+- **Backend**: Sprint 28 K1/K2 parser er til í kóða (línur 2893–2938 í web_server.py) — `python3 -c "import openpyxl"` þarf að virka
+- **Líkleg orsök**: Annað hvort (a) openpyxl ekki uppsett, (b) parser-bug, (c) samskipti við analyze-document endpoint
+- **Prioritet**: Medium — DOCX og PDF virka, XLSX er nice-to-have fyrir Sprint 61a
+- **Næsta skref**: Athuga `pip list | grep openpyxl` og prófa parser í isolation
+
+### 2. summarize_doc MCP tool skilar tómum streng
+- **Einkenni**: Endpoint svarar `{"success": true, "result": ""}` fyrir gefinn texta
+- **Líkleg orsök**: MCP tool köllur LLM án þess að bíða eftir svari, eða system prompt er bilaður
+- **Prioritet**: Low — aðrir tools virka, þessi er ekki kritíska
+- **Næsta skref**: Debug í mcp_server.py línum sem innihalda summarize_doc
+
+### 3. Telegram bot ekki keyrandi
+- **Einkenni**: `ps aux | grep telegram` skilar engu
+- **Spurning**: Á Mímir-Telegram bot að vera í loftinu á þessu pod?
+- **Prioritet**: Óákveðinn — þarf stefnuákvörðun
+
+
+---
+
+## 🟡 KNOWN ISSUES eftir live switch (19. apríl 2026, 11:49 GMT)
+
+### 1. XLSX greining virkar ekki í núverandi production útgáfu
+- **Einkenni**: Upload á `.xlsx` skilar ekki vænum greiningum
+- **Backend**: Sprint 28 K1/K2 parser er til í kóða (línur 2893–2938 í web_server.py)
+- **Líkleg orsök**: Annað hvort (a) openpyxl ekki uppsett, (b) parser-bug, (c) samskipti við analyze-document endpoint
+- **Prioritet**: Medium — DOCX og PDF virka, XLSX er fyrir Sprint 61a
+- **Næsta skref**: `pip list | grep openpyxl` og prófa parser í isolation
+
+### 2. summarize_doc MCP tool skilar tómum streng
+- **Einkenni**: Endpoint svarar `{"success": true, "result": ""}` fyrir gefinn texta
+- **Líkleg orsök**: MCP tool köllur LLM án þess að bíða, eða system prompt er bilaður
+- **Prioritet**: Low
+- **Næsta skref**: Debug í mcp_server.py fyrir summarize_doc
+
+### 3. Telegram bot ekki keyrandi
+- **Einkenni**: `ps aux | grep telegram` skilar engu
+- **Spurning**: Á Mímir-Telegram bot að vera í loftinu á þessu pod?
+- **Prioritet**: Óákveðinn — þarf stefnuákvörðun
+
+---
+
+## ✅ SPRINT 60c ENDURHEIMT LOKIÐ
+
+**Dagsetning:** 19. apríl 2026, 09:00 – 11:50 GMT (2 klst 50 mín)
+**Staða:** alvitur.is er opin fyrir Ísland á Sprint 58+ kóðagrunni
+**GitHub:** Allar breytingar á `sigvaldiein-ui/Sigvaldi-.git` main branch
+
+### Lokaprófanir (11:46 GMT)
+- ✅ `/api/health` → sprint58, production
+- ✅ 7 síður HTTP 200 (/, personuvernd, skilmalar, oryggi, askrift, mimir-demo, alvitur-v2)
+- ✅ 4 MCP tools skráðir (search_law, summarize_doc, classify_doc, translate_text)
+- ✅ classify_doc MCP tool svarar
+- ✅ Forsíða með Almennum + Trúnaðar tabs virk
+- ✅ File upload samræmt við backend: .pdf, .docx, .xlsx
+- ⚠️ XLSX greining, summarize_doc tómt svar, Telegram bot → Sprint 61
+
