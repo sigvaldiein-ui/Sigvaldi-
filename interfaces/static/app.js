@@ -243,8 +243,8 @@
       html += '<div class="results-domain-tag">' + DOMAIN_LABELS[data.domain] + '</div>';
     }
 
-    if (data.summary) {
-      html += '<div class="results-summary">' + formatSummary(data.summary) + '</div>';
+    if (data.response) {
+      html += '<div class="results-summary">' + formatSummary(data.response) + '</div>';
     }
 
     if (data.citations && data.citations.length > 0) {
