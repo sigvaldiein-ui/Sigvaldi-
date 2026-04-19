@@ -3263,7 +3263,6 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     _llm_model = _MODEL_LEIDA_B if _tier == "vault" else _MODEL_LEIDA_A
     if _tier in ("general", "vault"):
         try:
-                        logger.info("[ALVITUR] DEBUG: About to call LLM, text_len=%d", len(heildartexti))
             import httpx as _httpx
             from datetime import datetime as _dt, timezone as _tz
             _key = _os.environ.get("OPENROUTER_API_KEY", "")
