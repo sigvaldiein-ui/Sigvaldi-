@@ -3073,32 +3073,42 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
                 )
                 _system_prompt = _get_prompt(_domain_txt, _now_str) + _honesty
-                logger.info(f"[ALVITUR] model_call tier={_tier} model={_llm_model} domain={_domain_txt}")
-                async with _httpx.AsyncClient() as _client:
-                    _r = await _client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {_key}", "X-No-Cache": "true",
-                                 "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
-                        json={"model": _llm_model,
-                              "messages": [
-                                  {"role": "system", "content": _system_prompt},
-                                  {"role": "user", "content": query.strip()},
-                              ],
-                              "max_tokens": 1500}, timeout=90.0)
-                _resp_json = _r.json()
-                _summary = _resp_json["choices"][0]["message"]["content"]
-                # Token observability
-                _usage = _resp_json.get("usage", {})
-                _in_tok = _usage.get("prompt_tokens", 0)
-                _out_tok = _usage.get("completion_tokens", 0)
-                _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _llm_model else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _llm_model else 0.0
-                logger.info("[ALVITUR] token_obs pipeline=text_query model=%s tier=%s input_tok=%d output_tok=%d cost_usd=%.6f domain=%s", _llm_model, _tier, _in_tok, _out_tok, _cost, _domain_txt)
-                # Sprint 53b: Polish lag — text-only path
-                from interfaces.chat_routes import _polish as _polish_fn_txt
-                _summary = await _polish_fn_txt(_summary, _key)
-            except Exception:
+                logger.info(f"[ALVITUR] Sprint61 text-only tier={_tier} domain={_domain_txt}")
+                _pipeline_source_txt = "unknown"
+                if _tier == "vault":
+                    from interfaces.config import VAULT_MAX_INPUT_TOKENS as _vmax
+                    if _estimate_tokens(query or "") > _vmax:
+                        return JSONResponse(status_code=413, content={
+                            "error_code": "vault_input_too_large",
+                            "detail": "Fyrirspurn er of stór fyrir Vault tier (max 8000 tokens). Styttu textann."})
+                    _summary, _model_used, _usage = await _call_leid_b(query.strip())
+                    if _summary is None:
+                        return JSONResponse(status_code=503, content={
+                            "error_code": "vault_local_unavailable",
+                            "detail": "Trúnaðarþjónusta tímabundið ekki tiltæk. Local AI module er að ræsast — reyndu aftur eftir 1 mínútu."})
+                    _pipeline_source_txt = f"local_vllm_{_model_used}"
+                    _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
+                    logger.info(f"[ALVITUR] leid_b sovereign tokens in={_in_tok} out={_out_tok}")
+                else:
+                    _summary, _model_used, _usage = await _call_leid_a(_system_prompt, query.strip())
+                    if _summary is None:
+                        return JSONResponse(status_code=502, content={
+                            "error_code": "llm_unavailable",
+                            "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur."})
+                    _pipeline_source_txt = f"openrouter_{_model_used.split('/')[-1]}"
+                    _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
+                    _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _model_used else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _model_used else 0.0
+                    logger.info("[ALVITUR] token_obs pipeline=text_query model=%s tier=%s in=%d out=%d cost=%.6f", _model_used, _tier, _in_tok, _out_tok, _cost)
+                    try:
+                        from interfaces.chat_routes import _polish as _polish_fn_txt
+                        _summary = await _polish_fn_txt(_summary, _key)
+                    except Exception as _pe:
+                        logger.warning(f"[ALVITUR] polish failed (non-fatal): {_pe}")
+            except Exception as _e:
+                logger.error(f"[ALVITUR] text-only pipeline exc: {type(_e).__name__}: {_e}")
                 _summary = None
                 _domain_txt = "general"
+                _pipeline_source_txt = "error"
         if _summary is None:
             return JSONResponse(status_code=502, content={
                 "error_code": "llm_unavailable",
@@ -3116,6 +3126,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             "citations": [],
             "found": True,
             "status": "ready_for_analysis",
+            "pipeline_source": _pipeline_source_txt if "_pipeline_source_txt" in dir() else "unknown",
         })
 
     import fitz  # PyMuPDF
@@ -3260,16 +3271,14 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     import os as _os
     _tier = request.headers.get("X-Alvitur-Tier", "general").lower()
     _summary = None
-    _llm_model = _MODEL_LEIDA_B if _tier == "vault" else _MODEL_LEIDA_A
+    _pipeline_source_doc = "unknown"
+    _domain_doc = "general"
     if _tier in ("general", "vault"):
         try:
-            import httpx as _httpx
-            from datetime import datetime as _dt, timezone as _tz
             _key = _os.environ.get("OPENROUTER_API_KEY", "")
-            _zdr = _os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") == "true"
-            _context_limit = 60000 if _tier in ("vault",) else 30000
+            _context_limit = 60000 if _tier == "vault" else 30000
             _full = heildartexti[:_context_limit]
-            if _key and _zdr and _full:
+            if _full:
                 if query and query.strip():
                     truncation_note = " [Skjal styttur vegna stærðar]" if len(heildartexti) > _context_limit else ""
                     _msg = f"""SPURNING: {query.strip()}
@@ -3288,46 +3297,60 @@ SKJAL{truncation_note}:
 
 SKJAL:
 {_full[:3000]}"""
-                _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
-                # Sprint 47: Domain classification + specialist prompt
-                # Sprint 60c: None guard + honesty instruction
-                from interfaces.specialist_prompts import classify as _classify, get_specialist_prompt as _get_prompt
-                _classify_text = (query.strip() if query and query.strip() else heildartexti[:500])
-                try:
-                    _domain_doc = await _classify(_classify_text or "general")
-                except Exception:
-                    _domain_doc = "general"
-                _domain_doc = _domain_doc or "general"
-                _honesty_doc = (
-                    "\n\nMikilvægt: Ef þú finnur ekki nógu nákvæmar upplýsingar í skjalinu "
-                    "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
-                    "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
-                )
-                _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
-                logger.info(f"[ALVITUR] model_call tier={_tier} model={_llm_model} domain={_domain_doc}")
-                _r = _httpx.post("https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {_key}", "X-No-Cache": "true",
-                             "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
-                    json={"model": _llm_model,
-                          "messages": [
-                              {"role": "system", "content": _system_prompt},
-                              {"role": "user", "content": _msg}
-                          ],
-                          "max_tokens": 1500}, timeout=90.0)
-                _resp_json = _r.json()
-                _summary = _resp_json["choices"][0]["message"]["content"]
-                # Sprint 53a: Polish lag
-                from interfaces.chat_routes import _polish as _polish_fn
-                _summary = await _polish_fn(_summary, _key)
-                # Sprint 46 Phase 1: Token observability
-                _usage = _resp_json.get("usage", {})
-                _in_tok = _usage.get("prompt_tokens", 0)
-                _out_tok = _usage.get("completion_tokens", 0)
-                _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _llm_model else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _llm_model else 0.0
-                logger.info("[ALVITUR] token_obs pipeline=analyze_doc model=%s tier=%s input_tok=%d output_tok=%d cost_usd=%.6f", _llm_model, _tier, _in_tok, _out_tok, _cost)
-        except Exception:
+                # Sprint 61: Leid A/B sovereign separation
+                if _tier == "vault":
+                    from interfaces.config import VAULT_MAX_INPUT_TOKENS as _vmax
+                    if _estimate_tokens(_msg) > _vmax:
+                        return JSONResponse(status_code=413, content={
+                            "error_code": "vault_input_too_large",
+                            "detail": f"Skjal er of stórt fyrir Vault tier (max {_vmax} tokens). Skiptu í smærri hluta eða notaðu Almenna greiningu."})
+                    logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=vault calling leid_b")
+                    _summary, _model_used, _usage = await _call_leid_b(_msg)
+                    if _summary is None:
+                        return JSONResponse(status_code=503, content={
+                            "error_code": "vault_local_unavailable",
+                            "detail": "Trúnaðarþjónusta tímabundið ekki tiltæk. Local AI module er að ræsast — reyndu aftur eftir 1 mínútu."})
+                    _pipeline_source_doc = f"local_vllm_{_model_used}"
+                    _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
+                    logger.info(f"[ALVITUR] leid_b analyze_doc in={_in_tok} out={_out_tok}")
+                    _domain_doc = "vault"
+                else:
+                    from datetime import datetime as _dt, timezone as _tz
+                    from interfaces.specialist_prompts import classify as _classify, get_specialist_prompt as _get_prompt
+                    _classify_text = (query.strip() if query and query.strip() else heildartexti[:500])
+                    try:
+                        _domain_doc = await _classify(_classify_text or "general")
+                    except Exception:
+                        _domain_doc = "general"
+                    _domain_doc = _domain_doc or "general"
+                    _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+                    _honesty_doc = (
+                        "\n\nMikilvægt: Ef þú finnur ekki nógu nákvæmar upplýsingar í skjalinu "
+                        "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
+                        "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
+                    )
+                    _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
+                    logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
+                    _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
+                    if _summary is None:
+                        return JSONResponse(status_code=502, content={
+                            "error_code": "llm_unavailable",
+                            "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur."})
+                    _pipeline_source_doc = f"openrouter_{_model_used.split('/')[-1]}"
+                    _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
+                    _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _model_used else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _model_used else 0.0
+                    logger.info("[ALVITUR] token_obs pipeline=analyze_doc model=%s tier=%s in=%d out=%d cost=%.6f", _model_used, _tier, _in_tok, _out_tok, _cost)
+                    # Polish only for Leid A (never vault — sovereignty)
+                    try:
+                        from interfaces.chat_routes import _polish as _polish_fn
+                        _summary = await _polish_fn(_summary, _key)
+                    except Exception as _pe:
+                        logger.warning(f"[ALVITUR] polish failed (non-fatal): {_pe}")
+        except Exception as _e:
+            logger.error(f"[ALVITUR] analyze_doc pipeline exc: {type(_e).__name__}: {_e}")
             _summary = None
             _domain_doc = "general"
+            _pipeline_source_doc = "error"
     response = {
         "success": True,
         "filename": file.filename,
@@ -3341,6 +3364,7 @@ SKJAL:
         "found": result.get("found", False),
         "status": "ready_for_analysis",
         "quota_warning": _quota_warning,
+        "pipeline_source": _pipeline_source_doc if "_pipeline_source_doc" in dir() else "unknown",
     }
     return JSONResponse(content=response)
 
@@ -3604,3 +3628,84 @@ async def serve_v2():
 async def serve_demo():
     with open('index.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Sprint 61 - Leid A/B helpers (sovereign separation)
+# ═══════════════════════════════════════════════════════════════════════
+
+async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
+    """OpenRouter chain: Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage)."""
+    from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY
+    import httpx as _hx
+    _key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not _key:
+        logger.error("[ALVITUR] leid_a: OPENROUTER_API_KEY missing")
+        return (None, None, None)
+    if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
+        logger.warning("[ALVITUR] leid_a: ZDR_CONFIRMED=false - refusing call")
+        return (None, None, None)
+    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
+    async with _hx.AsyncClient() as c:
+        for idx, model in enumerate(chain):
+            try:
+                r = await c.post("https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {_key}", "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
+                    json={"model": model, "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_msg}], "max_tokens": max_tokens},
+                    timeout=30.0)
+                if r.status_code != 200:
+                    logger.warning(f"[ALVITUR] leid_a step={idx+1}/3 model={model} status={r.status_code}")
+                    continue
+                d = r.json()
+                logger.info(f"[ALVITUR] leid_a {'FALLBACK' if idx>0 else 'primary'} ok step={idx+1}/3 model={model}")
+                return (d["choices"][0]["message"]["content"], model, d.get("usage", {}))
+            except Exception as e:
+                logger.warning(f"[ALVITUR] leid_a step={idx+1}/3 exc={type(e).__name__}: {e}")
+    logger.error("[ALVITUR] leid_a ALL 3 models failed")
+    return (None, None, None)
+
+
+def _vault_system_prompt():
+    return ("Þú ert Alvitur — íslensk gervigreindaraðstoð á trúnaðarstigi (Vault). "
+            "Þú keyrir á íslenskri GPU. Gögn fara aldrei úr vélinni.\n\n"
+            "REGLUR UM ÍSLENSKU:\n"
+            "1. Svaraðu ALLTAF á réttri íslensku með fullum beygingum.\n"
+            "2. Gættu að föllum (nf/þf/þgf/ef) og kynjum (kk/kvk/hk).\n"
+            "3. Notaðu aldrei orð sem þú ert ekki viss um — veldu einfaldara orð.\n"
+            "4. Ekki búa til orð. Ef þú veist ekki orðið — umorðaðu.\n\n"
+            "DÆMI UM GÓÐA SVÖRUN:\n"
+            "Spurning: Hvað er höfuðborg Íslands?\n"
+            "Svar: Reykjavík er höfuðborg Íslands. Hún er stærsta borg landsins og þar búa um 130.000 manns.\n\n"
+            "Spurning: Greindu þessa færslu: '01.12.2025 | Launagreiðsla | 450000'\n"
+            "Svar: Þetta er innborgun launa að fjárhæð 450.000 krónur þann 1. desember 2025. Þetta flokkast sem tekjur.\n\n"
+            "Svaraðu nú spurningu notandans í sama stíl.")
+
+
+async def _call_leid_b(user_msg, max_tokens=1500):
+    """Local sovereign vLLM. NO cloud fallback. Returns (content, model, usage) or (None,None,None)."""
+    from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient() as c:
+            r = await c.post(VAULT_LOCAL_URL,
+                headers={"Content-Type": "application/json"},
+                json={"model": VAULT_LOCAL_MODEL,
+                      "messages": [{"role":"system","content":_vault_system_prompt()},{"role":"user","content":user_msg}],
+                      "max_tokens": max_tokens, "temperature": 0.3, "top_p": 0.9,
+                      "chat_template_kwargs": {"enable_thinking": False}},
+                timeout=float(VAULT_LOCAL_TIMEOUT))
+            if r.status_code != 200:
+                logger.error(f"[ALVITUR] leid_b local vLLM status={r.status_code} body={r.text[:200]}")
+                return (None, None, None)
+            d = r.json()
+            ms = VAULT_LOCAL_MODEL.rsplit("/", 1)[-1]
+            u = d.get("usage", {})
+            logger.info(f"[ALVITUR] leid_b sovereign ok model={ms} in={u.get('prompt_tokens',0)} out={u.get('completion_tokens',0)}")
+            return (d["choices"][0]["message"]["content"], ms, u)
+    except Exception as e:
+        logger.error(f"[ALVITUR] leid_b local vLLM exc={type(e).__name__}: {e}")
+        return (None, None, None)
+
+
+def _estimate_tokens(text):
+    return int(len((text or "").split()) * 1.3)
