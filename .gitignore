@@ -33,3 +33,8 @@ data/bronze/
 interfaces/web_server.py.bak*
 interfaces/web_server.py.before-*
 interfaces/web_server.py.backup.*
+
+# Sprint 61 — fallback backups (aldrei committa)
+*.bak-fallback-*
+*.bak-*
+config/cf_token.txt
