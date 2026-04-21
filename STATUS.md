@@ -1,200 +1,79 @@
-# Alvitur — Status
+# ALVITUR STATUS — Sprint 62 (Beta Hardening)
 
-**Síðast uppfært:** 2026-04-20 18:10 UTC
-**Núverandi útgáfa:** v0.61-fasi-a
-**Commit:** 338ce19
-**Sprint:** 61 Fasi A — KLÁRAÐ ✅
-
-## Núverandi arkitektúr
-
-### Leið A — General tier (cloud)
-- OpenRouter chain: Haiku → Sonnet → gpt-4o-mini
-- ZDR enabled (`OPENROUTER_ZDR_CONFIRMED=true`)
-- Deepseek polish layer á úttaki
-- Notað fyrir almennar fyrirspurnir
-
-### Leið B — Vault tier (sovereign)
-- Local vLLM: `qwen3-32b-awq` á `localhost:8002`
-- Keyrir á íslenskri GPU (Runpod pod)
-- ENGIN cloud fallback — 503 ef niðri
-- 413 gate ef input > 7000 tokens
-- Notað fyrir trúnaðargögn
-
-## API endpoints
-
-| Endpoint | Tier routing | Response field |
-|----------|-------------|---------------|
-| `/api/chat` | `tier` param | `pipeline_source` |
-| `/api/analyze-document` | `X-Alvitur-Tier` header | `pipeline_source` |
-| `/api/health` | N/A | `status`, `version` |
-
-## Sovereign guarantees (live tested)
-
-- ✅ Vault data never leaves Icelandic GPU
-- ✅ Response includes `pipeline_source` audit field
-- ✅ Local module down → 503, never silent cloud fallback
-- ✅ Oversized vault input → 413, never silent truncation
-
-## Gæði
-
-- Leið A (Haiku): A+ íslenska, ~2s svör
-- Leið B (Qwen3-32B): B+ íslenska, ~6s svör
-- Leið B batnar verulega með document context
-
-## Næstu skref
-
-### Fasi B (UX polish)
-- Loading states í UI
-- Error messages á íslensku
-- Admin dashboard fyrir pipeline_source stats
-
-### Fasi C (Qwen3 quality)
-- Fine-tune á íslensku dataseti (A+ markmið)
-- A100 upgrade fyrir max_model_len 16384
-- Hraða target: Leið B ~3s
-
-### Fasi D (Beta)
-- 3-5 early adopters
-- Feedback loop
-- Sovereign marketing launch
-
-## Backups á pod
-
-- `interfaces/config.py.bak-fallback-1505`
-- `interfaces/web_server.py.bak-fallback-1505`
-- `interfaces/chat_routes.py.bak-fallback-1800`
-
-## Rollback
-
-```bash
-git revert 338ce19   # eða
-git checkout 7ef7332 -- interfaces/
-```
-
-## Sprint 61.3 Hotfix — vLLM context length (2026-04-21 07:13 UTC)
-
-**Vandamál:** Reikningsyfirlit (8 bls. Excel, 6693 tokens) hristist á vault
-tier — vLLM var með `--max-model-len 8192`, request 6693+1500=8193 → 503.
-
-**Lausn:** Endurræsa vLLM með `--max-model-len 32768`.
-- VRAM: 41.6/46 GB (90% — sama sem fyrr)
-- KV cache: 82,896 tokens → 2.53x concurrency headroom
-- Native Qwen3-32B supports 40,960 → vel innan sviðs
-
-**Skjalastærð sem nú virkar á vault:**
-- Einfaldur texti: allt að ~24 bls.
-- Excel með töflum: allt að ~12-16 bls.
-
-**Startup script:** `/workspace/start_vllm_32k.sh` skrifaður fyrir
-endurkeyrslu eftir pod restart.
-
-**Ekki kóðabreyting — bara vLLM flag.**
-Semaphore(1) + rule-based vault classify enn í gildi.
-
-## Sprint 61.4 Hotfix — httpx timeout (2026-04-21 07:45 UTC)
-
-**Vandamál:** Eftir Sprint 61.3 (32k context), vault path á stórum skjölum
-(>7k input tokens) hristist með `ReadTimeout` eftir 60 sek — httpx.AsyncClient
-default timeout í web_server/chat_routes var 60s.
-
-Live timeline:
-- 07:29:49 UI analyze-document vault request kemur (10k+ tokens skjal)
-- 07:30:49 web_server ReadTimeout eftir nákvæmlega 60 sek
-- 07:35:38 vLLM náði að klára sama request (94 sek total)
-- → Fix: lengja httpx timeout í 180s
-
-**Lausn:** `httpx.AsyncClient(timeout=180.0)` á vault path.
-
-**Live verified 2026-04-21 07:45:**
-- in=10,406 out=598 HTTP 200 á raunverulegt reikningsyfirlit
-- pipeline_source: local_vllm_qwen3-32b-awq (sovereign)
-
-**Backups:** `*.bak-timeout-0740`
-
-## 🏆 SPRINT 61 COMPLETE — 2026-04-21 08:14 UTC
-
-### Production-Verified Sovereignty
-Qwen3-32B-AWQ sovereign (vault tier) live-verified á raunverulegu
-reikningsyfirliti (196 rows, Excel, ~10,400 tokens input).
-Niðurstaða: 19 flokkaðir kostnaðarliðir á íslensku, ítarlegri
-en Claude 3.5 Haiku (5 flokkar) á sömu gögnum.
-
-**Quality > Cloud á icelandic finance analysis.**
-
-### 5 Tags Shipped (16 klst)
-| Tag | Hvað |
-|-----|------|
-| v0.61-fasi-a | Sovereign Leið B online |
-| v0.61.1-hotfix-sovereignty | ClassifySkill rule-based (0 cloud leak) |
-| v0.61.2-hotfix-concurrency | Semaphore(1) OOM guard |
-| v0.61.3-hotfix-context | vLLM 8k → 32k context |
-| v0.61.4-hotfix-timeout | httpx 60s → 180s timeout |
-
-### Sovereignty Stack (Live)
-- ClassifySkill rule-based (no LLM call on vault path)
-- Semaphore(1) vault serialization
-- Qwen3-32B-AWQ @ 32k context
-- httpx timeout 180s (real-world headroom)
-- 0 bytes til OpenRouter á vault (verified via call counter)
-
-### Performance Envelope
-- Small (< 1k tokens): 7-10 sec
-- Medium (5k tokens): 20-30 sec
-- Large (10k+ tokens, 196-row Excel): 30-60 sec
-- Max timeout: 180 sec
-
-### Live Milestone
-- alvitur.is live á internetinu
-- Fyrsti utanaðkomandi notandi kom óvænt kl 07:55 UTC
-- Kerfi skilaði greining án issues
-- → Rate limiting → Sprint 62 P0
-
-### Next: Sprint 62 Hardening
-1. Rate limiting per IP
-2. RAG embeddings audit
-3. Log sanitization
-4. Telemetry audit
-5. Sentry before_send hook
-6. _polish import fix
-7. UI loading indicator fyrir vault
+**Dagsetning:** 2026-04-21 16:30 UTC
+**Höfundur:** Sigvaldi + Perplexity/Opus advisor loop
+**Staða:** Leið B production-ready fyrir bókhaldsgreiningu. Leið A í biðstöðu (Patch C á morgun).
 
 ---
 
-## 🏆 SPRINT 62.0 VERIFIED — 2026-04-21 11:02 UTC
+## 🎯 Sprint 62 — Hvað var leyst
 
-### Real-User Production Proof
-Test user endurprófaði `Fjárhagsfærslur (83).xlsx` (reikningslykill 42132,
-196 rows, 2023-2026) eftir triple-fix deployment.
+### Bakgrunnur
+Fyrsti beta-notandi (innvígður testari) reyndi að greina fjárhagsskjal (Excel, bankayfirlit). Þrjár sjálfstæðar villur birtust:
+1. POST /api/analyze-document → 502 Bad Gateway á Leið A (OPENROUTER_API_KEY missing)
+2. POST /api/analyze-document → 500 Internal Server Error á Leið B (NameError: _is_beta)
+3. Leið B svaraði með fabricated bókhaldsgreiningu (9x villa í summum)
 
-### Niðurstaða (frá notanda)
-- ✅ Summa debet: -2.608.308 kr
-- ✅ Summa kredit: 2.978.988 kr
-- ✅ Mismunur: 370.680 kr
-- ✅ Fullur tímabila listi (engin truncation)
-- ✅ Math 100% rétt
-- ✅ Íslensk fjármálaterminology native-level
+### Rót orsök (staðfest úr logs)
+- Villa 1: chat_routes leid_a kastaði 502 án fallback
+- Villa 2: _is_beta var notað á línu 3208 en fyrst skilgreint á línu 3448
+- Villa 3: LLM reiknaði summur í höfðinu → hallucination (á við ÖLL módel)
 
-### Tímalína (26 mín frá bug → verified)
-- 08:43 — User report (truncated at '2026-03-31 til 2')
-- 08:56 — Diagnostic run, 3 caps identified
-- 09:00 — Triple-fix applied + tag v0.62.0
-- 09:01 — Pushed to GitHub
-- 09:06 — web_server restart verified live
-- 11:02 — User retest with full analysis received ✅
+### Lagfæringar (deployed)
+| Patch | Skrá | Lýsing |
+|-------|------|--------|
+| A | web_server.py L3296 | fitz.open() aðeins keyrt fyrir PDF |
+| A.1 | web_server.py L3205 | Bæta _is_beta skilgreiningu framar |
+| B.1 | interfaces/excel_preprocessor.py (ný) | Pandas Reiknivélar-Agent |
+| B.2 | web_server.py xlsx braut | Vefja með preprocess_excel() + openpyxl fallback |
+| Dep | pip install | pandas 3.0.2, openpyxl 3.1.5, tabulate 0.10.0 |
 
-### Verified Capacity
-- Input: 24,000 tokens (was 7,000) — handles 196-row Excel
-- Output: 8,192 tokens (was 1,500) — full analysis with sums
-- Timeout: 180s (was 60s) — no timeouts observed
-- Sovereignty: 100% (0 bytes to OpenRouter)
+### Verification (live test)
+Raunverulegt skjal: ReikningsYfirlit_23.09.2025-1.xlsx (195 færslur, 2024-01-10 → 2024-12-31)
 
-### Known Prompt Engineering Items (Sprint 62.2)
-1. Debet/kredit terminology needs clarification in system prompt
-2. "Afstemming" semantics needs definition
-3. Account-type-aware analysis (eignareikningur vs skuldareikningur)
+| Spurning | Svar Leiðar B | Pandas raunverulegt | Nákvæmni |
+|----------|---------------|---------------------|----------|
+| Mest útgjald | Kreditkort -3.814.500 kr, 32 færslur | -3.814.500 kr | ✅ 100% |
+| Nettó hreyfing | -585.422 kr | -585.422 kr | ✅ 100% |
+| Nettó + tímabil | -585.422 kr, 2024-01-10 → 2024-12-31 | Staðfest | ✅ 100% |
 
-### Next: Sprint 62.1 Rate Limiting (P0)
-External traffic detected from Ukraine + AWS bots.
-Rate limiting on /api/ endpoints required before scaling.
+### Áhrif
+- ✅ Zero-Data sovereignty óbreytt (Leið B = local Qwen3-32B-AWQ á port 8002)
+- ✅ Engin 502/500 á Leið B lengur
+- ✅ LLM reiknar ekki lengur → engar hallucineraðar summur
+- ✅ Kerfið er nú Reiknivélar-Agent skref 1 (sbr. Sprint 63-64)
 
 ---
+
+## 🔜 Næsta lota
+
+### Sprint 62.2 — Patch C (Leið A → Leið B fallback)
+- Þrjár 502-staðsetningar í web_server.py
+- Í stað 502 → reyna _call_leid_b() og skila sovereign svari
+- Áætlaður tími: ~30 mín
+
+### Sprint 63 — The Orchestrator
+- Tengja master_pipeline.py
+- Classification í bakgrunni: lögfræði / fjármál / almennt
+
+### Sprint 64 — Specialist Swarm
+- Virkja law_specialist.py, finance_specialist.py
+
+---
+
+## 🛡️ Security posture
+- PHP exploit scanners → allt 404 (engin PHP)
+- Sovereignty: 100% local inference á Leið B
+
+## 📂 Backup skrár (rollback ready)
+- interfaces/web_server.py.bak-sprint62-patchA-1533
+- interfaces/web_server.py.bak-sprint62-patchA1-1555
+- interfaces/web_server.py.bak-sprint62-patchB-1618
+
+## 🔧 Running services (live)
+- web_server: PID 7143 (port 8000)
+- vLLM: PID 4996 — Qwen3-32B-AWQ (port 8002)
+
+---
+
+**Heildarniðurstaða Sprint 62:** Alvitur Leið B er nú raunveruleg Enterprise B2B vara.

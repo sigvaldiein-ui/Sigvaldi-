@@ -3202,6 +3202,11 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     import hashlib as _hl
     _is_admin = bool(_master_key and _req_key and _hl.sha256(_req_key.encode()).hexdigest() == _master_key)
     _client_ip = (request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else "unknown"))
+    # Sprint 62 Patch A.1: define _is_beta early (was defined 240 lines later, causing NameError)
+    try:
+        _is_beta = _er_beta_ip(_client_ip)
+    except Exception:
+        _is_beta = False
     _quota_count = _quota_tracker_doc.get(_client_ip, 0) + 1
     if not _is_admin:
         _quota_tracker_doc[_client_ip] = _quota_count
@@ -3228,16 +3233,25 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         import io
         try:
             if _filetype == 'xlsx':
-                import openpyxl
-                wb = openpyxl.load_workbook(io.BytesIO(efni), read_only=True, data_only=True)
-                txt = []
-                for ws in wb.worksheets:
-                    for row in ws.iter_rows(values_only=True):
-                        clean = [str(c) if c is not None else "" for c in row]
-                        line = " | ".join(v for v in clean if v.strip())
-                        if line: txt.append(line)
-                heildartexti = "\n".join(txt)
-                sidur = len(wb.worksheets)
+                # Sprint 62 Patch B: Pandas pre-processor (Reiknivélar-Agent).
+                # Returns markdown with real computed sums so LLM doesn't hallucinate.
+                try:
+                    from interfaces.excel_preprocessor import preprocess_excel as _prep_xlsx
+                    heildartexti = _prep_xlsx(efni)
+                    sidur = 1
+                    logger.info(f"[ALVITUR] Sprint62b xlsx preprocessed via pandas, {len(heildartexti)} chars")
+                except Exception as _xe:
+                    logger.warning(f"[ALVITUR] pandas preprocess failed, fallback to openpyxl flat: {type(_xe).__name__}: {_xe}")
+                    import openpyxl
+                    wb = openpyxl.load_workbook(io.BytesIO(efni), read_only=True, data_only=True)
+                    txt = []
+                    for ws in wb.worksheets:
+                        for row in ws.iter_rows(values_only=True):
+                            clean = [str(c) if c is not None else "" for c in row]
+                            line = " | ".join(v for v in clean if v.strip())
+                            if line: txt.append(line)
+                    heildartexti = "\n".join(txt)
+                    sidur = len(wb.worksheets)
             elif _filetype == 'docx':
                 from docx import Document
                 doc = Document(io.BytesIO(efni))
@@ -3293,14 +3307,16 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         })
 
     # — 6. Skila grunnupplýsingum (LLM greining kemur í Lag 2) —
-    # Sprint 28: Einföld fitz-greining (CitationExtractor fjarlægður)
-    import fitz as _fitz_inner
-    with _fitz_inner.open(stream=efni, filetype="pdf") as _doc:
-        sidur = len(_doc)
-        _parts = []
-        for _pg in _doc:
-            _t = _pg.get_text().strip()
-            if _t: _parts.append(_t)
+    # Sprint 62 Patch A: Only run fitz (PDF parser) for PDF files.
+    # xlsx/docx already parsed above via openpyxl/python-docx.
+    _parts = []
+    if _filetype == 'pdf':
+        import fitz as _fitz_inner
+        with _fitz_inner.open(stream=efni, filetype="pdf") as _doc:
+            sidur = len(_doc)
+            for _pg in _doc:
+                _t = _pg.get_text().strip()
+                if _t: _parts.append(_t)
     # Default result fallback for all filetypes
     result = {"response": heildartexti if "heildartexti" in dir() else "", "citations": [], "found": bool(heildartexti.strip()) if "heildartexti" in dir() else False}
 
