@@ -65,6 +65,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+import asyncio as _aio_ws
+_VAULT_SEMAPHORE_WS = _aio_ws.Semaphore(1)
 logger = logging.getLogger("alvitur.web")
 
 # Sprint 54: pipeline_adapter skilar alltaf None — fallback path active
@@ -3082,7 +3084,8 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                         return JSONResponse(status_code=413, content={
                             "error_code": "vault_input_too_large",
                             "detail": "Fyrirspurn er of stór fyrir Vault tier (max 8000 tokens). Styttu textann."})
-                    _summary, _model_used, _usage = await _call_leid_b(query.strip())
+                    async with _VAULT_SEMAPHORE_WS:
+                        _summary, _model_used, _usage = await _call_leid_b(query.strip())
                     if _summary is None:
                         return JSONResponse(status_code=503, content={
                             "error_code": "vault_local_unavailable",
@@ -3306,7 +3309,8 @@ SKJAL:
                             "error_code": "vault_input_too_large",
                             "detail": f"Skjal er of stórt fyrir Vault tier (max {_vmax} tokens). Skiptu í smærri hluta eða notaðu Almenna greiningu."})
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=vault calling leid_b")
-                    _summary, _model_used, _usage = await _call_leid_b(_msg)
+                    async with _VAULT_SEMAPHORE_WS:
+                        _summary, _model_used, _usage = await _call_leid_b(_msg)
                     if _summary is None:
                         return JSONResponse(status_code=503, content={
                             "error_code": "vault_local_unavailable",

@@ -10,6 +10,11 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("alvitur.web")
 
+# Sprint 61.2: Vault concurrency guard — serialize til að forðast OOM á A40 (40/46 GB)
+# Max 1 samtímis vault call. General tier óbreytt (cloud handle concurrency).
+import asyncio as _aio
+_VAULT_SEMAPHORE = _aio.Semaphore(1)
+
 
 def _get_rag_context(query: str, domain: str) -> str:
     if domain != "legal":
@@ -163,7 +168,11 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
                 "detail": f"Fyrirspurn er of stór fyrir Vault tier (max {VAULT_MAX_INPUT_TOKENS} tokens). Styttu textann eða skiptu í hluta.",
             })
         sys_prompt = _vault_system_prompt_chat(query, file_context, rag, now_str)
-        content, model, usage = await _call_vault_local(query, sys_prompt)
+        # Sprint 61.2: semaphore til að forðast OOM
+        async with _VAULT_SEMAPHORE:
+            logger.info(f"[VAULT] semaphore acquired, processing vault call")
+            content, model, usage = await _call_vault_local(query, sys_prompt)
+        logger.info(f"[VAULT] semaphore released")
         if content is None:
             return JSONResponse(status_code=503, content={
                 "success": False,
