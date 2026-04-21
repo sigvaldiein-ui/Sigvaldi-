@@ -91,3 +91,23 @@ endurkeyrslu eftir pod restart.
 **Ekki kóðabreyting — bara vLLM flag.**
 Semaphore(1) + rule-based vault classify enn í gildi.
 
+## Sprint 61.4 Hotfix — httpx timeout (2026-04-21 07:45 UTC)
+
+**Vandamál:** Eftir Sprint 61.3 (32k context), vault path á stórum skjölum
+(>7k input tokens) hristist með `ReadTimeout` eftir 60 sek — httpx.AsyncClient
+default timeout í web_server/chat_routes var 60s.
+
+Live timeline:
+- 07:29:49 UI analyze-document vault request kemur (10k+ tokens skjal)
+- 07:30:49 web_server ReadTimeout eftir nákvæmlega 60 sek
+- 07:35:38 vLLM náði að klára sama request (94 sek total)
+- → Fix: lengja httpx timeout í 180s
+
+**Lausn:** `httpx.AsyncClient(timeout=180.0)` á vault path.
+
+**Live verified 2026-04-21 07:45:**
+- in=10,406 out=598 HTTP 200 á raunverulegt reikningsyfirlit
+- pipeline_source: local_vllm_qwen3-32b-awq (sovereign)
+
+**Backups:** `*.bak-timeout-0740`
+
