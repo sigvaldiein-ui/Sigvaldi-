@@ -3686,7 +3686,7 @@ def _vault_system_prompt():
             "Svaraðu nú spurningu notandans í sama stíl.")
 
 
-async def _call_leid_b(user_msg, max_tokens=1500):
+async def _call_leid_b(user_msg, max_tokens=8192):
     """Local sovereign vLLM. NO cloud fallback. Returns (content, model, usage) or (None,None,None)."""
     from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
     import httpx as _hx
