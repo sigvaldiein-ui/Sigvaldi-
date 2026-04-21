@@ -73,7 +73,7 @@ async def _call_vault_local(query: str, system_prompt: str):
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": query},
                     ],
-                    "max_tokens": 600,
+                    "max_tokens": 4096,
                     "temperature": 0.3,
                     "top_p": 0.9,
                     "chat_template_kwargs": {"enable_thinking": False},
@@ -120,7 +120,7 @@ async def _call_general_chain(system_prompt: str, query: str):
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": f"SPURNING: {query}"},
                         ],
-                        "max_tokens": 600,
+                        "max_tokens": 4096,
                         "temperature": 0.2,
                     },
                 )

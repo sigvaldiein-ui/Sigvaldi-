@@ -10,8 +10,8 @@ MODEL_LEIDA_A_TERTIARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_TERTIARY", "
 # Leid B: LOCAL SOVEREIGN (vault tier) - NO cloud fallback
 VAULT_LOCAL_URL: str = os.environ.get("ALVITUR_VAULT_LOCAL_URL", "http://localhost:8002/v1/chat/completions")
 VAULT_LOCAL_MODEL: str = os.environ.get("ALVITUR_VAULT_LOCAL_MODEL", "/workspace/models/qwen3-32b-awq")
-VAULT_LOCAL_TIMEOUT: int = int(os.environ.get("ALVITUR_VAULT_LOCAL_TIMEOUT", "60"))
-VAULT_MAX_INPUT_TOKENS: int = int(os.environ.get("ALVITUR_VAULT_MAX_INPUT_TOKENS", "7000"))
+VAULT_LOCAL_TIMEOUT: int = int(os.environ.get("ALVITUR_VAULT_LOCAL_TIMEOUT", "180"))
+VAULT_MAX_INPUT_TOKENS: int = int(os.environ.get("ALVITUR_VAULT_MAX_INPUT_TOKENS", "24000"))
 
 # Classify + Polish (Leid A only)
 CLASSIFY_MODEL: str = os.environ.get("ALVITUR_CLASSIFY_MODEL", "qwen/qwen3.5-27b")
