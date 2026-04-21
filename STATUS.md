@@ -111,3 +111,51 @@ Live timeline:
 
 **Backups:** `*.bak-timeout-0740`
 
+## 🏆 SPRINT 61 COMPLETE — 2026-04-21 08:14 UTC
+
+### Production-Verified Sovereignty
+Qwen3-32B-AWQ sovereign (vault tier) live-verified á raunverulegu
+reikningsyfirliti (196 rows, Excel, ~10,400 tokens input).
+Niðurstaða: 19 flokkaðir kostnaðarliðir á íslensku, ítarlegri
+en Claude 3.5 Haiku (5 flokkar) á sömu gögnum.
+
+**Quality > Cloud á icelandic finance analysis.**
+
+### 5 Tags Shipped (16 klst)
+| Tag | Hvað |
+|-----|------|
+| v0.61-fasi-a | Sovereign Leið B online |
+| v0.61.1-hotfix-sovereignty | ClassifySkill rule-based (0 cloud leak) |
+| v0.61.2-hotfix-concurrency | Semaphore(1) OOM guard |
+| v0.61.3-hotfix-context | vLLM 8k → 32k context |
+| v0.61.4-hotfix-timeout | httpx 60s → 180s timeout |
+
+### Sovereignty Stack (Live)
+- ClassifySkill rule-based (no LLM call on vault path)
+- Semaphore(1) vault serialization
+- Qwen3-32B-AWQ @ 32k context
+- httpx timeout 180s (real-world headroom)
+- 0 bytes til OpenRouter á vault (verified via call counter)
+
+### Performance Envelope
+- Small (< 1k tokens): 7-10 sec
+- Medium (5k tokens): 20-30 sec
+- Large (10k+ tokens, 196-row Excel): 30-60 sec
+- Max timeout: 180 sec
+
+### Live Milestone
+- alvitur.is live á internetinu
+- Fyrsti utanaðkomandi notandi kom óvænt kl 07:55 UTC
+- Kerfi skilaði greining án issues
+- → Rate limiting → Sprint 62 P0
+
+### Next: Sprint 62 Hardening
+1. Rate limiting per IP
+2. RAG embeddings audit
+3. Log sanitization
+4. Telemetry audit
+5. Sentry before_send hook
+6. _polish import fix
+7. UI loading indicator fyrir vault
+
+---
