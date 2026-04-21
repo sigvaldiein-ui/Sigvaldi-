@@ -2969,6 +2969,41 @@ _quota_tracker_chat: dict = {}  # /api/chat quota per IP
 _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
 FREE_QUOTA = 5
 
+
+# ── Sprint 62: Beta tracker ──
+# Beta-tier via human phrase in chat: "Sigvaldi sendi mig" (7-day renewable)
+_beta_tracker: dict[str, float] = {}   # IP → promotion_timestamp (epoch sec)
+BETA_DURATION_SEC = 7 * 24 * 3600      # 7 dagar
+BETA_FRASAR = (
+    "sigvaldi sendi mig",
+    "ég er beta notandi",
+    "beta aðgangur",
+    "beta adgangur",
+)
+
+def _er_beta_fras(text: str) -> bool:
+    """Satt ef notendatexti inniheldur einhvern viðurkenndan beta-frasa."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(fras in lower for fras in BETA_FRASAR)
+
+def _er_beta_ip(ip: str) -> bool:
+    """Satt ef IP er í beta-tier (innan 7 daga frá promotion)."""
+    import time as _t
+    ts = _beta_tracker.get(ip)
+    if ts is None:
+        return False
+    if _t.time() - ts > BETA_DURATION_SEC:
+        _beta_tracker.pop(ip, None)
+        return False
+    return True
+
+def _promota_beta(ip: str) -> None:
+    """Setur IP í beta-tier núna (eða endurnýjar)."""
+    import time as _t
+    _beta_tracker[ip] = _t.time()
+# ── /Sprint 62 Beta tracker ──
 _wallet_cache: dict  = {"balance": None, "ts": 0.0}
 _WALLET_TTL          = 120
 
@@ -3170,7 +3205,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     _quota_count = _quota_tracker_doc.get(_client_ip, 0) + 1
     if not _is_admin:
         _quota_tracker_doc[_client_ip] = _quota_count
-    if _quota_count > FREE_QUOTA and not _is_admin:
+    if _quota_count > FREE_QUOTA and not _is_admin and not _is_beta:
         return JSONResponse(status_code=403, content={
             "success": False,
             "error": "Ókeypis prufutími er liðinn.",
@@ -3403,8 +3438,16 @@ async def chat_endpoint(request: Request):
         or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or (request.client.host if request.client else "unknown")
     )
+    # ── Sprint 62: Beta check ──
+    # Ef notandi skrifar beta-frasa → promotaður í 7 daga
+    if _er_beta_fras(query):
+        _promota_beta(_client_ip)
+        logger.info(f"[BETA] {_client_ip} promotaður í beta-tier (7d)")
+    _is_beta = _er_beta_ip(_client_ip)
+    # ── /Sprint 62 Beta check ──
+
     _quota_count = _quota_tracker_chat.get(_client_ip, 0) + 1
-    if not _is_admin:
+    if not _is_admin and not _is_beta:
         _quota_tracker_chat[_client_ip] = _quota_count
     if _quota_count > FREE_QUOTA and not _is_admin:
         return JSONResponse(status_code=403, content={
