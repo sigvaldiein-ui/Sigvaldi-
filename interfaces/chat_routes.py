@@ -104,7 +104,7 @@ async def _call_general_chain(system_prompt: str, query: str):
         logger.warning("[ALVITUR] chat_routes leid_a: ZDR_CONFIRMED=false - refusing")
         return (None, None, None)
     chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
-    async with httpx.AsyncClient(timeout=60.0) as c:
+    async with httpx.AsyncClient(timeout=180.0) as c:
         for idx, model in enumerate(chain):
             try:
                 r = await c.post(
