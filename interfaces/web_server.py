@@ -3061,9 +3061,10 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
                 # Sprint 47: Domain classification + specialist prompt
                 # Sprint 60c: None guard + honesty instruction
-                from interfaces.specialist_prompts import classify as _classify, get_specialist_prompt as _get_prompt
+                from interfaces.specialist_prompts import get_specialist_prompt as _get_prompt
+                from interfaces.skills.classify import ClassifySkill as _ClsSkill
                 try:
-                    _domain_txt = await _classify((query or "").strip() or "general")
+                    _domain_txt = await _ClsSkill().run((query or "").strip() or "general", tier=_tier_hdr)
                 except Exception:
                     _domain_txt = "general"
                 _domain_txt = _domain_txt or "general"

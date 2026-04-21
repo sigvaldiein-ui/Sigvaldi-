@@ -21,7 +21,7 @@ class ClassifySkill(BaseSkill):
     def name(self) -> str:
         return "classify"
 
-    async def run(self, text: str = "", key: str = "") -> str:
+    async def run(self, text: str = "", key: str = "", tier: str = "general") -> str:
         """
         Flokkar fyrstu 500 stafi af text í domain.
         kwargs:
@@ -31,6 +31,26 @@ class ClassifySkill(BaseSkill):
         """
         snippet = text.strip()[:500]
         if not snippet:
+            return "general"
+
+        # [SOVEREIGNTY GUARD — Sprint 61.1] Valkostur C: rule-based fallback fyrir vault.
+        # VRAM-safe (0 bytes), 0ms latency, engin cloud og engin OOM áhætta.
+        # Engin fallback i cloud — ef ekkert matchar → "general" og Qwen3 tekur við.
+        if tier.lower() == "vault":
+            t_low = snippet.lower()
+            if any(w in t_low for w in ["lög", "rétt", "samning", "dóm", "ákvæð", "kæru", "lögfræð", "persónuvernd", "gdpr"]):
+                logger.info("[VAULT] classify rule-based → legal")
+                return "legal"
+            if any(w in t_low for w in ["reikning", "fjármál", "skatt", "uppgjör", "ebitda", "kostnað", "greiðslu", "fjárhag", "bókhald"]):
+                logger.info("[VAULT] classify rule-based → finance")
+                return "finance"
+            if any(w in t_low for w in ["skrifa", "semja", "texta", "ritgerð", "grein", "efnisflokk"]):
+                logger.info("[VAULT] classify rule-based → writing")
+                return "writing"
+            if any(w in t_low for w in ["rannsókn", "greining", "heimild", "athugun"]):
+                logger.info("[VAULT] classify rule-based → research")
+                return "research"
+            logger.info("[VAULT] classify rule-based → general (no match)")
             return "general"
 
         api_key = key or os.environ.get("OPENROUTER_API_KEY", "")
