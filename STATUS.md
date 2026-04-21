@@ -70,3 +70,24 @@
 git revert 338ce19   # eða
 git checkout 7ef7332 -- interfaces/
 ```
+
+## Sprint 61.3 Hotfix — vLLM context length (2026-04-21 07:13 UTC)
+
+**Vandamál:** Reikningsyfirlit (8 bls. Excel, 6693 tokens) hristist á vault
+tier — vLLM var með `--max-model-len 8192`, request 6693+1500=8193 → 503.
+
+**Lausn:** Endurræsa vLLM með `--max-model-len 32768`.
+- VRAM: 41.6/46 GB (90% — sama sem fyrr)
+- KV cache: 82,896 tokens → 2.53x concurrency headroom
+- Native Qwen3-32B supports 40,960 → vel innan sviðs
+
+**Skjalastærð sem nú virkar á vault:**
+- Einfaldur texti: allt að ~24 bls.
+- Excel með töflum: allt að ~12-16 bls.
+
+**Startup script:** `/workspace/start_vllm_32k.sh` skrifaður fyrir
+endurkeyrslu eftir pod restart.
+
+**Ekki kóðabreyting — bara vLLM flag.**
+Semaphore(1) + rule-based vault classify enn í gildi.
+
