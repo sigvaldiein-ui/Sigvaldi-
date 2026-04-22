@@ -81,6 +81,19 @@ else
 fi
 
 echo ""
+echo "[T8] Text-only beta promotion (Sprint 64 A1 fix)"
+# POST /api/analyze-document ÁN file, með beta frasi → á að promotera og svara
+curl -s --max-time 120 -X POST $BASE/api/analyze-document \
+  -F "query=sigvaldi sendi mig — hvad er 2 plus 2?" > /tmp/smoke_t8.json
+ANS=$(cat /tmp/smoke_t8.json | $HELPER answer)
+HTTP_T8=$(cat /tmp/smoke_t8.json | $HELPER error_code)
+if [ -n "$ANS" ] && [ -z "$HTTP_T8" ]; then
+  pass "text-only beta promoted + got answer"
+else
+  fail "text-only beta broken: err=$HTTP_T8 ans=${ANS:0:80}"
+fi
+
+echo ""
 echo "==============================================="
 echo "  RESULTS: $PASSES passed, $FAILS failed"
 echo "==============================================="

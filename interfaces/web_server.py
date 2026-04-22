@@ -3131,10 +3131,17 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
             or (request.client.host if request.client else "unknown")
         )
+        # ── Sprint 64 A1: Beta check á text-only path (var vantar) ──
+        # Speglarar logic í /api/chat (line ~3593) og analyze-document file-path (line ~3294)
+        if _er_beta_fras(query or ""):
+            _promota_beta(_client_ip_txt)
+            logger.info(f"[BETA] {_client_ip_txt} promotaður í beta-tier (7d) via text-only")
+        _is_beta_txt = _er_beta_ip(_client_ip_txt)
+        # ── /Sprint 64 A1 beta check ──
         _quota_count_txt = _quota_tracker_doc.get(_client_ip_txt, 0) + 1
-        if not _is_admin_txt:
+        if not _is_admin_txt and not _is_beta_txt:
             _quota_tracker_doc[_client_ip_txt] = _quota_count_txt
-        if _quota_count_txt > FREE_QUOTA and not _is_admin_txt:
+        if _quota_count_txt > FREE_QUOTA and not _is_admin_txt and not _is_beta_txt:
             return JSONResponse(status_code=403, content={
                 "success": False,
                 "error": "Ókeypis prufutími er liðinn.",
@@ -3596,7 +3603,8 @@ async def chat_endpoint(request: Request):
     _quota_count = _quota_tracker_chat.get(_client_ip, 0) + 1
     if not _is_admin and not _is_beta:
         _quota_tracker_chat[_client_ip] = _quota_count
-    if _quota_count > FREE_QUOTA and not _is_admin:
+    # Sprint 64 A1: samræma gate við tracker-update (bæta not _is_beta)
+    if _quota_count > FREE_QUOTA and not _is_admin and not _is_beta:
         return JSONResponse(status_code=403, content={
             "success": False,
             "error": "Ókeypis prufutími er liðinn.",
