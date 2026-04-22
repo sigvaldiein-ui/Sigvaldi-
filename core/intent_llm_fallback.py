@@ -49,6 +49,10 @@ def threshold() -> float:
 def should_fallback(result: IntentResult) -> bool:
     if not is_enabled():
         return False
+    # VAULT GUARD: never send vault-tier queries to external LLM.
+    # Rule-based classifier sets sensitivity='high' for tier='vault'.
+    if getattr(result, "sensitivity", "low") == "high":
+        return False
     return result.confidence_score < threshold()
 
 
@@ -128,6 +132,11 @@ def refine_with_llm(
     except ValueError:
         timeout = _DEFAULT_TIMEOUT
 
+    # LAYER 3 DEFENSE: hard invariant. If guard ever fails, this stops the leak.
+    assert getattr(rule_result, "sensitivity", "low") != "high", (
+        "VAULT LEAK BLOCKED: refine_with_llm called with sensitivity=high. "
+        "This should have been caught by should_fallback(). Check guard logic."
+    )
     prompt = _build_prompt(query, filename, file_size, rule_result)
 
     t0 = time.time()
