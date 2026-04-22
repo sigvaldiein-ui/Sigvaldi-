@@ -40,6 +40,23 @@ Sprint 20 — V5.1 B2B Evidence Engine (Aðal áætlun, innleiðsla Per):
 import asyncio
 import logging
 import os
+
+# Sprint 63 Track A: Load .env BEFORE any os.environ.get() calls
+from dotenv import load_dotenv
+load_dotenv('/workspace/.env')
+
+# Sprint 63 Track A5: track server uptime for /api/diagnostics
+import time as _time_init
+_SERVER_START_TIME = _time_init.time()
+
+# Sprint 63 Track A6: polish stub (restore removed-in-refactor function)
+async def _polish_fn_txt(*args, **kwargs) -> str:
+    """Async no-op polish stub — Sprint 63 Track A6.2.
+    Caller notar 'await' svo þetta er async. Skilar textanum óbreyttum.
+    TODO: bæta við raunverulegri íslenskri málfræðipúlisingu síðar.
+    """
+    text = args[0] if args else kwargs.get("text", "")
+    return text if isinstance(text, str) else str(text)
 import sys as _sys
 _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in _sys.path:
@@ -2861,9 +2878,33 @@ async def health():
     """Heilsufarsskoðun — notað af monitoring og load balancer."""
     return JSONResponse(content={
         "status": "ok",
-        "version": "sprint58",
+        "version": "sprint63-track-a",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "fasi": "production",
+    })
+
+@app.get("/api/diagnostics")
+async def diagnostics():
+    """Sprint 63 Track A5: Diagnostics — stöðu hvaða leiðir eru á."""
+    import os as _os_d
+    import time as _time_d
+    _key = _os_d.environ.get("OPENROUTER_API_KEY", "")
+    leid_a_enabled = bool(_key and len(_key) > 10 and not _key.startswith("sk-or-v1-BAD"))
+    _sovereign_url = _os_d.environ.get("SOVEREIGN_URL", "http://localhost:8001/v1/chat/completions")
+    try:
+        uptime = int(_time_d.time() - _SERVER_START_TIME)
+    except NameError:
+        uptime = -1
+    return JSONResponse(content={
+        "status": "ok",
+        "version": "sprint63-track-a",
+        "leid_a_enabled": leid_a_enabled,
+        "leid_a_key_length": len(_key) if _key else 0,
+        "leid_b_enabled": bool(_sovereign_url),
+        "leid_b_url": _sovereign_url,
+        "uptime_seconds": uptime,
+        "loaded_env": bool(_key),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
 
