@@ -42,8 +42,12 @@ import logging
 import os
 
 # Sprint 63 Track A: Load .env BEFORE any os.environ.get() calls
+# Sprint 63 Track B1: env-aware loading — .env.dev if ALVITUR_ENV=dev
 from dotenv import load_dotenv
-load_dotenv('/workspace/.env')
+import os as _os_init
+_env_flag = _os_init.environ.get("ALVITUR_ENV", "prod")
+_env_file = "/workspace/.env.dev" if _env_flag == "dev" else "/workspace/.env"
+load_dotenv(_env_file)
 
 # Sprint 63 Track A5: track server uptime for /api/diagnostics
 import time as _time_init
@@ -2878,26 +2882,32 @@ async def health():
     """Heilsufarsskoðun — notað af monitoring og load balancer."""
     return JSONResponse(content={
         "status": "ok",
-        "version": "sprint63-track-a",
+        "version": "sprint63-track-b",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "fasi": "production",
     })
 
 @app.get("/api/diagnostics")
 async def diagnostics():
-    """Sprint 63 Track A5: Diagnostics — stöðu hvaða leiðir eru á."""
+    """Sprint 63 Track A5 + B3: Diagnostics — stöðu leiða og umhverfis."""
     import os as _os_d
     import time as _time_d
     _key = _os_d.environ.get("OPENROUTER_API_KEY", "")
     leid_a_enabled = bool(_key and len(_key) > 10 and not _key.startswith("sk-or-v1-BAD"))
-    _sovereign_url = _os_d.environ.get("SOVEREIGN_URL", "http://localhost:8001/v1/chat/completions")
+    # Track B3: vLLM er á port 8002 (ekki 8001 sem var hardcoded default)
+    _sovereign_url = _os_d.environ.get("SOVEREIGN_URL", "http://localhost:8002/v1/chat/completions")
+    # Track B3: env flag + port
+    _env_flag = _os_d.environ.get("ALVITUR_ENV", "prod")
+    _port = int(_os_d.environ.get("ALVITUR_PORT", "8000"))
     try:
         uptime = int(_time_d.time() - _SERVER_START_TIME)
     except NameError:
         uptime = -1
     return JSONResponse(content={
         "status": "ok",
-        "version": "sprint63-track-a",
+        "version": "sprint63-track-b",
+        "env": _env_flag,
+        "port": _port,
         "leid_a_enabled": leid_a_enabled,
         "leid_a_key_length": len(_key) if _key else 0,
         "leid_b_enabled": bool(_sovereign_url),
@@ -3802,7 +3812,7 @@ async def mock_success(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run("web_server:app", host="0.0.0.0", port=8000)
+    uvicorn.run("web_server:app", host="0.0.0.0", port=int(__import__("os").environ.get("ALVITUR_PORT", "8000")))
 
 @app.get("/alvitur-v2", response_class=HTMLResponse)
 async def serve_v2():
