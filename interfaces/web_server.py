@@ -76,7 +76,14 @@ from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, F
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
+# Sprint 64 B2: Intent Gateway observability
+try:
+    from core.intent_gateway import classify_intent as _classify_intent
+    _INTENT_AVAILABLE = True
+except Exception as _ie:
+    _classify_intent = None
+    _INTENT_AVAILABLE = False, validator
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
@@ -3102,6 +3109,26 @@ SECURE_DOCS_DIR = Path("/workspace/mimir_net/secure_docs")
 SECURE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
 
+
+
+def _log_intent(endpoint: str, query: str | None, filename: str | None,
+                file_size: int | None, tier: str | None) -> None:
+    """Sprint 64 B2: observability hook. Classify + log. NEVER raises."""
+    if not _INTENT_AVAILABLE or _classify_intent is None:
+        return
+    try:
+        ir = _classify_intent(query=query, filename=filename,
+                              file_size=file_size, tier=tier)
+        logger.info(
+            f"[INTENT] endpoint={endpoint} domain={ir.domain} "
+            f"depth={ir.reasoning_depth} conf={ir.confidence_score:.2f} "
+            f"sens={ir.sensitivity} adapter={ir.adapter_hint} "
+            f"src={ir.source_hint}",
+            extra={"intent": ir.model_dump(), "endpoint": endpoint},
+        )
+    except Exception as _ie:
+        logger.warning(f"[INTENT] classification failed on {endpoint}: {type(_ie).__name__}: {_ie}")
+
 @app.post("/api/analyze-document")
 async def analyze_document(request: Request, file: Optional[UploadFile] = File(None), query: Optional[str] = Form(None)):
     """
@@ -3138,6 +3165,8 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             logger.info(f"[BETA] {_client_ip_txt} promotaður í beta-tier (7d) via text-only")
         _is_beta_txt = _er_beta_ip(_client_ip_txt)
         # ── /Sprint 64 A1 beta check ──
+        # Sprint 64 B2: Intent Gateway observability (text-only)
+        _log_intent("analyze-document/text-only", query, None, None, _tier_hdr)
         _quota_count_txt = _quota_tracker_doc.get(_client_ip_txt, 0) + 1
         if not _is_admin_txt and not _is_beta_txt:
             _quota_tracker_doc[_client_ip_txt] = _quota_count_txt
@@ -3301,6 +3330,14 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         _is_beta = _er_beta_ip(_client_ip)
     except Exception:
         _is_beta = False
+    # Sprint 64 B2: Intent Gateway observability (file-path)
+    try:
+        _fn = file.filename if file else None
+        _fsize = getattr(file, "size", None) if file else None
+    except Exception:
+        _fn, _fsize = None, None
+    _log_intent("analyze-document/file", query, _fn, _fsize,
+                request.headers.get("X-Alvitur-Tier", "general"))
     _quota_count = _quota_tracker_doc.get(_client_ip, 0) + 1
     if not _is_admin:
         _quota_tracker_doc[_client_ip] = _quota_count
@@ -3599,6 +3636,8 @@ async def chat_endpoint(request: Request):
         logger.info(f"[BETA] {_client_ip} promotaður í beta-tier (7d)")
     _is_beta = _er_beta_ip(_client_ip)
     # ── /Sprint 62 Beta check ──
+    # Sprint 64 B2: Intent Gateway observability (chat)
+    _log_intent("chat", query, None, None, tier)
 
     _quota_count = _quota_tracker_chat.get(_client_ip, 0) + 1
     if not _is_admin and not _is_beta:
