@@ -20,6 +20,7 @@ import re
 from typing import Optional
 
 from models.intent import IntentResult, Domain, ReasoningDepth, SourceHint
+from core.intent_llm_fallback import refine_with_llm
 
 # ── Lykilorðalistar (lower-case, ekki case-sensitive) ─────────────────────
 _KW_LEGAL = {
@@ -157,7 +158,7 @@ def classify_intent(
     if kw_count == 0 and not ext and total_chars < 20:
         confidence = 0.45
 
-    return IntentResult(
+    _rule_result = IntentResult(
         domain=domain,
         reasoning_depth=reasoning_depth,
         adapter_hint=adapter_hint,
@@ -165,3 +166,4 @@ def classify_intent(
         sensitivity=sensitivity,  # type: ignore
         source_hint=source_hint,
     )
+    return refine_with_llm(query, filename, file_size, _rule_result)
