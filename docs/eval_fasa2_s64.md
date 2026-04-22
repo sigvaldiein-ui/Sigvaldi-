@@ -49,3 +49,40 @@
 - Queue/backpressure risk remains (see docs/SPRINT65_PLAN.md).
 - 45% fallback trigger rate -> expect 0.45 x concurrent_requests LLM calls.
 - Semaphore(4) in S66 recommended before production rollout.
+
+## Security invariant: Vault integrity
+
+LLM fallback MUST NOT send vault-tier queries to external LLM providers.
+
+### Three-layer defense
+
+1. **Layer 1 - should_fallback() guard** (`core/intent_llm_fallback.py`):
+   Returns False when `rule_result.sensitivity == "high"`, regardless of
+   confidence_score. Vault queries stay 100% local (rule-based only).
+
+2. **Layer 2 - Prompt hygiene** (`_build_prompt()`):
+   Prompt contains ONLY `query`, `filename`, `file_size`. Never includes
+   `tier`, `sensitivity`, `adapter_hint`, or `source_hint`. Audited via
+   S65-F2-B5H-PROMPT-AUDIT.
+
+3. **Layer 3 - Hard assert** in `refine_with_llm()`:
+   Before `call_openrouter()`, asserts sensitivity != "high". If guard
+   ever silently fails (bug, refactor), this raises AssertionError and
+   stops the call cold.
+
+### Synthetic prompt examples
+
+Few-shot examples use placeholder filenames (arsreikningur.xlsx,
+skyrsla.pdf) that are illustrative patterns, NOT from real user
+documents. No vault data has ever been embedded in prompt examples.
+
+### Vault flow guarantee
+
+`classify_intent(query=..., tier='vault')` always returns rule-based
+IntentResult with sensitivity='high'. LLM refinement is unconditionally
+skipped. Verified in S65-F2-VAULT-GUARD sanity test and S65-F2-VAULT-LAYER3.
+
+### Related (NOT vault but logged)
+
+- S66 queue/backpressure risk still pending (see docs/SPRINT65_PLAN.md).
+- Vault integrity is orthogonal to queue work and has been resolved now.
