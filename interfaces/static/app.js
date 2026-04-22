@@ -243,8 +243,10 @@
       html += '<div class="results-domain-tag">' + DOMAIN_LABELS[data.domain] + '</div>';
     }
 
-    if (data.summary) {
-      html += '<div class="results-summary">' + formatSummary(data.summary) + '</div>';
+    // Sprint 63 Fasa 0.3c: robust — accept both 'summary' (text-only) and 'response' (file-upload)
+    var _txt = data.summary || data.response;
+    if (_txt) {
+      html += '<div class="results-summary">' + formatSummary(_txt) + '</div>';
     }
 
     if (data.citations && data.citations.length > 0) {

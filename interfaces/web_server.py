@@ -2196,8 +2196,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── Show results ──
   function showResults(d) {
     var html = "";
-    if (d.summary) {
-      var lines = d.summary.split("\n");
+    // Sprint 63 Fasa 0.3c: robust — accept both keys
+    var _txt = d.summary || d.response;
+    if (_txt) {
+      var lines = _txt.split("\n");
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
         if (line) html += "<p>" + escapeHtml(line) + "</p>";

@@ -84,10 +84,16 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
     balance_col = _pick_column(df, _BALANCE_HINTS)
 
     out = []
-    out.append("## 📊 FYRIRFRAM-REIKNAÐ (pandas, 100% nákvæmt)")
-    out.append("**MIKILVÆGT FYRIR LLM**: Tölurnar hér að neðan eru reiknaðar af Python (pandas), ekki af þér. ")
-    out.append("Þú MÁTT EKKI reikna upp á nýtt, leggja saman, né búa til aðrar summur. ")
-    out.append("Notaðu eingöngu þessar tölur og útskýrðu þær á íslensku.\n")
+    out.append("## 🔒 SAMTÖLUR — EKKI ENDURREIKNA")
+    out.append("")
+    out.append("**JÁRNREGLUR FYRIR LLM (má EKKI brjóta):**")
+    out.append("1. Tölur hér fyrir neðan eru reiknaðar af Python (pandas) — 100% nákvæmar.")
+    out.append("2. Þú mátt AÐEINS endurnota þessar tölur orðrétt. Ekki leggja þær saman á nýjan hátt.")
+    out.append("3. Ef þú býrð til nýja samtölu sem ekki er í þessum lista → Þú ert að búa til villu.")
+    out.append("4. \"Samtals innheimt\" = Jákvæðar færslur (aldrei groupby-summa af Tegund).")
+    out.append("5. \"Samtals útborgun\" = Neikvæðar færslur (aldrei summa af hluta Tegunda).")
+    out.append("6. Ef notandi biður um samtölu sem ekki er hér → segðu \"Ekki reiknað fyrirfram\".")
+    out.append("")
     out.append(f"- **Skjal**: {df.shape[0]} línur × {df.shape[1]} dálkar")
     out.append(f"- **Dálkar í skjali**: {', '.join(str(c) for c in df.columns)}")
 
@@ -104,11 +110,17 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
         s = df[amount_col].dropna()
         pos = s[s > 0]
         neg = s[s < 0]
-        out.append(f"\n### 💰 Heildartölur ({amount_col})")
-        out.append(f"- **Jákvæðar færslur** (innstreymi/DEBET á reikning): {pos.sum():,.0f} kr ({len(pos)} færslur)")
-        out.append(f"- **Neikvæðar færslur** (útstreymi/KREDIT): {neg.sum():,.0f} kr ({len(neg)} færslur)")
-        out.append(f"- **Nettó hreyfing**: {s.sum():,.0f} kr")
-        out.append(f"- **Heildarvelta** (|summa|): {s.abs().sum():,.0f} kr")
+        out.append(f"\n### 💰 HEILDARTÖLUR — BEINT ÚR SKJALI ({amount_col})")
+        out.append(f"🔒 **SAMTALS INNHEIMT (allar jákvæðar):** {pos.sum():,.0f} kr  —  {len(pos)} færslur")
+        out.append(f"🔒 **SAMTALS ÚTBORGUN (allar neikvæðar):** {neg.sum():,.0f} kr  —  {len(neg)} færslur")
+        out.append(f"🔒 **NETTÓ HREYFING:** {s.sum():,.0f} kr")
+        out.append(f"🔒 **HEILDARVELTA (|summa|):** {s.abs().sum():,.0f} kr")
+        out.append(f"")
+        out.append(f"**Directive mapping (LLM endurritar beint):**")
+        out.append(f"- Ef notandi spyr \"samtals innheimt\" → svar: **{pos.sum():,.0f} kr**")
+        out.append(f"- Ef notandi spyr \"samtals útborgun\" → svar: **{neg.sum():,.0f} kr**")
+        out.append(f"- Ef notandi spyr \"nettó\" → svar: **{s.sum():,.0f} kr**")
+        out.append(f"- Ef notandi spyr \"heildarvelta\" → svar: **{s.abs().sum():,.0f} kr**")
 
         if category_col:
             try:
