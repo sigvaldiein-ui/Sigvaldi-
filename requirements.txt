@@ -1,0 +1,2 @@
+# Sprint 64 C — pinning new deps only
+pdfplumber>=0.11,<0.13
