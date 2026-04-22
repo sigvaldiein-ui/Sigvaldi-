@@ -188,13 +188,34 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
         })
 
     # ── Leið A: General OpenRouter chain ─────────────────────────────
+    # 🟢 Sprint 62 Patch G: sovereign fallback ef Leið A mistekst eða key vantar
     sys_prompt = _general_system_prompt(query, file_context, rag, now_str)
-    content, model, usage = await _call_general_chain(sys_prompt, query)
+    _key_check = os.environ.get("OPENROUTER_API_KEY", "")
+    content, model, usage = (None, None, {})
+    if _key_check:
+        content, model, usage = await _call_general_chain(sys_prompt, query)
     if content is None:
-        return JSONResponse(status_code=502, content={
-            "success": False,
-            "error_code": "llm_unavailable",
-            "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur.",
+        logger.warning("[ALVITUR] Sprint62G chat: Leið A down/no-key → sovereign Leið B")
+        try:
+            vault_prompt = _vault_system_prompt_chat(query, file_context, rag, now_str)
+            async with _VAULT_SEMAPHORE:
+                content, model, usage = await _call_vault_local(query, vault_prompt)
+        except Exception as _fe:
+            logger.error(f"[ALVITUR] Sprint62G exc: {type(_fe).__name__}: {_fe}")
+            content = None
+        if content is None:
+            return JSONResponse(status_code=503, content={
+                "success": False,
+                "error_code": "both_pipelines_unavailable",
+                "detail": "Þjónusta tímabundið ekki aðgengileg. Reyndu eftir augnablik.",
+            })
+        logger.info(f"[ALVITUR] Sprint62G sovereign OK model={model}")
+        return JSONResponse(content={
+            "success": True,
+            "response": content,
+            "pipeline_source": f"sovereign_nokey_{model}",
+            "domain": domain,
+            "tier": "general_fallback",
         })
     return JSONResponse(content={
         "success": True,
