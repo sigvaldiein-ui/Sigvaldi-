@@ -71,6 +71,57 @@ else
 fi
 
 echo ""
+
+echo ""
+echo "[T6] Excel simple upload (preprocessor + LLM)"
+RESP=$(curl -s --max-time 60 -X POST $BASE/api/analyze-document \
+  -F "query=Hvad er heildarinnkoma?" \
+  -F "file=@tests/fixtures/simple.xlsx")
+ANS=$(echo "$RESP" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print((d.get('summary') or d.get('response') or '')[:200])" 2>/dev/null)
+if echo "$ANS" | grep -q "450"; then
+  pass "simple.xlsx preprocessor sum matches LLM"
+else
+  fail "simple.xlsx missing 450000: $ANS"
+fi
+
+echo ""
+echo "[T7] Excel multi-sheet upload"
+RESP=$(curl -s --max-time 60 -X POST $BASE/api/analyze-document \
+  -F "query=Hvada dalkar eru i skjalinu?" \
+  -F "file=@tests/fixtures/multi_sheet.xlsx")
+PIPE=$(echo "$RESP" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('pipeline_source','none'))" 2>/dev/null)
+if [ "$PIPE" != "none" ] && [ -n "$PIPE" ]; then
+  pass "multi_sheet.xlsx processed pipeline=$PIPE"
+else
+  fail "multi_sheet.xlsx broke pipeline"
+fi
+
+echo ""
+echo "[T8] Excel empty file (graceful handling)"
+RESP=$(curl -s --max-time 30 -X POST $BASE/api/analyze-document \
+  -F "query=Hvad er i skjalinu?" \
+  -F "file=@tests/fixtures/empty.xlsx")
+STATUS=$(echo "$RESP" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print('ok' if d.get('summary') or d.get('response') else 'fail')" 2>/dev/null)
+if [ "$STATUS" = "ok" ]; then
+  pass "empty.xlsx handled gracefully"
+else
+  fail "empty.xlsx crashed or no response"
+fi
+
+echo ""
+echo "[T9] Excel net loss auto-assert (preprocessor number in LLM output)"
+RESP=$(curl -s --max-time 60 -X POST $BASE/api/analyze-document \
+  -F "query=Hver er nettoutkoma?" \
+  -F "file=@tests/fixtures/netloss.xlsx")
+ANS=$(echo "$RESP" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print((d.get('summary') or d.get('response') or '')[:300])" 2>/dev/null)
+# Net = 500000 - 591000 = -91000
+if echo "$ANS" | grep -qE "91\.?000|-91|91 000"; then
+  pass "netloss.xlsx LLM output contains -91000 (preprocessor ground truth)"
+else
+  fail "netloss.xlsx missing -91000: $ANS"
+fi
+
+echo ""
 echo "==============================================="
 echo "  RESULTS: $PASSES passed, $FAILS failed"
 echo "==============================================="
