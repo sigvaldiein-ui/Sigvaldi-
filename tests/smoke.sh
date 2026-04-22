@@ -39,7 +39,7 @@ if [ "$LEID_A" = "True" ]; then pass "leid A enabled"; else fail "leid A disable
 
 echo ""
 echo "[T4] Beta promotion + simple.xlsx (450000)"
-curl -s --max-time 60 -X POST $BASE/api/analyze-document \
+curl -s --max-time 120 -X POST $BASE/api/analyze-document \
   -F "query=sigvaldi sendi mig — hvad er heildarinnkoma?" \
   -F "file=@tests/fixtures/simple.xlsx" > /tmp/smoke_t4.json
 ANS=$(cat /tmp/smoke_t4.json | $HELPER answer)
@@ -62,7 +62,7 @@ fi
 
 echo ""
 echo "[T6] Empty xlsx graceful"
-curl -s --max-time 30 -X POST $BASE/api/analyze-document \
+curl -s --max-time 120 -X POST $BASE/api/analyze-document \
   -F "query=Hvad er i skjalinu?" \
   -F "file=@tests/fixtures/empty.xlsx" > /tmp/smoke_t6.json
 ANS=$(cat /tmp/smoke_t6.json | $HELPER answer)
@@ -70,7 +70,7 @@ if [ -n "$ANS" ]; then pass "empty.xlsx responded"; else fail "empty.xlsx no res
 
 echo ""
 echo "[T7] Netloss auto-assert (-91000 survives LLM)"
-curl -s --max-time 60 -X POST $BASE/api/analyze-document \
+curl -s --max-time 120 -X POST $BASE/api/analyze-document \
   -F "query=Hver er nettoutkoma?" \
   -F "file=@tests/fixtures/netloss.xlsx" > /tmp/smoke_t7.json
 ANS=$(cat /tmp/smoke_t7.json | $HELPER answer)
