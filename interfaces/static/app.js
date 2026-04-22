@@ -176,7 +176,7 @@
       busy = false;
       submitBtn.disabled = false;
       showStatus('error', 'Fyrirspurnin rann út á tíma. Reyndu aftur.');
-    }, 120000);
+    }, 180000);
 
     fetch('/api/analyze-document', {
       method: 'POST',

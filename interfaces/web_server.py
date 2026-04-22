@@ -2143,14 +2143,19 @@ document.addEventListener('DOMContentLoaded', function() {
       busy = false;
       submitBtn.disabled = false;
       showStatus("error", "Fyrirspurnin rann út á tíma. Reyndu aftur.");
-    }, 120000);
+    }, 180000);
+    // 🟢 Sprint 62 Patch H: UX progress hints fyrir löng skjöl
+    var hint15 = setTimeout(function(){ showStatus("info", "Greining í gangi..."); }, 15000);
+    var hint45 = setTimeout(function(){ showStatus("info", "Stórt skjal — sovereign Qwen3 vinnur, augnablik..."); }, 45000);
+    var hint90 = setTimeout(function(){ showStatus("info", "Næstum búið — klárar greininguna..."); }, 90000);
+    var _clearHints = function(){ clearTimeout(hint15); clearTimeout(hint45); clearTimeout(hint90); };
 
     fetch("/api/analyze-document", {
       method: "POST",
       body: fd,
       signal: ctrl.signal
     }).then(function(r) {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId); _clearHints();
       if (!r.ok) {
         return r.json().catch(function() { return {}; }).then(function(d) {
           throw { status: r.status, data: d };
@@ -2163,7 +2168,7 @@ document.addEventListener('DOMContentLoaded', function() {
       clearStatus();
       showResults(d);
     }).catch(function(err) {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId); _clearHints();
       busy = false;
       submitBtn.disabled = false;
       if (err && err.name === "AbortError") return;
@@ -3093,6 +3098,23 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         _key = _os.environ.get("OPENROUTER_API_KEY", "")
         _tier = _tier_hdr
         _summary = None
+        # 🟢 Sprint 62 Patch E v2: no-key → sovereign Leið B strax (skip OpenRouter entirely)
+        if not _key and _tier_hdr != "vault":
+            logger.warning("[ALVITUR] Sprint62E NO-KEY → sovereign fallback á Leið B")
+            try:
+                async with _VAULT_SEMAPHORE_WS:
+                    _summary, _model_used, _usage = await _call_leid_b((query or "").strip())
+            except Exception as _fe:
+                logger.error(f"[ALVITUR] Sprint62E exc: {type(_fe).__name__}: {_fe}")
+                _summary = None
+            if _summary is None:
+                return JSONResponse(status_code=503, content={
+                    "error_code": "sovereign_unavailable",
+                    "detail": "Staðbundin gervigreind er að ræsast. Reyndu eftir andartak."})
+            logger.info(f"[ALVITUR] Sprint62E sovereign OK model={_model_used}")
+            return JSONResponse(status_code=200, content={
+                "success": True, "summary": _summary, "mode": "text-only",
+                "pipeline_source": f"sovereign_nokey_{_model_used}", "model": _model_used})
         if _key:
             try:
                 _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -3131,15 +3153,26 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 else:
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, query.strip())
                     if _summary is None:
-                        return JSONResponse(status_code=502, content={
-                            "error_code": "llm_unavailable",
-                            "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur."})
-                    _pipeline_source_txt = f"openrouter_{_model_used.split('/')[-1]}"
+                        logger.warning("[ALVITUR] Sprint62C text-only: Leið A None, reyni fallback á Leið B")
+                        try:
+                            async with _VAULT_SEMAPHORE_WS:
+                                _summary, _model_used, _usage = await _call_leid_b(query.strip())
+                        except Exception as _fe:
+                            logger.error(f"[ALVITUR] Sprint62C fallback exc: {type(_fe).__name__}: {_fe}")
+                            _summary = None
+                        if _summary is None:
+                            return JSONResponse(status_code=503, content={
+                                "error_code": "both_pipelines_unavailable",
+                                "detail": "Þjónusta tímabundið ekki aðgengileg. Reyndu eftir augnablik."})
+                        _pipeline_source_txt = f"fallback_local_{_model_used}"
+                        logger.info(f"[ALVITUR] Sprint62C fallback OK: model={_model_used}")
+                    else:
+                        _pipeline_source_txt = f"openrouter_{_model_used.split('/')[-1]}"
                     _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
                     _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _model_used else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _model_used else 0.0
                     logger.info("[ALVITUR] token_obs pipeline=text_query model=%s tier=%s in=%d out=%d cost=%.6f", _model_used, _tier, _in_tok, _out_tok, _cost)
                     try:
-                        from interfaces.chat_routes import _polish as _polish_fn_txt
+                        # from interfaces.chat_routes import _polish as _polish_fn_txt
                         _summary = await _polish_fn_txt(_summary, _key)
                     except Exception as _pe:
                         logger.warning(f"[ALVITUR] polish failed (non-fatal): {_pe}")
@@ -3149,9 +3182,10 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 _domain_txt = "general"
                 _pipeline_source_txt = "error"
         if _summary is None:
-            return JSONResponse(status_code=502, content={
-                "error_code": "llm_unavailable",
-                "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur.",
+            # Sprint 62 Patch C: Final safety net — both pipelines down
+            return JSONResponse(status_code=503, content={
+                "error_code": "service_unavailable",
+                "detail": "Greiningar þjónusta tímabundið ekki aðgengileg. Reyndu aftur eftir andartak.",
             })
         return JSONResponse(content={
             "success": True,
@@ -3330,6 +3364,38 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     _domain_doc = "general"
     if _tier in ("general", "vault"):
         try:
+            # 🟢 Sprint 62 Patch F: no-key → sovereign Leið B fyrir file-upload
+            _key_preflight = _os.environ.get("OPENROUTER_API_KEY", "")
+            if not _key_preflight and _tier != "vault":
+                logger.warning("[ALVITUR] Sprint62F file-upload NO-KEY → sovereign Leið B")
+                _msg_fallback = f"SPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}\n\nSKJAL:\n{heildartexti[:30000]}"
+                try:
+                    async with _VAULT_SEMAPHORE_WS:
+                        _summary, _model_used, _usage = await _call_leid_b(_msg_fallback)
+                except Exception as _fe:
+                    logger.error(f"[ALVITUR] Sprint62F exc: {type(_fe).__name__}: {_fe}")
+                    _summary = None
+                if _summary is not None:
+                    _pipeline_source_doc = f"sovereign_nokey_file_{_model_used}"
+                    logger.info(f"[ALVITUR] Sprint62F sovereign OK model={_model_used}")
+                    # 🟢 Sprint 62 Patch I: EARLY RETURN — ekki keyra leið A aftur!
+                    _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
+                    logger.info(f"[ALVITUR] Sprint62I early-return (skip leid_a) in={_in_tok} out={_out_tok}")
+                    return JSONResponse(status_code=200, content={
+                        "success": True,
+                        "filename": _filename if "_filename" in dir() else "",
+                        "sidur": sidur if "sidur" in dir() else 1,
+                        "zero_data": True,
+                        "tier": _tier,
+                        "query": (query or "").strip(),
+                        "response": _summary,
+                        "domain": "general",
+                        "citations": [],
+                        "found": True,
+                        "status": "ready_for_analysis",
+                        "quota_warning": None,
+                        "pipeline_source": _pipeline_source_doc,
+                    })
             _key = _os.environ.get("OPENROUTER_API_KEY", "")
             _context_limit = 60000 if _tier == "vault" else 30000
             _full = heildartexti[:_context_limit]
@@ -3389,16 +3455,28 @@ SKJAL:
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
                     if _summary is None:
-                        return JSONResponse(status_code=502, content={
-                            "error_code": "llm_unavailable",
-                            "detail": "Ekki tókst að ná sambandi við greiningar þjónustu. Reyndu aftur."})
-                    _pipeline_source_doc = f"openrouter_{_model_used.split('/')[-1]}"
+                        # Sprint 62 Patch C: Leið A klikkaði → sovereign fallback á Leið B
+                        logger.warning("[ALVITUR] Sprint62C analyze_doc: Leið A None, reyni fallback á Leið B")
+                        try:
+                            async with _VAULT_SEMAPHORE_WS:
+                                _summary, _model_used, _usage = await _call_leid_b(_msg)
+                        except Exception as _fe:
+                            logger.error(f"[ALVITUR] Sprint62C analyze_doc fallback exc: {type(_fe).__name__}: {_fe}")
+                            _summary = None
+                        if _summary is None:
+                            return JSONResponse(status_code=503, content={
+                                "error_code": "both_pipelines_unavailable",
+                                "detail": "Þjónusta tímabundið ekki aðgengileg. Reyndu eftir augnablik."})
+                        _pipeline_source_doc = f"fallback_local_{_model_used}"
+                        logger.info(f"[ALVITUR] Sprint62C analyze_doc fallback OK: model={_model_used}")
+                    else:
+                        _pipeline_source_doc = f"openrouter_{_model_used.split('/')[-1]}"
                     _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
                     _cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000 if "gpt-4o-mini" in _model_used else (_in_tok * 3.00 + _out_tok * 15.00) / 1_000_000 if "claude-sonnet" in _model_used else 0.0
                     logger.info("[ALVITUR] token_obs pipeline=analyze_doc model=%s tier=%s in=%d out=%d cost=%.6f", _model_used, _tier, _in_tok, _out_tok, _cost)
                     # Polish only for Leid A (never vault — sovereignty)
                     try:
-                        from interfaces.chat_routes import _polish as _polish_fn
+                        # from interfaces.chat_routes import _polish as _polish_fn
                         _summary = await _polish_fn(_summary, _key)
                     except Exception as _pe:
                         logger.warning(f"[ALVITUR] polish failed (non-fatal): {_pe}")
