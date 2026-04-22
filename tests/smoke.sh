@@ -93,6 +93,48 @@ else
   fail "text-only beta broken: err=$HTTP_T8 ans=${ANS:0:80}"
 fi
 
+
+echo ""
+echo "[T9] PDF table extraction (adapters/pdf_tables)"
+T9_OUT=$(python3 -c "
+from adapters.pdf_tables import extract_pdf_tables
+r = extract_pdf_tables('tests/fixtures/sample_tables.pdf')
+print(len(r))
+" 2>/dev/null | tail -n1)
+if [ "$T9_OUT" -ge 1 ] 2>/dev/null; then
+  pass "pdf adapter returned $T9_OUT tables"
+else
+  fail "pdf adapter returned $T9_OUT"
+fi
+
+echo ""
+echo "[T10] DOCX table extraction (adapters/docx_tables)"
+T10_OUT=$(python3 -c "
+from adapters.docx_tables import extract_docx_tables
+r = extract_docx_tables('tests/fixtures/sample_tables.docx')
+print(len(r))
+" 2>/dev/null | tail -n1)
+if [ "$T10_OUT" -ge 2 ] 2>/dev/null; then
+  pass "docx adapter returned $T10_OUT tables"
+else
+  fail "docx adapter returned $T10_OUT (expected >=2)"
+fi
+
+echo ""
+echo "[T11] Unified dispatcher happy path (pdf + docx + xlsx)"
+T11_OUT=$(python3 -c "
+from interfaces.tabular_extractor import extract_tables
+a = len(extract_tables('tests/fixtures/sample_tables.pdf'))
+b = len(extract_tables('tests/fixtures/sample_tables.docx'))
+c = len(extract_tables('tests/fixtures/simple.xlsx'))
+print(f'{a},{b},{c}')
+" 2>/dev/null | tail -n1)
+if echo "$T11_OUT" | grep -qE "^[1-9][0-9]*,[1-9][0-9]*,[1-9][0-9]*$"; then
+  pass "dispatcher pdf,docx,xlsx = $T11_OUT"
+else
+  fail "dispatcher counts = $T11_OUT (need all >=1)"
+fi
+
 echo ""
 echo "==============================================="
 echo "  RESULTS: $PASSES passed, $FAILS failed"
