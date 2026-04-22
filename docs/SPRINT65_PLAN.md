@@ -39,3 +39,32 @@ Hard gates:
 - .bak-queue-0607 files from June 7 suggest prior attempt — review before S66 design.
 - No celery/rq/dramatiq/arq/asyncio.Queue in repo today (verified via grep).
 - No queue-related commits in git log.
+
+---
+
+## F2 status update (2026-04-22 21:00 GMT)
+
+**F2 COMPLETE.** Tag: s65-f2-complete.
+
+- LLM fallback live behind INTENT_LLM_FALLBACK_ENABLED flag.
+- Calibrated seed v2 reflects gateway logic.
+- Vault 3-layer defense committed and audited.
+- Overall accuracy: 0.75 -> 0.80 on calibrated seed.
+- Cost: ~$0.0003 USD for 13 API calls in evaluation.
+
+**F3 DEFERRED.** End-to-end pipeline (Leid B) out of scope for S65.
+Adapters untouched. Vault documents never extracted during S65.
+
+## S66 kickoff (2026-04-23 morning)
+
+Scope (Iceland-scale, no Redis/Celery):
+1. asyncio.Semaphore(4) on LLM calls
+2. In-memory FIFO queue with job IDs
+3. /api/jobs/<id> status endpoint
+4. Cost cap per session
+5. Retry + exponential backoff for 429 and transient 5xx
+
+Rationale: 45% fallback trigger rate in F2 means production load
+-> 0.45x concurrent LLM calls. Without backpressure, a burst could
+exhaust quota or blow cost budget. Iceland-scale (tens of concurrent
+users max) makes in-memory sufficient.
