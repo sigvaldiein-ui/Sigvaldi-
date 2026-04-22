@@ -38,3 +38,4 @@ interfaces/web_server.py.backup.*
 *.bak-fallback-*
 *.bak-*
 config/cf_token.txt
+tests/smoke.sh.bak.*
