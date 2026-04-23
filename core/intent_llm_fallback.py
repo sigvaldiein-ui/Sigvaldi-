@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 import time
 from typing import Optional
 
@@ -33,6 +34,9 @@ _DEFAULT_THRESHOLD = 0.6
 
 _ALLOWED_DOMAINS = {"general", "legal", "financial", "technical", "public"}
 _ALLOWED_DEPTHS = {"fast", "standard", "deep"}
+
+
+logger = logging.getLogger(__name__)
 
 
 def is_enabled() -> bool:
@@ -123,7 +127,11 @@ def refine_with_llm(
     try:
         # Deferred import so module loads even without OpenRouter client
         from core.llm_client import call_openrouter  # type: ignore
-    except Exception:
+    except Exception as _e:
+        logger.warning(
+            "[INTENT-LLM] llm_client import failed: %s: %s — falling back to rule result",
+            type(_e).__name__, _e,
+        )
         return rule_result
 
     model = os.getenv(_MODEL_ENV, _DEFAULT_MODEL)
@@ -142,13 +150,33 @@ def refine_with_llm(
     t0 = time.time()
     try:
         raw = call_openrouter(model=model, prompt=prompt, timeout=timeout)
-    except Exception:
+    except Exception as _e:
+        logger.warning(
+            "[INTENT-LLM] call_openrouter failed (model=%s timeout=%.1fs): "
+            "%s: %s — falling back to rule result",
+            model, timeout, type(_e).__name__, _e,
+        )
         return rule_result
     elapsed = time.time() - t0
 
     parsed = _parse_response(raw or "")
     if not parsed:
+        logger.warning(
+            "[INTENT-LLM] _parse_response rejected LLM output "
+            "(len=%d, elapsed=%.2fs) — falling back to rule result",
+            len(raw or ""), elapsed,
+        )
         return rule_result
+
+    logger.info(
+        "[INTENT-LLM] fallback OK model=%s latency_ms=%d "
+        "rule_domain=%s -> llm_domain=%s rule_depth=%s -> llm_depth=%s "
+        "rule_conf=%.2f -> llm_conf=%.2f",
+        model, int(elapsed * 1000),
+        rule_result.domain, parsed["domain"],
+        rule_result.reasoning_depth, parsed["reasoning_depth"],
+        rule_result.confidence_score, parsed["confidence_score"],
+    )
 
     # Preserve adapter_hint, sensitivity, source_hint from rule-based.
     return IntentResult(
