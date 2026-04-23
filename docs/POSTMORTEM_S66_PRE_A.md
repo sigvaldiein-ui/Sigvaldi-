@@ -262,4 +262,30 @@ Gaps or Follow-ups tables.*
 
 **Commit anchor (remediation)**: f52f6b7 (tag: sprint66-pre-a-hotfix)
 **Track A completion**: 69e09e5 (tag: s66-a-concurrency)
-**This postmortem commit**: to be filled in on commit
+**This postmortem commit**: e75893b (tag: s66-postmortem-final)
+
+
+## Restart Retrospective (added post-commit)
+
+The hot-restart procedure at 10:27 GMT exposed three blind spots not
+captured in the original Findings. These are recorded here as amendments.
+
+### Lesson #7 — Never guess paths
+During the restart, the operator (Per) guessed `web_server.py` instead
+of reading `interfaces/web_server.py` from `ps` output, and guessed
+`/tmp/alvitur_web.pid` instead of reading `/tmp/alvitur_web_server.lock`
+from the source. Both guesses were wrong. Rule: paths come from
+authoritative sources (`ps`, `grep`, source code), never from memory.
+
+### Lesson #8 — Smoke tests must use known endpoints
+The restart smoke test probed `/api/status`, which does not exist on
+this service. The actual healthcheck endpoint is `/api/health`. Rule:
+before a restart, enumerate `@app.get/@app.post` decorators and pick
+an endpoint that is proven to exist.
+
+### Detection Gap #6 — Restart healthcheck loop
+The current restart procedure checks `kill -0 PID`, which only verifies
+the process has not died, not that it is serving traffic. A proper
+restart harness should loop on `curl /api/health` until 200 or timeout.
+Follow-up: S72-restart-harness.
+
