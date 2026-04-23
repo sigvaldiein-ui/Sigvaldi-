@@ -29,7 +29,7 @@ _TIMEOUT_ENV = "INTENT_LLM_FALLBACK_TIMEOUT_S"
 _THRESHOLD_ENV = "INTENT_LLM_FALLBACK_THRESHOLD"
 
 _DEFAULT_MODEL = "google/gemini-2.5-flash"
-_DEFAULT_TIMEOUT = 3.0
+_DEFAULT_TIMEOUT = 6.0
 _DEFAULT_THRESHOLD = 0.6
 
 _ALLOWED_DOMAINS = {"general", "legal", "financial", "technical", "public"}

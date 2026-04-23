@@ -39,8 +39,26 @@ _KW_TECHNICAL = {
     "traceback", "endpoint", "json", "http",
 }
 _KW_PUBLIC = {
+    # Institutions (original S64 set)
     "ráðuneyti", "stofnun", "opinber", "ríki", "sveitarfélag",
     "alþingi", "forseti", "landsréttur", "hæstirétt",
+    # Citizen services — ID documents
+    "ökuskírtein", "vegabréf", "nafnskírtein", "kennitala",
+    "sakavottorð", "búsetuvottorð",
+    # Tax & benefits administration (citizen-facing)
+    "rsk", "skatturinn", "skattframtal", "skattskýrsl", "skattkort",
+    "staðgreiðsla",
+    "fæðingarorlof", "fæðingarstyrk", "barnabæt", "vaxtabæt",
+    "atvinnuleysisbæt", "örorkubæt", "ellilífeyri",
+    # Agencies
+    "sjúkratrygging", "þjóðskrá", "lögheimil",
+    "vmst", "vinnumálastofnun", "tryggingastofnun",
+    "umferðarstofa", "samgöngustofa",
+    # Digital gov
+    "ísland.is", "island.is", "mínar síður", "rafræn skilríki",
+    "auðkenni",
+    # Common service verbs
+    "umsókn", "eyðublað", "leikskól", "grunnskól",
 }
 
 # ── File extension → (source_hint, adapter_hint, has_tabular) ─────────────
@@ -70,14 +88,22 @@ def _ext_of(filename: Optional[str]) -> Optional[str]:
 
 
 def _score_keywords(query_lower: str) -> tuple[Domain, int]:
-    """Finn sterkasta domain match + fjölda hits (fyrir confidence)."""
+    """Finn sterkasta domain match + fjölda hits (fyrir confidence).
+
+    Tie-break priority (S67-B): public > legal > technical > financial.
+    Citizen-services queries ("RSK skattskýrslu") oft match bæði
+    public (rsk, skattskýrsla) og financial (skatt, kostnað).
+    Public vinnur alltaf þegar hits eru jöfn.
+    """
     hits = {
         "legal":     sum(1 for kw in _KW_LEGAL     if kw in query_lower),
         "financial": sum(1 for kw in _KW_FINANCIAL if kw in query_lower),
         "technical": sum(1 for kw in _KW_TECHNICAL if kw in query_lower),
         "public":    sum(1 for kw in _KW_PUBLIC    if kw in query_lower),
     }
-    best_domain = max(hits, key=hits.get)
+    # Sort by (hit_count DESC, priority DESC). Higher priority wins ties.
+    priority = {"public": 4, "legal": 3, "technical": 2, "financial": 1}
+    best_domain = max(hits, key=lambda d: (hits[d], priority[d]))
     best_count = hits[best_domain]
     if best_count == 0:
         return "general", 0
