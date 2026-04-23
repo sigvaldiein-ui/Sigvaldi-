@@ -1,7 +1,7 @@
 {
   "sprint": "S66",
   "artifact": "Fasa 3 (fallback ON)",
-  "timestamp_utc": "2026-04-23T12:14:05.632292+00:00",
+  "timestamp_utc": "2026-04-23T12:27:11.417806+00:00",
   "fallback_enabled": true,
   "fallback_model": "google/gemini-2.5-flash",
   "n_queries": 40,
@@ -13,26 +13,26 @@
     "public"
   ],
   "metrics": {
-    "overall_accuracy": 0.5,
-    "domain_accuracy": 0.8,
-    "reasoning_depth_accuracy": 0.65,
-    "macro_f1": 0.707,
-    "low_confidence_count": 23,
-    "low_confidence_pct": 0.575,
-    "latency_p50_s": 0.031,
-    "latency_p95_s": 0.044,
-    "latency_total_s": 1.35,
-    "latency_avg_s": 0.034
+    "overall_accuracy": 0.65,
+    "domain_accuracy": 0.925,
+    "reasoning_depth_accuracy": 0.725,
+    "macro_f1": 0.91,
+    "low_confidence_count": 11,
+    "low_confidence_pct": 0.275,
+    "latency_p50_s": 0.577,
+    "latency_p95_s": 3.036,
+    "latency_total_s": 31.26,
+    "latency_avg_s": 0.782
   },
   "per_domain": {
     "legal": {
       "n_expected": 5,
-      "tp": 4,
+      "tp": 5,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.8,
-      "f1": 0.889
+      "recall": 1.0,
+      "f1": 1.0
     },
     "financial": {
       "n_expected": 5,
@@ -46,11 +46,11 @@
     "general": {
       "n_expected": 20,
       "tp": 19,
-      "fp": 6,
+      "fp": 1,
       "fn": 1,
-      "precision": 0.76,
+      "precision": 0.95,
       "recall": 0.95,
-      "f1": 0.844
+      "f1": 0.95
     },
     "technical": {
       "n_expected": 5,
@@ -63,19 +63,19 @@
     },
     "public": {
       "n_expected": 5,
-      "tp": 0,
+      "tp": 4,
       "fp": 1,
-      "fn": 5,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8
     }
   },
   "confusion_matrix": {
     "legal": {
-      "legal": 4,
+      "legal": 5,
       "financial": 0,
-      "general": 1,
+      "general": 0,
       "technical": 0,
       "public": 0
     },
@@ -103,9 +103,9 @@
     "public": {
       "legal": 0,
       "financial": 1,
-      "general": 4,
+      "general": 0,
       "technical": 0,
-      "public": 0
+      "public": 4
     }
   },
   "per_category": {
@@ -126,13 +126,13 @@
     },
     "legal": {
       "n": 5,
-      "domain_acc": 0.8,
+      "domain_acc": 1.0,
       "depth_acc": 0.4
     },
     "live_informed": {
       "n": 5,
       "domain_acc": 1.0,
-      "depth_acc": 0.6
+      "depth_acc": 1.0
     },
     "normal": {
       "n": 5,
@@ -141,8 +141,8 @@
     },
     "public": {
       "n": 5,
-      "domain_acc": 0.0,
-      "depth_acc": 0.6
+      "domain_acc": 0.8,
+      "depth_acc": 0.8
     },
     "technical": {
       "n": 5,
@@ -159,9 +159,9 @@
     },
     "fasa_3": {
       "n": 20,
-      "domain_acc": 0.7,
-      "depth_acc": 0.45,
-      "overall_acc": 0.25
+      "domain_acc": 0.95,
+      "depth_acc": 0.6,
+      "overall_acc": 0.55
     }
   },
   "rows": [
@@ -173,8 +173,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.13,
+      "confidence": 0.95,
+      "latency_s": 1.967,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -199,8 +199,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.029,
+      "confidence": 0.95,
+      "latency_s": 3.178,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -213,7 +213,7 @@
       "actual_domain": "general",
       "actual_depth": "standard",
       "confidence": 0.5,
-      "latency_s": 0.039,
+      "latency_s": 3.037,
       "domain_ok": true,
       "depth_ok": false
     },
@@ -226,7 +226,7 @@
       "actual_domain": "general",
       "actual_depth": "fast",
       "confidence": 0.5,
-      "latency_s": 0.032,
+      "latency_s": 3.035,
       "domain_ok": true,
       "depth_ok": false
     },
@@ -239,7 +239,7 @@
       "actual_domain": "general",
       "actual_depth": "fast",
       "confidence": 0.45,
-      "latency_s": 0.04,
+      "latency_s": 3.036,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -252,7 +252,7 @@
       "actual_domain": "general",
       "actual_depth": "fast",
       "confidence": 0.45,
-      "latency_s": 0.489,
+      "latency_s": 3.02,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -265,7 +265,7 @@
       "actual_domain": "general",
       "actual_depth": "fast",
       "confidence": 0.5,
-      "latency_s": 0.031,
+      "latency_s": 3.027,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -277,8 +277,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.037,
+      "confidence": 0.3,
+      "latency_s": 0.605,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -303,8 +303,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.031,
+      "confidence": 0.3,
+      "latency_s": 0.581,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -316,8 +316,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.044,
+      "confidence": 0.3,
+      "latency_s": 0.576,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -329,8 +329,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.033,
+      "confidence": 0.4,
+      "latency_s": 0.628,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -342,8 +342,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.03,
+      "confidence": 0.4,
+      "latency_s": 1.382,
       "domain_ok": false,
       "depth_ok": true
     },
@@ -355,8 +355,8 @@
       "expected_depth": "deep",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.45,
-      "latency_s": 0.035,
+      "confidence": 0.4,
+      "latency_s": 0.742,
       "domain_ok": true,
       "depth_ok": false
     },
@@ -483,11 +483,11 @@
       "fasa": 3,
       "expected_domain": "legal",
       "expected_depth": "fast",
-      "actual_domain": "general",
+      "actual_domain": "legal",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.031,
-      "domain_ok": false,
+      "confidence": 0.9,
+      "latency_s": 0.526,
+      "domain_ok": true,
       "depth_ok": true
     },
     {
@@ -561,12 +561,12 @@
       "fasa": 3,
       "expected_domain": "public",
       "expected_depth": "standard",
-      "actual_domain": "general",
-      "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.033,
-      "domain_ok": false,
-      "depth_ok": false
+      "actual_domain": "public",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.75,
+      "domain_ok": true,
+      "depth_ok": true
     },
     {
       "id": "P02",
@@ -574,11 +574,11 @@
       "fasa": 3,
       "expected_domain": "public",
       "expected_depth": "fast",
-      "actual_domain": "general",
+      "actual_domain": "public",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.034,
-      "domain_ok": false,
+      "confidence": 0.9,
+      "latency_s": 0.678,
+      "domain_ok": true,
       "depth_ok": true
     },
     {
@@ -587,11 +587,11 @@
       "fasa": 3,
       "expected_domain": "public",
       "expected_depth": "deep",
-      "actual_domain": "general",
-      "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.041,
-      "domain_ok": false,
+      "actual_domain": "public",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.72,
+      "domain_ok": true,
       "depth_ok": false
     },
     {
@@ -600,11 +600,11 @@
       "fasa": 3,
       "expected_domain": "public",
       "expected_depth": "fast",
-      "actual_domain": "general",
+      "actual_domain": "public",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.04,
-      "domain_ok": false,
+      "confidence": 0.9,
+      "latency_s": 0.577,
+      "domain_ok": true,
       "depth_ok": true
     },
     {
@@ -628,8 +628,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.031,
+      "confidence": 0.95,
+      "latency_s": 0.635,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -641,8 +641,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.039,
+      "confidence": 0.9,
+      "latency_s": 0.619,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -653,11 +653,11 @@
       "expected_domain": "general",
       "expected_depth": "standard",
       "actual_domain": "general",
-      "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.031,
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.543,
       "domain_ok": true,
-      "depth_ok": false
+      "depth_ok": true
     },
     {
       "id": "G24",
@@ -667,8 +667,8 @@
       "expected_depth": "fast",
       "actual_domain": "general",
       "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.031,
+      "confidence": 0.9,
+      "latency_s": 0.712,
       "domain_ok": true,
       "depth_ok": true
     },
@@ -679,11 +679,11 @@
       "expected_domain": "general",
       "expected_depth": "standard",
       "actual_domain": "general",
-      "actual_depth": "fast",
-      "confidence": 0.5,
-      "latency_s": 0.033,
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.688,
       "domain_ok": true,
-      "depth_ok": false
+      "depth_ok": true
     }
   ]
 }
