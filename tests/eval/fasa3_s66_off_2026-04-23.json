@@ -1,7 +1,7 @@
 {
   "sprint": "S66",
   "artifact": "Fasa 3 (fallback OFF)",
-  "timestamp_utc": "2026-04-23T15:06:59.251207+00:00",
+  "timestamp_utc": "2026-04-23T15:23:15.424434+00:00",
   "fallback_enabled": false,
   "fallback_model": null,
   "n_queries": 40,
@@ -106,6 +106,52 @@
       "general": 0,
       "technical": 0,
       "public": 5
+    }
+  },
+  "per_depth": {
+    "fast": {
+      "n": 21,
+      "tp": 21,
+      "fp": 12,
+      "fn": 0,
+      "precision": 0.636,
+      "recall": 1.0,
+      "f1": 0.778
+    },
+    "standard": {
+      "n": 6,
+      "tp": 0,
+      "fp": 2,
+      "fn": 6,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "deep": {
+      "n": 13,
+      "tp": 5,
+      "fp": 0,
+      "fn": 8,
+      "precision": 1.0,
+      "recall": 0.385,
+      "f1": 0.556
+    }
+  },
+  "depth_confusion": {
+    "fast": {
+      "fast": 21,
+      "standard": 0,
+      "deep": 0
+    },
+    "standard": {
+      "fast": 6,
+      "standard": 0,
+      "deep": 0
+    },
+    "deep": {
+      "fast": 6,
+      "standard": 2,
+      "deep": 5
     }
   },
   "per_category": {

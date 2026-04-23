@@ -42,6 +42,7 @@ if str(_REPO_ROOT) not in _sys.path:
 from core.intent_gateway import classify_intent
 
 CANONICAL_DOMAINS = ["legal", "financial", "general", "technical", "public"]
+CANONICAL_DEPTHS  = ["fast", "standard", "deep"]
 
 
 def p_q(xs, q):
@@ -144,6 +145,29 @@ def main() -> int:
                 sum(r["domain_ok"] and r["depth_ok"] for r in sub) / max(1, nf), 3),
         }
 
+    # Depth confusion + per-depth metrics (S67 Track C)
+    depth_confusion = {e: {a: 0 for a in CANONICAL_DEPTHS}
+                       for e in CANONICAL_DEPTHS}
+    for r in rows:
+        e = r.get("expected_depth"); a = r.get("actual_depth")
+        if e in depth_confusion and a in depth_confusion[e]:
+            depth_confusion[e][a] += 1
+    per_depth = {}
+    for d in CANONICAL_DEPTHS:
+        tp = depth_confusion[d][d]
+        fp = sum(depth_confusion[e][d] for e in CANONICAL_DEPTHS if e != d)
+        fn = sum(depth_confusion[d][a] for a in CANONICAL_DEPTHS if a != d)
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) else 0.0
+        f1   = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+        per_depth[d] = {
+            "n": tp + fn,
+            "tp": tp, "fp": fp, "fn": fn,
+            "precision": round(prec, 3),
+            "recall": round(rec, 3),
+            "f1": round(f1, 3),
+        }
+
     # Overall
     metrics = {
         "overall_accuracy": round(
@@ -173,6 +197,8 @@ def main() -> int:
         "metrics": metrics,
         "per_domain": per_domain,
         "confusion_matrix": confusion,
+        "per_depth": per_depth,
+        "depth_confusion": depth_confusion,
         "per_category": per_category,
         "per_fasa": per_fasa,
         "rows": rows,
@@ -199,6 +225,17 @@ def main() -> int:
         cells = " ".join(f"{confusion[e][a]:>5d}" for a in CANONICAL_DOMAINS)
         print(f"  {e[:4]:4s} {cells}")
     return 0
+
+
+    print("--- per_depth ---")
+    for d in CANONICAL_DEPTHS:
+        m = per_depth[d]
+        print(f"  {d:<10} n={m['n']:<3} P={m['precision']:.2f} R={m['recall']:.2f} F1={m['f1']:.2f}")
+    print("--- depth_confusion (row=expected, col=actual) ---")
+    print("  " + " ".join(f"{d[:6]:>6}" for d in CANONICAL_DEPTHS))
+    for e in CANONICAL_DEPTHS:
+        cells = " ".join(f"{depth_confusion[e][a]:>6d}" for a in CANONICAL_DEPTHS)
+        print(f"  {e[:6]:<6}{cells}")
 
 
 if __name__ == "__main__":
