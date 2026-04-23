@@ -1,0 +1,64 @@
+{
+  "sprint": "S66-A1",
+  "timestamp_utc": "2026-04-23T09:20:08Z",
+  "baseline_no_guard": {
+    "config": {
+      "max_concurrent": 20,
+      "enabled": false,
+      "n_calls": 20,
+      "sleep_ms": 500
+    },
+    "results": {
+      "n_success": 20,
+      "n_error": 0,
+      "total_wall_s": 0.536,
+      "latency_p50_ms": 506,
+      "latency_p95_ms": 532,
+      "latency_p99_ms": 532,
+      "latency_min_ms": 501,
+      "latency_max_ms": 532,
+      "peak_active_count": 0,
+      "errors": []
+    }
+  },
+  "guarded_n2": {
+    "config": {
+      "max_concurrent": 2,
+      "enabled": true,
+      "n_calls": 20,
+      "sleep_ms": 500
+    },
+    "results": {
+      "n_success": 20,
+      "n_error": 0,
+      "total_wall_s": 5.043,
+      "latency_p50_ms": 3018,
+      "latency_p95_ms": 5032,
+      "latency_p99_ms": 5032,
+      "latency_min_ms": 501,
+      "latency_max_ms": 5032,
+      "peak_active_count": 2,
+      "errors": []
+    }
+  },
+  "guarded_n4": {
+    "config": {
+      "max_concurrent": 4,
+      "enabled": true,
+      "n_calls": 20,
+      "sleep_ms": 500
+    },
+    "results": {
+      "n_success": 20,
+      "n_error": 0,
+      "total_wall_s": 2.541,
+      "latency_p50_ms": 1518,
+      "latency_p95_ms": 2530,
+      "latency_p99_ms": 2530,
+      "latency_min_ms": 501,
+      "latency_max_ms": 2530,
+      "peak_active_count": 4,
+      "errors": []
+    }
+  }
+}

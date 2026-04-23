@@ -22,6 +22,7 @@ import time
 from typing import Optional
 
 import requests
+from core.llm_concurrency import llm_guard
 
 log = logging.getLogger("llm_client")
 
@@ -62,6 +63,8 @@ def call_openrouter(
     prompt: str,
     timeout: float = 3.0,
     system: Optional[str] = None,
+    caller: str = "openrouter",
+    request_id: Optional[str] = None,
 ) -> str:
     """
     Synchronous OpenRouter chat completion. Returns assistant text content.
@@ -92,12 +95,13 @@ def call_openrouter(
     }
 
     t0 = time.time()
-    resp = requests.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
-        headers=headers,
-        data=json.dumps(payload),
-        timeout=timeout,
-    )
+    with llm_guard(caller=caller, request_id=request_id):
+        resp = requests.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            headers=headers,
+            data=json.dumps(payload),
+            timeout=timeout,
+        )
     latency_ms = int((time.time() - t0) * 1000)
     resp.raise_for_status()
     data = resp.json()
