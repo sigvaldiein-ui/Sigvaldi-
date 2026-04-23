@@ -4,6 +4,12 @@ Reads tests/eval/seed_queries.json, writes tests/eval/fasa2_s64.json.
 Idempotent: safe to re-run (overwrites output JSON).
 """
 import json, os, pathlib, time, datetime
+# Repo-root on sys.path so `core` is importable regardless of CWD/caller.
+import sys as _sys, pathlib as _pathlib
+_REPO_ROOT = _pathlib.Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_REPO_ROOT))
+
 from core.intent_gateway import classify_intent
 
 assert os.getenv("INTENT_LLM_FALLBACK_ENABLED", "").lower() in ("1","true","yes","on"), \
