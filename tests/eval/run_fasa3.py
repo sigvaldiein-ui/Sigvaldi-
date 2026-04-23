@@ -58,13 +58,13 @@ def main() -> int:
     rows = []
     latencies = []
     for q in queries:
-        t0 = time.time()
+        t0 = time.perf_counter()
         r = classify_intent(
             query=q.get("query"),
             filename=q.get("filename"),
             file_size=q.get("file_size"),
         ).model_dump()
-        dt = time.time() - t0
+        dt = time.perf_counter() - t0
         latencies.append(dt)
         rows.append({
             "id": q["id"],
