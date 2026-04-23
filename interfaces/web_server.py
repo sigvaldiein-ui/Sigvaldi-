@@ -3039,6 +3039,44 @@ _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
 FREE_QUOTA = 5
 
 
+
+# -- Sprint 66 pre-A hotfix: persist _beta_tracker across restarts --
+import json as _json_bt
+import os as _os_bt
+import time as _time_bt
+from pathlib import Path as _Path_bt
+
+_BETA_TRACKER_FILE = _Path_bt(_os_bt.getenv("BETA_TRACKER_PATH", "data/beta_tracker.json"))
+
+def _load_beta_tracker_from_disk() -> dict:
+    try:
+        if not _BETA_TRACKER_FILE.exists():
+            return {}
+        raw = _json_bt.loads(_BETA_TRACKER_FILE.read_text(encoding="utf-8"))
+        now = _time_bt.time()
+        # TODO(S66-A): replace with BETA_DURATION_SEC module const (defined below)
+        _DUR = int(_os_bt.getenv("BETA_DURATION_SEC_OVERRIDE", 7 * 24 * 3600))
+        return {ip: float(ts) for ip, ts in raw.items() if now - float(ts) <= _DUR}
+    except Exception as e:
+        try:
+            logger.warning(f"[BETA] load failed: {type(e).__name__}: {e}")
+        except Exception:
+            pass
+        return {}
+
+def _save_beta_tracker_to_disk(tracker: dict) -> None:
+    try:
+        _BETA_TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _BETA_TRACKER_FILE.with_suffix(".tmp")
+        tmp.write_text(_json_bt.dumps(tracker, indent=2), encoding="utf-8")
+        tmp.replace(_BETA_TRACKER_FILE)
+    except Exception as e:
+        try:
+            logger.warning(f"[BETA] save failed: {type(e).__name__}: {e}")
+        except Exception:
+            pass
+# -- /persist helpers --
+
 # ── Sprint 62: Beta tracker ──
 # Beta-tier via human phrase in chat: "Sigvaldi sendi mig" (7-day renewable)
 _beta_tracker: dict[str, float] = {}   # IP → promotion_timestamp (epoch sec)
@@ -3072,7 +3110,9 @@ def _promota_beta(ip: str) -> None:
     """Setur IP í beta-tier núna (eða endurnýjar)."""
     import time as _t
     _beta_tracker[ip] = _t.time()
+    _save_beta_tracker_to_disk(_beta_tracker)
 # ── /Sprint 62 Beta tracker ──
+_beta_tracker.update(_load_beta_tracker_from_disk())
 _wallet_cache: dict  = {"balance": None, "ts": 0.0}
 _WALLET_TTL          = 120
 
@@ -3857,7 +3897,30 @@ async def mock_success(request: Request):
     return HTMLResponse(content=build_success_page(plan, user_id))
 
 
+# -- Sprint 66 pre-A: module-level PID lock file pointer (so refactor-safe) --
+_pid_lock_fp = None
+# -- /PID lock global --
+
+
 if __name__ == "__main__":
+    # -- Sprint 66 pre-A hotfix: single-instance PID lock --
+    import fcntl as _fcntl_pl
+    import sys as _sys_pl
+    import os as _os_pl
+    _PID_LOCK_PATH = _os_pl.getenv("ALVITUR_PID_LOCK", "/tmp/alvitur_web_server.lock")
+    _pid_lock_fp = open(_PID_LOCK_PATH, "w", encoding="utf-8")
+    try:
+        _fcntl_pl.flock(_pid_lock_fp, _fcntl_pl.LOCK_EX | _fcntl_pl.LOCK_NB)
+        _pid_lock_fp.write(str(_os_pl.getpid()))
+        _pid_lock_fp.flush()
+    except BlockingIOError:
+        print(
+            "[FATAL] web_server.py already running (lock: "
+            + _PID_LOCK_PATH + ")",
+            file=_sys_pl.stderr,
+        )
+        _sys_pl.exit(1)
+    # -- /PID lock --
     uvicorn.run("web_server:app", host="0.0.0.0", port=int(__import__("os").environ.get("ALVITUR_PORT", "8000")))
 
 @app.get("/alvitur-v2", response_class=HTMLResponse)

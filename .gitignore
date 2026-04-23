@@ -39,3 +39,5 @@ interfaces/web_server.py.backup.*
 *.bak-*
 config/cf_token.txt
 tests/smoke.sh.bak.*
+data/beta_tracker.json
+data/beta_tracker.tmp
