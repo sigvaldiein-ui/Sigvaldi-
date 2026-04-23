@@ -25,6 +25,14 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
+# Auto-load /workspace/.env so OPENROUTER_API_KEY is available
+# without requiring caller to `source .env` in shell.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv('/workspace/.env')
+except ImportError:
+    pass  # dotenv optional; shell-source still works
+
 # Repo-root on sys.path so `core` is importable regardless of CWD/caller.
 import sys as _sys, pathlib as _pathlib
 _REPO_ROOT = _pathlib.Path(__file__).resolve().parents[2]
