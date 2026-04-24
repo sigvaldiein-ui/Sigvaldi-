@@ -41,3 +41,11 @@ config/cf_token.txt
 tests/smoke.sh.bak.*
 data/beta_tracker.json
 data/beta_tracker.tmp
+
+# Sprint 68 B.0 — data policy
+# Bronze raw zips (too large, regenerated via fetch_lagasafn_snapshot.sh)
+data/bronze/logs/snapshots/
+data/bronze/logs/incremental/
+# But DO keep discovery samples for reproducibility (small, stable reference)
+!data/bronze/logs/samples/
+!data/bronze/logs/samples/*.html
