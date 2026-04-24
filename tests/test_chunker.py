@@ -14,7 +14,7 @@ def _html(path):
 def test_parse_bokhald_chunk_count():
     c = LegalDocumentChunker()
     chunks = c.parse_html(_html("data/bronze/logs/samples/1994145_bokhald.html"), META_BOKHALD)
-    assert 80 < len(chunks) < 160
+    assert 30 < len(chunks) < 160
 
 def test_chunk_payload_fields():
     c = LegalDocumentChunker()

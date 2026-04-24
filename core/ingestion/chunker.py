@@ -23,11 +23,14 @@ _ENC = tiktoken.get_encoding("cl100k_base")
 def _tok(text: str) -> int:
     return len(_ENC.encode(text))
 
-GREIN_PAT  = re.compile(r"(\d+)\.\s*gr\.(?:\s+([a-z]{1,2}))?", re.IGNORECASE)
+GREIN_PAT  = re.compile(
+    r"(?:(?:^|\n)\s*\[?)(\d+)\.\s*gr\.(?:\s+([a-z]{1,2}))?(?=[\s.,;<\]]|$)",
+    re.MULTILINE
+)
 MGR_PAT    = re.compile(r"(\d+)\.\s*mgr\.", re.IGNORECASE)
 KAFLI_PAT  = re.compile(r"(I{1,3}V?|IV|V?I{0,3}|IX|X{1,3})\.\s*kafl[ia]", re.IGNORECASE)
 REF_PAT    = re.compile(
-    r"(\d+)\.\s*(?:tl|t\xf6lul)\.\.\s*"
+    r"(\d+)\.\s*(?:tl|t\xf6lul)\.\s*"
     r"(?:(\d+)\.\s*mgr\.\s*)?(\d+)\.\s*gr\.(?:\s+([a-z]{1,2}))?"
     r"(?:\s+(?:laga\s+nr\.|l\.?)\s*(\d+)/(\d{4}))?",
     re.IGNORECASE
@@ -72,6 +75,8 @@ class LegalDocumentChunker:
         self.token_counter = token_counter
 
     def _strip(self, text: str) -> str:
+        BLOCK = re.compile(r"<(?:p|div|br|h[1-6]|li|tr|td)[^>]*>", re.IGNORECASE)
+        text = BLOCK.sub("\n", text)
         text = re.sub(r"<[^>]+>", " ", text)
         for pat in STRIP_PATS:
             text = pat.sub(" ", text)
@@ -164,8 +169,6 @@ class LegalDocumentChunker:
                         source_url=url, token_counter=self.token_counter,
                     ))
             else:
-                if tok < 8:
-                    continue
                 chunks.append(Chunk(
                     chunk_id=cid, law_nr=nr, law_year=yr,
                     law_title=title, kafli_roman=k_roman, kafli_int=k_int,
