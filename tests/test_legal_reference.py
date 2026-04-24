@@ -63,3 +63,16 @@ def test_kafli_roman_normalization():
         raw_form="43. gr. IX. kafla",
     )
     assert ref.kafli_int == 9
+
+
+def test_grein_suffix_amended_article():
+    """51. gr. a — amended article, empirical finding from 118/2016."""
+    ref = LegalReference(
+        law_nr=118, law_year=2016,
+        grein=51, grein_suffix="a",
+        reference_type="internal_pinpoint",
+        raw_form="51. gr. a",
+    )
+    out = ref.to_canonical_string()
+    assert "51. gr. a" in out
+    assert "118/2016" in out

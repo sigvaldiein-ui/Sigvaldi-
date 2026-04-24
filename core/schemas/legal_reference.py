@@ -1,4 +1,4 @@
-"""Sprint 68 B.1 — Canonical Icelandic legal reference schema (v0.3).
+"""Sprint 68 B.1 — Canonical Icelandic legal reference schema (v0.4).
 
 Empirical basis: snapshot 157a (2026-04-24), 3 lög, 1035 pinpoints.
 See docs/SPRINT68_B1_SCHEMA.md for the tíðnitafla.
@@ -45,6 +45,7 @@ class LegalReference(BaseModel):
     kafli_int: Optional[int] = Field(None, ge=1, le=30)
     grein: Optional[int] = Field(None, ge=1, le=500)
     grein_range_end: Optional[int] = Field(None, ge=1, le=500)
+    grein_suffix: Optional[str] = Field(None, max_length=2, description="e.g. 'a' in '36. gr. a' (amended article)")
     malsgrein: Optional[int] = Field(None, ge=1, le=20)
     tolulidur: Optional[int] = Field(None, ge=1, le=50)
     stafslidur: Optional[str] = Field(None, max_length=2)
@@ -98,6 +99,8 @@ class LegalReference(BaseModel):
             parts.append(f"{self.malsgrein}. mgr.")
         if self.grein and self.grein_range_end:
             parts.append(f"{self.grein}.–{self.grein_range_end}. gr.")
+        elif self.grein and self.grein_suffix:
+            parts.append(f"{self.grein}. gr. {self.grein_suffix}")
         elif self.grein:
             parts.append(f"{self.grein}. gr.")
         tail = " ".join(parts)
