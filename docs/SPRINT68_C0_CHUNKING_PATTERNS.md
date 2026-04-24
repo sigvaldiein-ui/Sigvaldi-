@@ -52,3 +52,45 @@ Table handling deferred until 90/2003 (tekjuskattur) is added to samples.
 - Chapter (kafli) is structural boundary, not pinpoint
 - Citation output: Alþingis-canonical forms (tölul., laga nr.)
 - Input parsing: accept both short (tl., l.) and full forms
+
+
+---
+
+## APPENDIX C.0.5 -- 4-LAGA SAMANBUNADUR (24. april 2026)
+
+### 3 Nyjar uppgotvanir ur C.0.5
+
+FINDING C.0.5-1 -- grein_suffix er ekki bara [a,b]
+Tekjuskattur synnir suffix l og s (daemi: 32. gr. l, 17. gr. s).
+Schema v0.4 max_length=2 heldur, en chunker regex tharf [a-z]{1,2}.
+Impact: C.1 chunker regex scope staekkar.
+
+FINDING C.0.5-2 -- l. short form er REAL i tekjuskatti
+Ratio: l.=17, laga nr.=35 yfir 4 log. Parser tharf dual-pattern.
+Canonical output heldur: alltaf laga nr. i output.
+Impact: C.1 parser tharf dual-pattern matching.
+
+FINDING C.0.5-3 -- Toflur finnast EKKI i thessum 4 logum
+0 toflur i 638KB tekjuskatti. Toflur eru liklegast i reglugerdum.
+Impact: C.1 chunker tharf EKKI table-handler -- einfaldara scope.
+
+
+---
+
+## APPENDIX C.0.5 -- 4-LAGA SAMANBUNADUR (24. april 2026)
+
+### 3 Nyjar uppgotvanir ur C.0.5
+
+FINDING C.0.5-1 -- grein_suffix er ekki bara [a,b]
+Tekjuskattur synnir suffix l og s (daemi: 32. gr. l, 17. gr. s).
+Schema v0.4 max_length=2 heldur, en chunker regex tharf [a-z]{1,2}.
+Impact: C.1 chunker regex scope staekkar.
+
+FINDING C.0.5-2 -- l. short form er REAL i tekjuskatti
+Ratio: l.=17, laga nr.=35 yfir 4 log. Parser tharf dual-pattern.
+Canonical output heldur: alltaf laga nr. i output.
+Impact: C.1 parser tharf dual-pattern matching.
+
+FINDING C.0.5-3 -- Toflur finnast EKKI i thessum 4 logum
+0 toflur i 638KB tekjuskatti. Toflur eru liklegast i reglugerdum.
+Impact: C.1 chunker tharf EKKI table-handler -- einfaldara scope.
