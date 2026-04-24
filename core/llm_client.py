@@ -32,15 +32,17 @@ _HARD_TIMEOUT_CAP_S = 5.0
 # Rough per-1M-token USD pricing (input+output blended). Used for log estimate only.
 # Source: OpenRouter public pricing snapshot, kept loose on purpose.
 _COST_PER_1K_TOKENS = {
-    "google/gemini-2.5-flash":       0.00015,
-    "anthropic/claude-3.5-haiku":    0.00100,
-    "openai/gpt-4o-mini":            0.00060,
+    "google/gemini-3.1-pro-preview":    0.002,
+    "anthropic/claude-sonnet-4.6":      0.003,
+    "deepseek/deepseek-chat-v3-0324":   0.00029,
+    "openai/gpt-4o-mini":               0.00015,
 }
 
 _JSON_MODE_MODELS = {
-    "google/gemini-2.5-flash",
+    "google/gemini-3.1-pro-preview",
+    "anthropic/claude-sonnet-4.6",
+    "deepseek/deepseek-chat-v3-0324",
     "openai/gpt-4o-mini",
-    "anthropic/claude-3.5-haiku",
 }
 
 

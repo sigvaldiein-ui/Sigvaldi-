@@ -18,9 +18,10 @@ def ask_llm(system_prompt: str, user_prompt: str, temp: float = 0.1) -> str:
     # S7: models array gives automatic failover across providers
     payload = {
         "models": [
-            "google/gemini-2.5-flash",          # primary: fast, cheap
-            "anthropic/claude-3.5-haiku",        # fallback 1
-            "openai/gpt-4o-mini",                # fallback 2
+            "google/gemini-3.1-pro-preview",     # primary: AAII 57, frontier
+            "anthropic/claude-sonnet-4.6",        # fallback 1: AAII 53
+            "deepseek/deepseek-chat-v3-0324",     # fallback 2: AAII 48, 5x cheaper
+            "openai/gpt-4o-mini",                 # fallback 3: always-works
         ],
         "messages": [
             {"role": "system", "content": system_prompt},

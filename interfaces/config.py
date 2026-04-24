@@ -3,9 +3,10 @@
 import os
 
 # Leid A: OpenRouter ZDR fallback chain (general tier)
-MODEL_LEIDA_A_PRIMARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_PRIMARY", "anthropic/claude-3.5-haiku")
-MODEL_LEIDA_A_SECONDARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_SECONDARY", "anthropic/claude-sonnet-4.5")
-MODEL_LEIDA_A_TERTIARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_TERTIARY", "openai/gpt-4o-mini")
+MODEL_LEIDA_A_PRIMARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_PRIMARY", "google/gemini-3.1-pro-preview")
+MODEL_LEIDA_A_SECONDARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_SECONDARY", "anthropic/claude-sonnet-4.6")
+MODEL_LEIDA_A_TERTIARY: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_TERTIARY", "deepseek/deepseek-chat-v3-0324")
+MODEL_LEIDA_A_ULTIMATE: str = os.environ.get("ALVITUR_MODEL_LEIDA_A_ULTIMATE", "openai/gpt-4o-mini")
 
 # Leid B: LOCAL SOVEREIGN (vault tier) - NO cloud fallback
 VAULT_LOCAL_URL: str = os.environ.get("ALVITUR_VAULT_LOCAL_URL", "http://localhost:8002/v1/chat/completions")
