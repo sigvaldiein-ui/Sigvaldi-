@@ -3583,11 +3583,21 @@ SKJAL:
                         _domain_doc = "general"
                     _domain_doc = _domain_doc or "general"
                     _now_str = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
-                    _honesty_doc = (
-                        "\n\nMikilvægt: Ef þú finnur ekki nógu nákvæmar upplýsingar í skjalinu "
-                        "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
-                        "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
-                    )
+                    # s68-hotfix: conditional honesty — document vs text-only mode
+                    _has_document = bool(file and getattr(file, "filename", "") and file.filename.strip())
+                    if _has_document:
+                        _honesty_doc = (
+                            "\n\nMikilvægt: Ef þú finnur ekki nógu nákvæmar upplýsingar í skjalinu "
+                            "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
+                            "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
+                        )
+                    else:
+                        _honesty_doc = (
+                            "\n\nMikilvægt: Notandi hefur ekki hengt við skjal — þetta er almenn "
+                            "spurning. Svaraðu út frá almennri þekkingu þinni á íslensku. "
+                            "Ef þú veist ekki svarið með vissu, segðu það heiðarlega og bjóddu "
+                            "framhaldsspurningu. Ekki búa til staðreyndir."
+                        )
                     _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
