@@ -49,3 +49,5 @@ data/bronze/logs/incremental/
 # But DO keep discovery samples for reproducibility (small, stable reference)
 !data/bronze/logs/samples/
 !data/bronze/logs/samples/*.html
+.ipynb_checkpoints/
+output/

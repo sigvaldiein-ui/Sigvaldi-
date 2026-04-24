@@ -3257,10 +3257,16 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 except Exception:
                     _domain_txt = "general"
                 _domain_txt = _domain_txt or "general"
+                # s68-hotfix Part 3: text-only + tone-guide + thinking-suppress
                 _honesty = (
-                    "\n\nMikilvægt: Ef þú finnur ekki nógu nákvæmar upplýsingar í skjalinu "
-                    "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
-                    "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
+                    "\n\nMikilvægt: Notandi hefur ekki hengt við skjal — þetta er almenn "
+                    "spurning. Svaraðu út frá almennri þekkingu þinni á íslensku. "
+                    "Ef þú veist ekki svarið með vissu, segðu það heiðarlega og bjóddu "
+                    "framhaldsspurningu. Ekki búa til staðreyndir. "
+                    "MIKILVÆGT UM FRAMSETNINGU: Ekki sýna hugsanaferli þitt — engar "
+                    "<thinking>-tög, engin ‚bíð, ég þarf að“ setningar, engin internal-monologue. "
+                    "Sendu aðeins hreint, prófessjónal svar beint. Engar emoji, "
+                    "engin upphrópunarmerki, formlegt B2B-mál."
                 )
                 _system_prompt = _get_prompt(_domain_txt, _now_str) + _honesty
                 logger.info(f"[ALVITUR] Sprint61 text-only tier={_tier} domain={_domain_txt}")
@@ -3592,11 +3598,16 @@ SKJAL:
                             "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
                         )
                     else:
+                        # s68-hotfix Part 3: tone-guide + thinking-suppress
                         _honesty_doc = (
                             "\n\nMikilvægt: Notandi hefur ekki hengt við skjal — þetta er almenn "
                             "spurning. Svaraðu út frá almennri þekkingu þinni á íslensku. "
                             "Ef þú veist ekki svarið með vissu, segðu það heiðarlega og bjóddu "
-                            "framhaldsspurningu. Ekki búa til staðreyndir."
+                            "framhaldsspurningu. Ekki búa til staðreyndir. "
+                            "MIKILVÆGT UM FRAMSETNINGU: Ekki sýna hugsanaferli þitt — engar "
+                            "<thinking>-tög, engin ‚bíð, ég þarf að“ setningar, engin internal-monologue. "
+                            "Sendu aðeins hreint, prófessjónal svar beint. Engar emoji, "
+                            "engin upphrópunarmerki, formlegt B2B-mál."
                         )
                     _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
@@ -3965,7 +3976,12 @@ async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
             try:
                 r = await c.post("https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {_key}", "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
-                    json={"model": model, "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_msg}], "max_tokens": max_tokens},
+                    json={
+                        "model": model,
+                        "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_msg}],
+                        "max_tokens": max_tokens,
+                        "reasoning": {"exclude": True},  # s68-hotfix Part 3: suppress thinking-leak
+                    },
                     timeout=30.0)
                 if r.status_code != 200:
                     logger.warning(f"[ALVITUR] leid_a step={idx+1}/4 model={model} status={r.status_code}")
