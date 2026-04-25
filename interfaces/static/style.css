@@ -855,3 +855,40 @@ button { cursor: pointer; background: none; border: none; }
     padding-bottom: var(--space-16);
   }
 }
+
+/* Sprint 70 Track E — RAG indicator */
+.rag-indicator {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: .75rem 0 0;
+    padding: .5rem .75rem;
+    border-left: 3px solid #2563eb;
+    background: #eff6ff;
+    border-radius: 0 .375rem .375rem 0;
+    font-size: .8rem;
+    color: #1e40af;
+    line-height: 1.4;
+}
+.rag-indicator--grounded {
+    border-left-color: #2563eb;
+    background: #eff6ff;
+    color: #1e40af;
+}
+.rag-indicator--warning {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+    color: #78350f;
+}
+.rag-indicator--refusal {
+    border-left-color: #6b7280;
+    background: #f9fafb;
+    color: #374151;
+}
+.rag-indicator--fallback {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+    color: #78350f;
+}
+.rag-icon { font-size: 1rem; flex-shrink: 0; }
+.rag-label { flex: 1; }

@@ -3486,6 +3486,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             "found": True,
             "status": "ready_for_analysis",
             "pipeline_source": _pipeline_source_txt if "_pipeline_source_txt" in dir() else "unknown",
+            "rag_metadata": _rag_txt.__dict__ if hasattr(_rag_txt,"used_retrieval") else {},
         })
 
     import fitz  # PyMuPDF
@@ -3655,6 +3656,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     _summary = None
     _pipeline_source_doc = "unknown"
     _domain_doc = "general"
+    _rag_doc_meta = {"used_retrieval": False, "chunks_count": 0, "top_score": 0.0, "low_confidence": False, "source_laws": []}
     if _tier in ("general", "vault"):
         try:
             # 🟢 Sprint 62 Patch F: no-key → sovereign Leið B fyrir file-upload
@@ -3783,6 +3785,7 @@ SKJAL:
                             _rag_injection = build_rag_injection(_rag.chunks)
                             _system_prompt = _system_prompt + _rag_injection
                             _pipeline_source_doc = f"rag_grounded_general"
+                            _rag_doc_meta = {"used_retrieval": True, "chunks_count": len(_rag.chunks), "top_score": round(_rag.top_score,3), "low_confidence": _rag.top_score<0.65, "source_laws": []}
                             logger.info("[RAG] injected %d chunks into analyze_doc prompt", len(_rag.chunks))
                         elif _rag.fallback_to_gemini:
                             _system_prompt = _system_prompt + "[ATH: Engin lagatilvitnun fannst i corpus Alvitur. Svaraðu varlega.]"
@@ -3791,6 +3794,7 @@ SKJAL:
                     except Exception as _rag_e:
                         logger.warning("[RAG] orchestrator villa (graceful degradation): %s", _rag_e)
 
+                    _rag_doc_meta = {"used_retrieval": _rag.used_retrieval, "chunks_count": len(_rag.chunks), "top_score": round(_rag.top_score, 3), "low_confidence": _rag.top_score < 0.65, "source_laws": []} if "_rag" in dir() else {}
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
                     if _summary is None:
@@ -3837,6 +3841,7 @@ SKJAL:
         "found": result.get("found", False),
         "status": "ready_for_analysis",
         "quota_warning": _quota_warning,
+        "rag_metadata": _rag_doc_meta,
         "pipeline_source": _pipeline_source_doc if "_pipeline_source_doc" in dir() else "unknown",
     }
     return JSONResponse(content=response)

@@ -263,6 +263,14 @@
       html += '</p>';
     }
 
+    var ragIndicator = buildPipelineIndicator(data.pipeline_source, data.rag_metadata);
+    if (ragIndicator) {
+      html += '<div class="rag-indicator ' + ragIndicator.className + '">' +
+              '<span class="rag-icon">' + ragIndicator.icon + '</span> ' +
+              '<span class="rag-label">' + escapeHtml(ragIndicator.label) + '</span>' +
+              '</div>';
+    }
+
     if (!html) {
       html = '<p>Engar niðurstöður fundust.</p>';
     }
@@ -298,3 +306,28 @@
   });
 
 })();
+
+// Sprint 70 Track E — RAG pipeline indicator
+function buildPipelineIndicator(pipelineSource, ragMetadata) {
+    if (!pipelineSource) return null;
+    if (pipelineSource.startsWith('rag_grounded')) {
+        var meta = ragMetadata || {};
+        var count = meta.chunks_count || 0;
+        var label = 'Sótti ' + count + ' málsgreinar úr íslenskum lögum';
+        if (meta.source_laws && meta.source_laws.length) {
+            label += ' — ' + meta.source_laws.join(', ');
+        }
+        if (meta.low_confidence) {
+            label += ' (lág sannfæring)';
+            return { icon: '⚠️', label: label, className: 'rag-indicator--warning' };
+        }
+        return { icon: '📚', label: label, className: 'rag-indicator--grounded' };
+    }
+    if (pipelineSource.startsWith('rag_refusal')) {
+        return { icon: '🚫', label: 'Engin lagatilvitnun fannst í gagnagrunni Alvitur', className: 'rag-indicator--refusal' };
+    }
+    if (pipelineSource === 'rag_fallback_general') {
+        return { icon: '⚠️', label: 'Engin lagatilvitnun — almennt svar', className: 'rag-indicator--fallback' };
+    }
+    return null;
+}
