@@ -16,17 +16,20 @@ import asyncio as _aio
 _VAULT_SEMAPHORE = _aio.Semaphore(1)
 
 
-def _get_rag_context(query: str, domain: str) -> str:
-    if domain != "legal":
-        return ""
-    keywords = ["persónuvernd", "gagnavernd", "lög", "réttur", "heimild", "lag", "samþykki"]
-    if any(kw in query.lower() for kw in keywords):
-        return """
-[Heimildir]
-• Persónuverndarlög nr. 90/2018, 15. gr.: Réttur aðila til upplýsinga um meðferð persónuupplýsinga.
-• Upplýsingalög nr. 142/2012: Almennur aðgangur að opinberum gögnum.
-"""
-    return ""
+def _get_rag_context(query: str, domain: str = None) -> str:
+    """RAG+ retrieval fyrir chat_routes (sovereign-by-default)."""
+    from core.rag_orchestrator import retrieve_legal_context, build_rag_injection
+    rag_result = retrieve_legal_context(
+        query=query,
+        intent_domain=domain or 'general',
+        tier='vault',
+        tenant_id='system',
+    )
+    if rag_result.refusal:
+        return '__RAG_REFUSAL__:' + rag_result.refusal
+    if not rag_result.used_retrieval:
+        return ''
+    return build_rag_injection(rag_result.chunks)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -146,6 +149,23 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
 
     domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd", "gagnavernd"]) else "general"
     rag = _get_rag_context(query, domain)
+
+    # Sprint 70 D.5 — sovereign refusal (gildir fyrir bada tier-ar i chat_routes)
+    if rag.startswith("__RAG_REFUSAL__:"):
+        refusal_msg = rag.replace("__RAG_REFUSAL__:", "")
+        return JSONResponse({
+            "answer": refusal_msg,
+            "tier": tier,
+            "pipeline_source": f"rag_refusal_{tier}",
+            "rag_metadata": {
+                "used_retrieval": True,
+                "tier": tier,
+                "chunks_count": 0,
+                "top_score": 0.0,
+                "source_laws": [],
+                "low_confidence": False,
+            }
+        })
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     file_context = ""
@@ -182,7 +202,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
         return JSONResponse(content={
             "success": True,
             "response": content,
-            "pipeline_source": f"local_vllm_{model}",
+            "pipeline_source": f"rag_grounded_vault" if rag else f"local_vllm_{model}",
             "domain": domain,
             "tier": "vault",
         })
