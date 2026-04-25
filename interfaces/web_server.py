@@ -2898,6 +2898,133 @@ async def health():
         "fasi": "production",
     })
 
+@app.get("/api/health/detailed")
+async def health_detailed():
+    """Raunverulegur health check fyrir alla Alvitur components."""
+    import time, subprocess, os
+    import httpx
+    from datetime import datetime, timedelta
+    start = time.time()
+
+    report = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "overall": "unknown",
+        "components": {},
+        "metrics": {},
+        "errors_last_10min": 0,
+    }
+
+    # 1. FastAPI self
+    report["components"]["fastapi"] = {
+        "status": "ok",
+        "pid": os.getpid(),
+        "version": "sprint63-track-b",
+    }
+
+    # 2. vLLM local (port 8002)
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://localhost:8002/v1/models")
+            if r.status_code == 200:
+                models = r.json().get("data", [])
+                report["components"]["vllm"] = {
+                    "status": "ok",
+                    "models_loaded": [m.get("id") for m in models[:3]],
+                    "latency_ms": int((time.time() - start) * 1000),
+                }
+            else:
+                report["components"]["vllm"] = {"status": "degraded", "http_code": r.status_code}
+    except Exception as e:
+        report["components"]["vllm"] = {"status": "down", "error": f"{type(e).__name__}: {e}"}
+
+    # 3. OpenRouter
+    try:
+        key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not key or len(key) < 40:
+            report["components"]["openrouter"] = {"status": "misconfigured", "error": "API key missing"}
+        else:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(
+                    "https://openrouter.ai/api/v1/auth/key",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                if r.status_code == 200:
+                    data = r.json().get("data", {})
+                    report["components"]["openrouter"] = {
+                        "status": "ok",
+                        "credits_remaining": data.get("limit_remaining"),
+                        "rate_limit": data.get("rate_limit", {}).get("requests"),
+                    }
+                else:
+                    report["components"]["openrouter"] = {"status": "auth_failed", "http_code": r.status_code}
+    except Exception as e:
+        report["components"]["openrouter"] = {"status": "unreachable", "error": f"{type(e).__name__}: {e}"}
+
+    # 4. Disk space
+    try:
+        result = subprocess.run(["df", "-h", "/workspace"], capture_output=True, text=True, timeout=5)
+        lines = result.stdout.strip().split("\n")
+        if len(lines) >= 2:
+            parts = lines[1].split()
+            pct = int(parts[4].rstrip("%"))
+            report["components"]["disk"] = {
+                "status": "ok" if pct < 90 else "warning",
+                "used": parts[2],
+                "available": parts[3],
+                "percent_used": parts[4],
+            }
+    except Exception as e:
+        report["components"]["disk"] = {"status": "error", "error": str(e)}
+
+    # 5. GPU VRAM
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.used,memory.total,memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3
+        )
+        parts = result.stdout.strip().split(", ")
+        if len(parts) == 3:
+            used, total, free = int(parts[0]), int(parts[1]), int(parts[2])
+            pct = (used / total) * 100
+            report["components"]["gpu"] = {
+                "status": "ok" if pct < 95 else "critical",
+                "used_mib": used,
+                "total_mib": total,
+                "free_mib": free,
+                "percent_used": round(pct, 1),
+            }
+    except Exception as e:
+        report["components"]["gpu"] = {"status": "error", "error": str(e)}
+
+    # 6. Error count sidastu 10 min
+    try:
+        result = subprocess.run(
+            ["tail", "-n", "500", "/workspace/web_server.log"],
+            capture_output=True, text=True, timeout=3
+        )
+        error_count = sum(
+            1 for line in result.stdout.split("\n")
+            if any(k in line for k in ("ERROR", "Traceback", "Exception"))
+        )
+        report["errors_last_10min"] = error_count
+    except Exception:
+        report["errors_last_10min"] = -1
+
+    # 7. Overall status
+    statuses = [c.get("status", "unknown") for c in report["components"].values()]
+    if any(s == "down" for s in statuses):
+        report["overall"] = "critical"
+    elif any(s in ("degraded", "warning", "error", "critical") for s in statuses):
+        report["overall"] = "degraded"
+    elif all(s == "ok" for s in statuses):
+        report["overall"] = "healthy"
+    else:
+        report["overall"] = "unknown"
+
+    report["metrics"]["check_latency_ms"] = int((time.time() - start) * 1000)
+    return report
+
+
 @app.get("/api/diagnostics")
 async def diagnostics():
     """Sprint 63 Track A5 + B3: Diagnostics — stöðu leiða og umhverfis."""

@@ -74,14 +74,17 @@ class ClassifySkill(BaseSkill):
                     },
                     json={
                         "model": CLASSIFY_MODEL,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 5,
+                        "messages": [{"role": "user", "content": "/no_think " + prompt}],
+                        "max_tokens": 10,
                         "temperature": 0,
                     },
                     timeout=10.0,
                 )
                 r.raise_for_status()
-                raw = r.json()["choices"][0]["message"]["content"].strip().lower()
+                msg = r.json()["choices"][0]["message"]
+                raw = (msg.get("content") or msg.get("reasoning") or "general").strip().lower()
+                # Taka fyrsta ord ef reasoning model skilar langa texta
+                raw = raw.split()[0].rstrip(".,:")
                 domain = raw if raw in DOMAINS else "general"
                 logger.info("[ALVITUR] classify domain=%s snippet=%r", domain, snippet[:60])
                 return domain

@@ -39,7 +39,7 @@ _COST_PER_1K_TOKENS = {
 }
 
 _JSON_MODE_MODELS = {
-    "google/gemini-3.1-pro-preview",
+    # gemini-3.1-pro-preview EKKI her — thinking model styður ekki json_object
     "anthropic/claude-sonnet-4.6",
     "deepseek/deepseek-chat-v3-0324",
     "openai/gpt-4o-mini",
