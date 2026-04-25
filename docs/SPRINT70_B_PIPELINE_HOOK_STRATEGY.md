@@ -178,3 +178,28 @@ Q4: Multi-tenant scope — tenant_id="system" vs tenant_id="user_XXX"?
 
 Q5: Latency budget — 285ms embedding er 25% af 1.1s typical LLM latency.
   Ásættanlegt? Eða á við pre-embed common queries (cache)?
+
+---
+
+## Opus 4.7 Answers (2026-04-25)
+
+Q1 FALLBACK POLICY (dual-policy):
+  vault tier: refuses cleanly — "Finn ekki viðeigandi lagatexta í corpus Alvitur."
+  general tier: falls to Gemini með caveat flag in response.
+  Vault loforð er non-negotiable — aldrei Gemini general knowledge á vault tier.
+
+Q2 SINGLETON (lazy load):
+  JA. core/embeddings.py, lazy load a fyrsta call, CPU device.
+  Avoids 12s reload per request.
+
+Q3 PARENT HYDRATION:
+  JA med caveat: ef malsgrein sub-chunk og parent grein <600 tokens → hydrate.
+  Ef parent >=600 tokens → skip (forðast context overflow).
+
+Q4 TENANT_ID — NUNA (ekki Sprint 75):
+  Bæta tenant_id="system" i payload schema OG retrieval filter.
+  Sprint 72 ephemeral vault krefst þessa. P0 fyrir Sprint 70.
+
+Q5 EMBEDDING CACHE — EKKI NUNA:
+  285ms er <5% heildartíma. Cache hit rate <5%.
+  Ef p95 fer yfir 500ms → GPU offload, ekki cache.
