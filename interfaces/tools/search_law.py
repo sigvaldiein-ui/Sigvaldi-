@@ -1,23 +1,16 @@
-# interfaces/tools/search_law.py
-"""
-Sprint 57 — SearchLawTool.
-Leitar í igc_law_pilot Qdrant RAG collection.
-Byggir á _rag_retrieve() í chat_routes.py.
-"""
-import logging
-import os
+"""Sprint 69 — SearchLawTool v2. Tengist alvitur_laws_v1 Qdrant collection."""
+import logging, os
 from interfaces.tools.base import BaseTool
 
 logger = logging.getLogger("alvitur.web")
-
 _QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/Sigvaldi-/data/qdrant_store")
-_RAG_COLLECTION = "igc_law_pilot"
+_RAG_COLLECTION = "alvitur_laws_v1"
 _RAG_TOP_K = 3
 _RAG_SCORE_THRESHOLD = 0.40
 
 
 class SearchLawTool(BaseTool):
-    """Leitar í íslenskum lögum og þingskjölum (igc_law_pilot)."""
+    """Leitar í íslenskum lögum (alvitur_laws_v1)."""
 
     @property
     def name(self) -> str:
@@ -26,33 +19,24 @@ class SearchLawTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Leitar í gagnagrunni íslenskra laga og þingskjala. "
-            "Skilar þremur viðeigandi textabrotum með score, titli og slóð. "
-            "Nota þegar notandi spyr um íslensk lög, reglugerðir eða þingmál."
+            "Leitar í gagnagrunni íslenskra laga. "
+            "Skilar viðeigandi lagagreinum með tilvísun og texta. "
+            "Nota þegar notandi spyr um íslensk lög eða reglugerðir."
         )
 
-    async def run(self, query: str = "") -> list[dict]:
-        """
-        Leitar í igc_law_pilot.
-        kwargs:
-          query: leitarstrengur
-        Skilar: listi af dicts [{text, title, source, date, score}]
-        """
+    async def run(self, query: str = "") -> list:
         if not query:
             return []
         try:
             from qdrant_client import QdrantClient
             from sentence_transformers import SentenceTransformer
-
-            model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-            vector = model.encode([query], convert_to_numpy=True)[0]
-
+            model = SentenceTransformer("intfloat/multilingual-e5-large")
+            vector = model.encode([query], normalize_embeddings=True)[0]
             client = QdrantClient(path=_QDRANT_PATH)
             cols = [c.name for c in client.get_collections().collections]
             if _RAG_COLLECTION not in cols:
                 logger.warning("[ALVITUR] SearchLawTool: collection %s ekki til", _RAG_COLLECTION)
                 return []
-
             results = client.query_points(
                 collection_name=_RAG_COLLECTION,
                 query=vector.tolist(),
@@ -62,12 +46,27 @@ class SearchLawTool(BaseTool):
             for h in results.points:
                 if h.score < _RAG_SCORE_THRESHOLD:
                     continue
+                p = h.payload
+                grein = p.get("grein", "")
+                suffix = p.get("grein_suffix") or ""
+                mgr = p.get("malsgrein") or ""
+                law_nr = p.get("law_nr", "")
+                law_year = p.get("law_year", "")
+                law_title = p.get("law_title", "")
+                gr_str = str(grein) + ". gr."
+                if suffix:
+                    gr_str += " " + str(suffix)
+                if mgr:
+                    gr_str = str(mgr) + ". mgr. " + gr_str
+                title = gr_str + " laga nr. " + str(law_nr) + "/" + str(law_year) + " " + str(law_title)
                 hits.append({
-                    "text": h.payload.get("text", ""),
-                    "title": h.payload.get("title", ""),
-                    "source": h.payload.get("source", ""),
-                    "date": h.payload.get("date", ""),
-                    "domain": h.payload.get("domain", ""),
+                    "text": p.get("text", ""),
+                    "title": title.strip(),
+                    "source": p.get("source_url", ""),
+                    "law_nr": law_nr,
+                    "law_year": law_year,
+                    "grein": grein,
+                    "domain": "legal",
                     "score": round(h.score, 4),
                 })
             logger.info("[ALVITUR] search_law hits=%d query=%r", len(hits), query[:60])
