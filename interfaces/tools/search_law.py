@@ -10,7 +10,7 @@ from interfaces.tools.base import BaseTool
 
 logger = logging.getLogger("alvitur.web")
 
-_QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/mimir_net/data/qdrant_store")
+_QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/Sigvaldi-/data/qdrant_store")
 _RAG_COLLECTION = "igc_law_pilot"
 _RAG_TOP_K = 3
 _RAG_SCORE_THRESHOLD = 0.40
