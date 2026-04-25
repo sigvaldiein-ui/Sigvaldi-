@@ -26,7 +26,7 @@ _SCORE_HIGH = 0.60
 _SCORE_LOW  = 0.40
 
 _LEGAL_KEYWORDS = re.compile(
-    r'\d+/\d{4}|gr\.|mgr\.|tölul\.|lög\s+nr\.|lögnúmer|lagagrein',
+    r'\d+/\d{4}|gr\.|mgr\.|tölul\.|lög\s+nr\.|lögnúmer|lagagrein|fasteignal[aá]n|bókhald|persónuvernd|tekjuskattur|skattalög|reglugerð|lagaákvæð',
     re.IGNORECASE
 )
 

@@ -3396,6 +3396,29 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     "engin upphrópunarmerki, formlegt B2B-mál."
                 )
                 _system_prompt = _get_prompt(_domain_txt, _now_str) + _honesty
+                # Sprint 70 Track D — RAG+ hook (text-only path)
+                try:
+                    from core.rag_orchestrator import retrieve_legal_context, build_rag_injection
+                    _rag_txt = retrieve_legal_context(
+                        query=(query or "").strip(),
+                        intent_domain=_domain_txt,
+                        tier=_tier,
+                        tenant_id="system",
+                    )
+                    if _rag_txt.refusal:
+                        from fastapi.responses import JSONResponse as _JR
+                        return _JR(content={"success":True,"response":_rag_txt.refusal,
+                            "pipeline_source":"rag_refusal_vault","domain":_domain_txt,
+                            "zero_data":True,"found":True,"status":"ready_for_analysis",
+                            "citations":[],"quota_warning":None,"tier":_tier})
+                    if _rag_txt.used_retrieval:
+                        _system_prompt = _system_prompt + build_rag_injection(_rag_txt.chunks)
+                        _pipeline_source_txt = "rag_grounded_" + _tier
+                    elif _rag_txt.fallback_to_gemini:
+                        _system_prompt = _system_prompt + "[ATH: Engin lagatilvitnun fannst. Svaraðu varlega.]"
+                        _pipeline_source_txt = "rag_fallback_general"
+                except Exception as _rag_e2:
+                    logger.warning("[RAG] text-only villa: %s", _rag_e2)
                 logger.info(f"[ALVITUR] Sprint61 text-only tier={_tier} domain={_domain_txt}")
                 _pipeline_source_txt = "unknown"
                 if _tier == "vault":
@@ -3737,6 +3760,37 @@ SKJAL:
                             "engin upphrópunarmerki, formlegt B2B-mál."
                         )
                     _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
+
+                    # Sprint 70 Track D — RAG+ hook
+                    print("DEBUG: RAG hook starting", flush=True)
+                    try:
+                        from core.rag_orchestrator import retrieve_legal_context, build_rag_injection
+                        _rag = retrieve_legal_context(
+                            query=((query or "").strip() or _msg or ""),
+                            intent_domain=_domain_doc,
+                            tier="general",
+                            tenant_id="system",
+                        )
+                        if _rag.refusal:
+                            return JSONResponse(content={
+                                "success": True, "response": _rag.refusal,
+                                "pipeline_source": "rag_refusal_vault",
+                                "domain": _domain_doc, "zero_data": True,
+                                "found": True, "status": "ready_for_analysis",
+                                "citations": [], "quota_warning": None,
+                            })
+                        if _rag.used_retrieval:
+                            _rag_injection = build_rag_injection(_rag.chunks)
+                            _system_prompt = _system_prompt + _rag_injection
+                            _pipeline_source_doc = f"rag_grounded_general"
+                            logger.info("[RAG] injected %d chunks into analyze_doc prompt", len(_rag.chunks))
+                        elif _rag.fallback_to_gemini:
+                            _system_prompt = _system_prompt + "[ATH: Engin lagatilvitnun fannst i corpus Alvitur. Svaraðu varlega.]"
+                            _pipeline_source_doc = "rag_fallback_general"
+                            _pipeline_source_doc = "rag_fallback_general"
+                    except Exception as _rag_e:
+                        logger.warning("[RAG] orchestrator villa (graceful degradation): %s", _rag_e)
+
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
                     if _summary is None:
