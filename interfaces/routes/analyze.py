@@ -300,6 +300,15 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                             if line: txt.append(line)
                     heildartexti = "\n".join(txt)
                     sidur = len(wb.worksheets)
+                # B.2: Schema injection — keyrir alltaf eftir xlsx parse (bæði try/except)
+                try:
+                    from interfaces.utils.tabular_schema import extract_schema, schema_to_prompt_injection
+                    _schema = extract_schema(efni, file.filename)
+                    _schema_prompt = schema_to_prompt_injection(_schema)
+                    heildartexti = _schema_prompt + "\n\n" + heildartexti
+                    logger.info(f"[ALVITUR] B.2 schema injected, total chars: {len(heildartexti)}")
+                except Exception as _se:
+                    logger.warning(f"[ALVITUR] B.2 schema injection skipped: {type(_se).__name__}: {_se}")
             elif _filetype == 'docx':
                 from docx import Document
                 doc = Document(io.BytesIO(efni))
