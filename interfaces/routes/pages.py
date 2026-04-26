@@ -297,15 +297,13 @@ a{color:#6366F1}</style></head><body><div class="c">
 # --- serve_v2 ---
 @router.get("/alvitur-v2", response_class=HTMLResponse)
 async def serve_v2():
-    with open('index.html', 'r', encoding='utf-8') as f:
-        return HTMLResponse(content=f.read())
+    return HTMLResponse(content=HTML_PAGE)
 
 
 # --- serve_demo ---
 @router.get("/mimir-demo", response_class=HTMLResponse)
 async def serve_demo():
-    with open('index.html', 'r', encoding='utf-8') as f:
-        return HTMLResponse(content=f.read())
+    return HTMLResponse(content=HTML_PAGE)
 
 
 # ═══════════════════════════════════════════════════════════════════════
