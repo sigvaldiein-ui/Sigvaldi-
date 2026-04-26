@@ -102,6 +102,7 @@ from interfaces.static_content.html_pages import (
     SHARED_HEAD, SHARED_STYLES,
     SVG_LOGO, SVG_LOGO_CHAT, CHECK_SVG, ACCENT_CHECK, NAV_SCRIPT, HTML_PAGE,
 )
+from interfaces.pipeline import _call_leid_a, _call_leid_b, _vault_system_prompt
 _VAULT_SEMAPHORE_WS = _aio_ws.Semaphore(1)
 logger = logging.getLogger("alvitur.web")
 
@@ -2192,84 +2193,6 @@ async def serve_demo():
 # ═══════════════════════════════════════════════════════════════════════
 # Sprint 61 - Leid A/B helpers (sovereign separation)
 # ═══════════════════════════════════════════════════════════════════════
-
-async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
-    """OpenRouter chain: Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage)."""
-    from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY, MODEL_LEIDA_A_ULTIMATE
-    import httpx as _hx
-    _key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not _key:
-        logger.error("[ALVITUR] leid_a: OPENROUTER_API_KEY missing")
-        return (None, None, None)
-    if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
-        logger.warning("[ALVITUR] leid_a: ZDR_CONFIRMED=false - refusing call")
-        return (None, None, None)
-    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY, MODEL_LEIDA_A_ULTIMATE]
-    async with _hx.AsyncClient() as c:
-        for idx, model in enumerate(chain):
-            try:
-                r = await c.post("https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {_key}", "HTTP-Referer": "https://alvitur.is", "X-Title": "Alvitur"},
-                    json={
-                        "model": model,
-                        "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_msg}],
-                        "max_tokens": max_tokens,
-                        "reasoning": {"exclude": True},  # s68-hotfix Part 3: suppress thinking-leak
-                    },
-                    timeout=30.0)
-                if r.status_code != 200:
-                    logger.warning(f"[ALVITUR] leid_a step={idx+1}/4 model={model} status={r.status_code}")
-                    continue
-                d = r.json()
-                logger.info(f"[ALVITUR] leid_a {'FALLBACK' if idx>0 else 'primary'} ok step={idx+1}/4 model={model}")
-                return (d["choices"][0]["message"]["content"], model, d.get("usage", {}))
-            except Exception as e:
-                logger.warning(f"[ALVITUR] leid_a step={idx+1}/3 exc={type(e).__name__}: {e}")
-    logger.error("[ALVITUR] leid_a ALL 4 models failed")
-    return (None, None, None)
-
-
-def _vault_system_prompt():
-    return ("Þú ert Alvitur — íslensk gervigreindaraðstoð á trúnaðarstigi (Vault). "
-            "Þú keyrir á íslenskri GPU. Gögn fara aldrei úr vélinni.\n\n"
-            "REGLUR UM ÍSLENSKU:\n"
-            "1. Svaraðu ALLTAF á réttri íslensku með fullum beygingum.\n"
-            "2. Gættu að föllum (nf/þf/þgf/ef) og kynjum (kk/kvk/hk).\n"
-            "3. Notaðu aldrei orð sem þú ert ekki viss um — veldu einfaldara orð.\n"
-            "4. Ekki búa til orð. Ef þú veist ekki orðið — umorðaðu.\n\n"
-            "DÆMI UM GÓÐA SVÖRUN:\n"
-            "Spurning: Hvað er höfuðborg Íslands?\n"
-            "Svar: Reykjavík er höfuðborg Íslands. Hún er stærsta borg landsins og þar búa um 130.000 manns.\n\n"
-            "Spurning: Greindu þessa færslu: '01.12.2025 | Launagreiðsla | 450000'\n"
-            "Svar: Þetta er innborgun launa að fjárhæð 450.000 krónur þann 1. desember 2025. Þetta flokkast sem tekjur.\n\n"
-            "Svaraðu nú spurningu notandans í sama stíl.")
-
-
-async def _call_leid_b(user_msg, max_tokens=8192):
-    """Local sovereign vLLM. NO cloud fallback. Returns (content, model, usage) or (None,None,None)."""
-    from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
-    import httpx as _hx
-    try:
-        async with _hx.AsyncClient() as c:
-            r = await c.post(VAULT_LOCAL_URL,
-                headers={"Content-Type": "application/json"},
-                json={"model": VAULT_LOCAL_MODEL,
-                      "messages": [{"role":"system","content":_vault_system_prompt()},{"role":"user","content":user_msg}],
-                      "max_tokens": max_tokens, "temperature": 0.3, "top_p": 0.9,
-                      "chat_template_kwargs": {"enable_thinking": False}},
-                timeout=float(VAULT_LOCAL_TIMEOUT))
-            if r.status_code != 200:
-                logger.error(f"[ALVITUR] leid_b local vLLM status={r.status_code} body={r.text[:200]}")
-                return (None, None, None)
-            d = r.json()
-            ms = VAULT_LOCAL_MODEL.rsplit("/", 1)[-1]
-            u = d.get("usage", {})
-            logger.info(f"[ALVITUR] leid_b sovereign ok model={ms} in={u.get('prompt_tokens',0)} out={u.get('completion_tokens',0)}")
-            return (d["choices"][0]["message"]["content"], ms, u)
-    except Exception as e:
-        logger.error(f"[ALVITUR] leid_b local vLLM exc={type(e).__name__}: {e}")
-        return (None, None, None)
-
 
 def _estimate_tokens(text):
     return int(len((text or "").split()) * 1.3)
