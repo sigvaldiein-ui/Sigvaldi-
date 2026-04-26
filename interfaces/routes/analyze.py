@@ -392,7 +392,15 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
             _key_preflight = _os.environ.get("OPENROUTER_API_KEY", "")
             if not _key_preflight and _tier != "vault":
                 logger.warning("[ALVITUR] Sprint62F file-upload NO-KEY → sovereign Leið B")
-                _msg_fallback = f"SPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}\n\nSKJAL:\n{heildartexti[:30000]}"
+                # B.3c: Tabular files fá template-aware prompt
+                if _filetype in ("xlsx", "xls", "csv"):
+                    from interfaces.utils.tabular_schema import extract_schema as _ext_sch
+                    from interfaces.utils.tabular_templates import build_tabular_system_prompt as _build_tprompt, parse_llm_template_response as _parse_tmpl, execute_template as _exec_tmpl
+                    _b3c_schema = _ext_sch(efni, file.filename)
+                    _b3c_sys = _build_tprompt(_b3c_schema)
+                    _msg_fallback = f"{_b3c_sys}\n\nSPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}"
+                else:
+                    _msg_fallback = f"SPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}\n\nSKJAL:\n{heildartexti[:30000]}"
                 try:
                     async with _VAULT_SEMAPHORE_WS:
                         _summary, _model_used, _usage = await _call_leid_b(_msg_fallback)
@@ -402,6 +410,18 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 if _summary is not None:
                     _pipeline_source_doc = f"sovereign_nokey_file_{_model_used}"
                     logger.info(f"[ALVITUR] Sprint62F sovereign OK model={_model_used}")
+                    # B.3c: parse template response og keyra execute_template
+                    if _filetype in ("xlsx", "xls", "csv"):
+                        try:
+                            _tmpl_data = _parse_tmpl(_summary)
+                            if _tmpl_data.get("template"):
+                                _tmpl_result = _exec_tmpl(efni, file.filename, _tmpl_data["template"], _tmpl_data.get("params", {}))
+                                _summary = f"{_tmpl_data.get('explanation', '')}\n\n### Niðurstaða úr gögnum\n\n{_tmpl_result}"
+                                logger.info(f"[ALVITUR] B.3c template={_tmpl_data['template']} executed OK")
+                            else:
+                                _summary = _tmpl_data.get("explanation", _summary)
+                        except Exception as _b3c_e:
+                            logger.warning(f"[ALVITUR] B.3c template parse/exec failed: {_b3c_e}")
                     # 🟢 Sprint 62 Patch I: EARLY RETURN — ekki keyra leið A aftur!
                     _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
                     logger.info(f"[ALVITUR] Sprint62I early-return (skip leid_a) in={_in_tok} out={_out_tok}")

@@ -172,3 +172,49 @@ def _run_template(df, name: str, p: dict) -> str:
         return f"### Pivot: {p['values']} eftir {p['index']} × {p['columns']}\n\n{pivot.to_string()}"
 
     return f"<!-- Ekkert sniðmát: {name} -->"
+
+
+import json as _json
+import re as _re
+
+
+def build_tabular_system_prompt(schema_text: str) -> str:
+    """Byggir system prompt með schema + template lista fyrir LLM."""
+    templates_help = get_templates_for_llm()
+    return f"""Þú ert aðstoðarmaður sem greinir töflugögn. Þú færð schema um skjal og spurningu frá notanda.
+
+SVARAÐU ALLTAF Á ÍSLENSKU.
+
+MIKILVÆGT: Þú mátt EKKI reikna summur, meðaltöl eða aðra tölfræði í huganum.
+Notaðu í staðinn kóðasniðmátin hér að neðan.
+
+SVAR-FORM — skilaðu ALLTAF þessum JSON:
+{{
+  "template": "nafn sniðmáts eða null",
+  "params": {{}},
+  "explanation": "Útskýring á íslensku"
+}}
+
+{schema_text}
+
+{templates_help}"""
+
+
+def parse_llm_template_response(llm_text: str) -> dict:
+    """Dregur út template + params úr LLM svari. Aldrei kastar."""
+    try:
+        # Reyna beint JSON parse fyrst
+        stripped = llm_text.strip()
+        if stripped.startswith("{"):
+            return _json.loads(stripped)
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    try:
+        # Finna JSON blokk inni í texta (t.d. ```json ... ```)
+        m = _re.search(r'\{[^{}]*"template"[^{}]*\}', llm_text, _re.DOTALL)
+        if m:
+            return _json.loads(m.group())
+    except (_json.JSONDecodeError, AttributeError):
+        pass
+    # Fallback — engin template, textasvar
+    return {"template": None, "params": {}, "explanation": llm_text[:800]}
