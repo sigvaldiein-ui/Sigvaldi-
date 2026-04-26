@@ -5,9 +5,13 @@ import logging
 
 logger = logging.getLogger("alvitur.tabular")
 
+MAX_TABULAR_SIZE = 20 * 1024 * 1024  # 20 MB — samræmi við MAX_PDF_SIZE
+
 
 def extract_schema(file_data: bytes, filename: str) -> str:
     """Aldrei kastar — skilar error markdown ef mistekst."""
+    if len(file_data) > MAX_TABULAR_SIZE:
+        return f"<!-- Skjal of stórt: {len(file_data):,} bytes. Hámark er {MAX_TABULAR_SIZE:,} bytes (20 MB). -->"
     try:
         import pandas as pd
 

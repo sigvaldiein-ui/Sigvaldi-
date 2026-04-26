@@ -82,6 +82,9 @@ def get_templates_for_llm() -> str:
 def execute_template(file_data: bytes, filename: str, template_name: str, params: dict) -> str:
     """Keyrir sniðmát á skjal. Aldrei kastar — skilar markdown."""
     try:
+        from interfaces.utils.tabular_schema import MAX_TABULAR_SIZE as _max_sz
+        if len(file_data) > _max_sz:
+            return f"<!-- Skjal of stórt: {len(file_data):,} bytes. Hámark 20 MB. -->"
         import pandas as pd
         fname = filename.lower()
         if fname.endswith(".csv"):
