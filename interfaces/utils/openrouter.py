@@ -52,6 +52,9 @@ MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
 
 
 
+_INTENT_AVAILABLE = False
+_classify_intent = None
+
 def _log_intent(endpoint: str, query, filename, file_size, tier) -> None:
     """Sprint 64 B2-V2: observability hook. NEVER raises."""
     if not _INTENT_AVAILABLE or _classify_intent is None:

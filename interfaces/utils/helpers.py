@@ -77,3 +77,8 @@ def _parse_xlsx(data: bytes) -> tuple[int, list[str]]:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ─ Sprint 27: S4 Wallet Circuit Breaker ───────────────────────────────────
+
+
+def _estimate_tokens(text):
+    return int(len((text or "").split()) * 1.3)
+
