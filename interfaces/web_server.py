@@ -98,6 +98,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 import asyncio as _aio_ws
+from interfaces.routes.health import router as health_router
+from interfaces.routes.tools import router as tools_router
+from interfaces.routes.checkout import router as checkout_router
 from interfaces.static_content.html_pages import (
     SHARED_HEAD, SHARED_STYLES,
     SVG_LOGO, SVG_LOGO_CHAT, CHECK_SVG, ACCENT_CHECK, NAV_SCRIPT, HTML_PAGE,
@@ -205,6 +208,9 @@ app = FastAPI(
     redoc_url=None,  # Slökkva á ReDoc í framleiðslu
 )
 app.include_router(pages_router)  # A.4a pages
+app.include_router(health_router)
+app.include_router(tools_router)
+app.include_router(checkout_router)
 
 # Sprint 43b: Custom 422 handler — add error_code for frontend compatibility
 @app.exception_handler(RequestValidationError)
@@ -736,267 +742,6 @@ VELKOMIN_BOÐ = (
 # 
 # 
 # ─── Mock Checkout ────────────────────────────────────────────────────────────
-
-def build_success_page(plan: str, user_id: str) -> str:
-    plan_names = {
-        "brons": "Brons",
-        "silfur": "Silfur",
-        "gull": "Gull",
-        "platina": "Platína",
-    }
-    plan_display = plan_names.get(plan.lower(), plan.capitalize())
-
-    return """<!DOCTYPE html>
-<html lang="is">
-<head>
-  <title>Greiðsla móttekin — Alvitur</title>
-  {SHARED_HEAD}
-  {SHARED_STYLES}
-</head>
-<body>
-  <div class="subpage-center">
-    <div class="subpage-card">
-      <div class="success-check">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      </div>
-      <h1>Greiðsla móttekin!</h1>
-      <p>Þetta er prófunarstaðfesting. Í raun myndi kerfið virkja <strong>{plan_display}</strong> áskrift fyrir notanda <code style="font-family: var(--font-mono); font-size: 0.8125rem; background: var(--bg-elevated); padding: 0.125rem 0.375rem; border-radius: var(--radius-sm);">{user_id}</code>.</p>
-
-      <div class="checkout-summary" style="text-align: left;">
-        <div class="checkout-row">
-          <span class="label">Staða</span>
-          <span class="value" style="color: var(--green);">✓ Staðfest (mock)</span>
-        </div>
-        <div class="checkout-row">
-          <span class="label">Áskrift</span>
-          <span class="value">{plan_display}</span>
-        </div>
-        <div class="checkout-row">
-          <span class="label">Notandi</span>
-          <span class="value" style="font-family: var(--font-mono); font-size: 0.8125rem;">{user_id}</span>
-        </div>
-      </div>
-
-      <!-- Sprint 18: /minarsidur skipt út fyrir Telegram -->
-      <a href="#" onclick="var el=document.getElementById(\'v5-txt\');if(el)el.scrollIntoView({{behavior:\'smooth\'}});return false;"  target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg" style="width: 100%; justify-content: center; margin-bottom: 0.75rem;">
-        
-      </a>
-      <a href="/" class="btn btn-secondary" style="width: 100%; justify-content: center;">← Til baka á forsíðu</a>
-    </div>
-  </div>
-</body>
-</html>"""
-
-
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
-@app.get("/api/health")
-async def health():
-    """Heilsufarsskoðun — notað af monitoring og load balancer."""
-    return JSONResponse(content={
-        "status": "ok",
-        "version": "sprint63-track-b",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "fasi": "production",
-    })
-
-@app.get("/api/health/detailed")
-async def health_detailed():
-    """Raunverulegur health check fyrir alla Alvitur components."""
-    import time, subprocess, os
-    import httpx
-    from datetime import datetime, timedelta
-    start = time.time()
-
-    report = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "overall": "unknown",
-        "components": {},
-        "metrics": {},
-        "errors_last_10min": 0,
-    }
-
-    # 1. FastAPI self
-    report["components"]["fastapi"] = {
-        "status": "ok",
-        "pid": os.getpid(),
-        "version": "sprint63-track-b",
-    }
-
-    # 2. vLLM local (port 8002)
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get("http://localhost:8002/v1/models")
-            if r.status_code == 200:
-                models = r.json().get("data", [])
-                report["components"]["vllm"] = {
-                    "status": "ok",
-                    "models_loaded": [m.get("id") for m in models[:3]],
-                    "latency_ms": int((time.time() - start) * 1000),
-                }
-            else:
-                report["components"]["vllm"] = {"status": "degraded", "http_code": r.status_code}
-    except Exception as e:
-        report["components"]["vllm"] = {"status": "down", "error": f"{type(e).__name__}: {e}"}
-
-    # 3. OpenRouter
-    try:
-        key = os.environ.get("OPENROUTER_API_KEY", "")
-        if not key or len(key) < 40:
-            report["components"]["openrouter"] = {"status": "misconfigured", "error": "API key missing"}
-        else:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(
-                    "https://openrouter.ai/api/v1/auth/key",
-                    headers={"Authorization": f"Bearer {key}"},
-                )
-                if r.status_code == 200:
-                    data = r.json().get("data", {})
-                    report["components"]["openrouter"] = {
-                        "status": "ok",
-                        "credits_remaining": data.get("limit_remaining"),
-                        "rate_limit": data.get("rate_limit", {}).get("requests"),
-                    }
-                else:
-                    report["components"]["openrouter"] = {"status": "auth_failed", "http_code": r.status_code}
-    except Exception as e:
-        report["components"]["openrouter"] = {"status": "unreachable", "error": f"{type(e).__name__}: {e}"}
-
-    # 4. Disk space
-    try:
-        result = subprocess.run(["df", "-h", "/workspace"], capture_output=True, text=True, timeout=5)
-        lines = result.stdout.strip().split("\n")
-        if len(lines) >= 2:
-            parts = lines[1].split()
-            pct = int(parts[4].rstrip("%"))
-            report["components"]["disk"] = {
-                "status": "ok" if pct < 90 else "warning",
-                "used": parts[2],
-                "available": parts[3],
-                "percent_used": parts[4],
-            }
-    except Exception as e:
-        report["components"]["disk"] = {"status": "error", "error": str(e)}
-
-    # 5. GPU VRAM
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.used,memory.total,memory.free", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3
-        )
-        parts = result.stdout.strip().split(", ")
-        if len(parts) == 3:
-            used, total, free = int(parts[0]), int(parts[1]), int(parts[2])
-            pct = (used / total) * 100
-            report["components"]["gpu"] = {
-                "status": "ok" if pct < 95 else "critical",
-                "used_mib": used,
-                "total_mib": total,
-                "free_mib": free,
-                "percent_used": round(pct, 1),
-            }
-    except Exception as e:
-        report["components"]["gpu"] = {"status": "error", "error": str(e)}
-
-    # 6. Error count sidastu 10 min
-    try:
-        result = subprocess.run(
-            ["tail", "-n", "500", "/workspace/web_server.log"],
-            capture_output=True, text=True, timeout=3
-        )
-        error_count = sum(
-            1 for line in result.stdout.split("\n")
-            if any(k in line for k in ("ERROR", "Traceback", "Exception"))
-        )
-        report["errors_last_10min"] = error_count
-    except Exception:
-        report["errors_last_10min"] = -1
-
-    # 7. Overall status
-    statuses = [c.get("status", "unknown") for c in report["components"].values()]
-    if any(s == "down" for s in statuses):
-        report["overall"] = "critical"
-    elif any(s in ("degraded", "warning", "error", "critical") for s in statuses):
-        report["overall"] = "degraded"
-    elif all(s == "ok" for s in statuses):
-        report["overall"] = "healthy"
-    else:
-        report["overall"] = "unknown"
-
-    report["metrics"]["check_latency_ms"] = int((time.time() - start) * 1000)
-    return report
-
-
-@app.get("/api/diagnostics")
-async def diagnostics():
-    """Sprint 63 Track A5 + B3: Diagnostics — stöðu leiða og umhverfis."""
-    import os as _os_d
-    import time as _time_d
-    _key = _os_d.environ.get("OPENROUTER_API_KEY", "")
-    leid_a_enabled = bool(_key and len(_key) > 10 and not _key.startswith("sk-or-v1-BAD"))
-    # Track B3: vLLM er á port 8002 (ekki 8001 sem var hardcoded default)
-    _sovereign_url = _os_d.environ.get("SOVEREIGN_URL", "http://localhost:8002/v1/chat/completions")
-    # Track B3: env flag + port
-    _env_flag = _os_d.environ.get("ALVITUR_ENV", "prod")
-    _port = int(_os_d.environ.get("ALVITUR_PORT", "8000"))
-    try:
-        uptime = int(_time_d.time() - _SERVER_START_TIME)
-    except NameError:
-        uptime = -1
-    return JSONResponse(content={
-        "status": "ok",
-        "version": "sprint63-track-b",
-        "env": _env_flag,
-        "port": _port,
-        "leid_a_enabled": leid_a_enabled,
-        "leid_a_key_length": len(_key) if _key else 0,
-        "leid_b_enabled": bool(_sovereign_url),
-        "leid_b_url": _sovereign_url,
-        "uptime_seconds": uptime,
-        "loaded_env": bool(_key),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
-
-
-# ─── Sprint 58+59: MCP Tools Endpoints ─────────────────────────────────────────
-
-@app.get("/api/tools")
-async def tools_list():
-    """
-    Sprint 59: Skilar lista af öllum tiltækum tools.
-    MCP-samhæft — notað af MCP clients og /api/tools wiring.
-    """
-    from interfaces.mcp_server import mcp_list_tools
-    tools = await mcp_list_tools()
-    return JSONResponse(content={"success": True, "tools": tools, "count": len(tools)})
-
-
-@app.post("/api/tools/{tool_name}")
-async def tools_call(tool_name: str, request: Request):
-    """
-    Sprint 59: Kallar á tool með gefnum arguments.
-    Body: JSON með arguments fyrir tool.
-    Skilar niðurstöðu frá tool.
-    """
-    from interfaces.mcp_server import mcp_call_tool
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    result = await mcp_call_tool(tool_name, body)
-    status = 200 if result.get("success") else 404 if "ekki til" in result.get("error", "") else 502
-    return JSONResponse(content=result, status_code=status)
-
-
-# ─── Sprint 21: PDF Analyze Endpoint ──────────────────────────────────────────────
-
-# ── Sprint 28: K1/K2 — .docx and .xlsx parsers ───────────────────────────────
-MAX_DOC_SIZE = 20 * 1024 * 1024  # 20 MB (same as PDF)
-
-MAGIC_BYTES = {
-    b'%PDF': 'pdf',
-    b'PK\x03\x04': 'office',  # .docx and .xlsx are ZIP-based Office formats
-}
 
 def _detect_filetype(data: bytes, filename: str) -> str:
     """Return 'pdf', 'docx', 'xlsx', or raise HTTPException."""
@@ -1811,46 +1556,16 @@ async def checkout(plan: str, amount: int, user_id: str):
     return HTMLResponse(content="<h2 style='font-family:system-ui;color:#e5e5e5;background:#0a0a0a;padding:3rem;text-align:center'>Áskriftarlegar eru ekki opnar enn. Hafðu samband: info@alvitur.is</h2>", status_code=503)
 
 
-@app.post("/api/webhook/mock_success", response_class=HTMLResponse)
-async def mock_success(request: Request):
-    # Samþykkja bæði form gögn og JSON
-    content_type = request.headers.get("content-type", "")
-    if "application/json" in content_type:
-        data = await request.json()
-    else:
-        form = await request.form()
-        data = dict(form)
-
-    plan = data.get("plan", "unknown")
-    user_id = data.get("user_id", "unknown")
-    return HTMLResponse(content=build_success_page(plan, user_id))
-
-
-# -- Sprint 66 pre-A: module-level PID lock file pointer (so refactor-safe) --
-_pid_lock_fp = None
-# -- /PID lock global --
+def _estimate_tokens(text):
+    return int(len((text or "").split()) * 1.3)
 
 
 if __name__ == "__main__":
-    # -- Sprint 66 pre-A hotfix: single-instance PID lock --
-    import fcntl as _fcntl_pl
-    import sys as _sys_pl
-    import os as _os_pl
-    _PID_LOCK_PATH = _os_pl.getenv("ALVITUR_PID_LOCK", "/tmp/alvitur_web_server.lock")
-    _pid_lock_fp = open(_PID_LOCK_PATH, "w", encoding="utf-8")
-    try:
-        _fcntl_pl.flock(_pid_lock_fp, _fcntl_pl.LOCK_EX | _fcntl_pl.LOCK_NB)
-        _pid_lock_fp.write(str(_os_pl.getpid()))
-        _pid_lock_fp.flush()
-    except BlockingIOError:
-        print(
-            "[FATAL] web_server.py already running (lock: "
-            + _PID_LOCK_PATH + ")",
-            file=_sys_pl.stderr,
-        )
-        _sys_pl.exit(1)
-    # -- /PID lock --
-    uvicorn.run("web_server:app", host="0.0.0.0", port=int(__import__("os").environ.get("ALVITUR_PORT", "8000")))
-
-def _estimate_tokens(text):
-    return int(len((text or "").split()) * 1.3)
+    import uvicorn
+    uvicorn.run(
+        "interfaces.web_server:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+        log_level="info",
+    )
