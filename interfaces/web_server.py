@@ -54,13 +54,6 @@ import time as _time_init
 _SERVER_START_TIME = _time_init.time()
 
 # Sprint 63 Track A6: polish stub (restore removed-in-refactor function)
-async def _polish_fn_txt(*args, **kwargs) -> str:
-    """Async no-op polish stub — Sprint 63 Track A6.2.
-    Caller notar 'await' svo þetta er async. Skilar textanum óbreyttum.
-    TODO: bæta við raunverulegri íslenskri málfræðipúlisingu síðar.
-    """
-    text = args[0] if args else kwargs.get("text", "")
-    return text if isinstance(text, str) else str(text)
 import sys as _sys
 _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in _sys.path:
@@ -98,6 +91,15 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 import asyncio as _aio_ws
+from interfaces.middleware.security import SecurityHeadersMiddleware
+from interfaces.models.schemas import ChatBeidni, ChatSvar, HeilsusvarModel
+from interfaces.utils.helpers import _polish_fn_txt, _detect_filetype, _parse_docx, _parse_xlsx
+from interfaces.utils.quota import (
+    FREE_QUOTA, WALLET_MIN_USD, WALLET_MIN_VAULT_USD,
+    _quota_tracker_chat, _quota_tracker_doc, _beta_tracker,
+    _er_beta_fras, _er_beta_ip, _promota_beta,
+)
+from interfaces.utils.openrouter import _get_openrouter_balance, _wallet_preflight, _log_intent, SECURE_DOCS_DIR, MAX_PDF_SIZE
 from interfaces.routes.health import router as health_router
 from interfaces.routes.tools import router as tools_router
 from interfaces.routes.checkout import router as checkout_router
@@ -146,76 +148,21 @@ def sækja_ip(request: Request) -> str:
     return request.client.host if request.client else "0.0.0.0"
 
 
-# ─── D) Öryggishausar Middleware ──────────────────────────────────────────────
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """
-    Bætir við öryggishausum í hverja HTTP svörun.
-
-    Hausar sem eru settir:
-      - Strict-Transport-Security (HSTS)     : HTTPS alltaf, 1 ár
-      - Content-Security-Policy              : XSS vörn
-      - X-Frame-Options                      : Kemur í veg fyrir clickjacking
-      - X-Content-Type-Options               : Kemur í veg fyrir MIME sniffing
-      - Referrer-Policy                      : Takmarkar referrer upplýsingar
-      - Permissions-Policy                   : Takmarkar vafra API aðgang
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        svar = await call_next(request)
-
-        # HSTS — krefjast HTTPS í 1 ár með undirlénum
-        svar.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
-
-        # CSP — takmarkar hvaðan efni má sækja
-        # Athugasemd: unsafe-inline er í stílar vegna innilagðra stíla (Fasi 1).
-        # Í Fasa 2 færum við CSS í utanaðkomandi skrá og fjarlægjum unsafe-inline.
-        svar.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; "
-            "font-src 'self' https://fonts.gstatic.com https://api.fontshare.com data:; "
-            "img-src 'self' data:; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self';"
-        )
-
-        # X-Frame-Options — kemur í veg fyrir að síðan sé sett í iframe (clickjacking)
-        svar.headers["X-Frame-Options"] = "DENY"
-
-        # X-Content-Type-Options — kemur í veg fyrir MIME tegundaspá
-        svar.headers["X-Content-Type-Options"] = "nosniff"
-
-        # Referrer-Policy — takmarkar hvaðan referrer er sent
-        svar.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-        # Permissions-Policy — takmarkar vafra API aðgang
-        svar.headers["Permissions-Policy"] = (
-            "geolocation=(), microphone=(), camera=(), payment=()"
-        )
-
-        return svar
-
 
 # ─── FastAPI forrit ────────────────────────────────────────────────────────────
-
 app = FastAPI(
     title="Alvitur Enterprise AI",
-    docs_url=None,   # Slökkva á Swagger UI í framleiðslu
-    redoc_url=None,  # Slökkva á ReDoc í framleiðslu
+    docs_url=None,
+    redoc_url=None,
 )
-app.include_router(pages_router)  # A.4a pages
+app.include_router(pages_router)
 app.include_router(health_router)
 app.include_router(tools_router)
 app.include_router(checkout_router)
 
-# Sprint 43b: Custom 422 handler — add error_code for frontend compatibility
+# Sprint 43b: Custom 422 handler
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # Check if the error is specifically about a missing file field
     error_code = "validation_error"
     for err in exc.errors():
         if err.get("loc") and "file" in err.get("loc", []):
@@ -230,11 +177,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         },
     )
 
-# Gzip þjöppun (sparar bandbreidd)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-# D) Öryggishausar á allar beiðnir
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ─── D) Öryggishausar Middleware ──────────────────────────────────────────────
 
 # Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
 from fastapi.staticfiles import StaticFiles
@@ -246,43 +192,6 @@ app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # ─── A) Gagnalíkön fyrir Web Chat API ────────────────────────────────────────
 
-class ChatBeidni(BaseModel):
-    """Inntak fyrir /api/chat."""
-    message: str = Field(
-        ...,
-        min_length=1,
-        max_length=4000,
-        description="Skilaboð frá notanda",
-    )
-    user_id: str = Field(
-        default="anonymous",
-        max_length=64,
-        description="Notandaauðkenni (tímabundið, skipt út á Fasa 3)",
-    )
-
-    @validator("message")
-    def hreinsa_skilabus(cls, v: str) -> str:
-        """Þrífa og sannreyna skilaboð."""
-        hrein = v.strip()
-        if not hrein:
-            raise ValueError("Skilaboð má ekki vera tómt")
-        return hrein
-
-
-class ChatSvar(BaseModel):
-    """Úttak frá /api/chat."""
-    response: str
-    timestamp: str
-    # [FASI-2] Bæta við: model_used, tokens_used, search_used
-    # [FASI-3] Bæta við: query_remaining
-
-
-class HeilsusvarModel(BaseModel):
-    """Úttak frá /api/health."""
-    status: str
-    version: str
-    timestamp: str
-    fasi: str
 
 
 # ─── A) Mock svörþjónusta ─────────────────────────────────────────────────────
@@ -742,208 +651,6 @@ VELKOMIN_BOÐ = (
 # 
 # 
 # ─── Mock Checkout ────────────────────────────────────────────────────────────
-
-def _detect_filetype(data: bytes, filename: str) -> str:
-    """Return 'pdf', 'docx', 'xlsx', or raise HTTPException."""
-    ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
-    header = data[:4]
-    if header == b'%PDF':
-        if ext != 'pdf':
-            raise HTTPException(status_code=415,
-                detail="Skráin er merkt sem PDF en innihald stemmir ekki.")
-        return 'pdf'
-    if header[:2] == b'PK':
-        if ext == 'docx':
-            return 'docx'
-        if ext == 'xlsx':
-            return 'xlsx'
-        raise HTTPException(status_code=415,
-            detail="Office skjal þekkt en skráarending er óþêkkt. Sendu .docx eða .xlsx.")
-    raise HTTPException(status_code=415,
-        detail="Skráargerð ekki stuðd. Styður PDF, Word (.docx) og Excel (.xlsx).")
-
-
-def _parse_docx(data: bytes) -> tuple[int, list[str]]:
-    """Extract text from .docx. Returns (page_estimate, text_parts)."""
-    from docx import Document
-    import io
-    doc = Document(io.BytesIO(data))
-    parts = []
-    for i, para in enumerate(doc.paragraphs):
-        t = para.text.strip()
-        if t:
-            parts.append(t)
-    # Estimate pages: ~3000 chars per page
-    total_chars = sum(len(p) for p in parts)
-    page_estimate = max(1, total_chars // 3000)
-    return page_estimate, parts
-
-
-def _parse_xlsx(data: bytes) -> tuple[int, list[str]]:
-    """Extract text from .xlsx. Returns (sheet_count, text_parts)."""
-    import openpyxl, io
-    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    parts = []
-    sheet_count = len(wb.sheetnames)
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        rows_text = []
-        row_count = 0
-        for row in ws.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None and str(c).strip()]
-            if cells:
-                rows_text.append(" | ".join(cells))
-                row_count += 1
-            if row_count >= 500:  # cap at 500 rows per sheet
-                rows_text.append("[... fleiri raðir ...]")
-                break
-        if rows_text:
-            parts.append(f"[Blað: {sheet_name}]\n" + "\n".join(rows_text))
-    wb.close()
-    return sheet_count, parts
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ─ Sprint 27: S4 Wallet Circuit Breaker ───────────────────────────────────
-WALLET_MIN_USD       = float(os.environ.get("WALLET_MIN_USD", "5.0"))
-WALLET_MIN_VAULT_USD = float(os.environ.get("WALLET_MIN_VAULT_USD", "10.0"))
-
-# PLG quota tracker (IP-based, in-memory)
-_quota_tracker_chat: dict = {}  # /api/chat quota per IP
-_quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
-FREE_QUOTA = 5
-
-
-
-# -- Sprint 66 pre-A hotfix: persist _beta_tracker across restarts --
-import json as _json_bt
-import os as _os_bt
-import time as _time_bt
-from pathlib import Path as _Path_bt
-
-_BETA_TRACKER_FILE = _Path_bt(_os_bt.getenv("BETA_TRACKER_PATH", "data/beta_tracker.json"))
-
-def _load_beta_tracker_from_disk() -> dict:
-    try:
-        if not _BETA_TRACKER_FILE.exists():
-            return {}
-        raw = _json_bt.loads(_BETA_TRACKER_FILE.read_text(encoding="utf-8"))
-        now = _time_bt.time()
-        # TODO(S66-A): replace with BETA_DURATION_SEC module const (defined below)
-        _DUR = int(_os_bt.getenv("BETA_DURATION_SEC_OVERRIDE", 7 * 24 * 3600))
-        return {ip: float(ts) for ip, ts in raw.items() if now - float(ts) <= _DUR}
-    except Exception as e:
-        try:
-            logger.warning(f"[BETA] load failed: {type(e).__name__}: {e}")
-        except Exception:
-            pass
-        return {}
-
-def _save_beta_tracker_to_disk(tracker: dict) -> None:
-    try:
-        _BETA_TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _BETA_TRACKER_FILE.with_suffix(".tmp")
-        tmp.write_text(_json_bt.dumps(tracker, indent=2), encoding="utf-8")
-        tmp.replace(_BETA_TRACKER_FILE)
-    except Exception as e:
-        try:
-            logger.warning(f"[BETA] save failed: {type(e).__name__}: {e}")
-        except Exception:
-            pass
-# -- /persist helpers --
-
-# ── Sprint 62: Beta tracker ──
-# Beta-tier via human phrase in chat: "Sigvaldi sendi mig" (7-day renewable)
-_beta_tracker: dict[str, float] = {}   # IP → promotion_timestamp (epoch sec)
-BETA_DURATION_SEC = 7 * 24 * 3600      # 7 dagar
-BETA_FRASAR = (
-    "sigvaldi sendi mig",
-    "ég er beta notandi",
-    "beta aðgangur",
-    "beta adgangur",
-)
-
-def _er_beta_fras(text: str) -> bool:
-    """Satt ef notendatexti inniheldur einhvern viðurkenndan beta-frasa."""
-    if not text:
-        return False
-    lower = text.lower()
-    return any(fras in lower for fras in BETA_FRASAR)
-
-def _er_beta_ip(ip: str) -> bool:
-    """Satt ef IP er í beta-tier (innan 7 daga frá promotion)."""
-    import time as _t
-    ts = _beta_tracker.get(ip)
-    if ts is None:
-        return False
-    if _t.time() - ts > BETA_DURATION_SEC:
-        _beta_tracker.pop(ip, None)
-        return False
-    return True
-
-def _promota_beta(ip: str) -> None:
-    """Setur IP í beta-tier núna (eða endurnýjar)."""
-    import time as _t
-    _beta_tracker[ip] = _t.time()
-    _save_beta_tracker_to_disk(_beta_tracker)
-# ── /Sprint 62 Beta tracker ──
-_beta_tracker.update(_load_beta_tracker_from_disk())
-_wallet_cache: dict  = {"balance": None, "ts": 0.0}
-_WALLET_TTL          = 120
-
-def _get_openrouter_balance():
-    import time as _t, requests as _rq
-    now = _t.time()
-    if _wallet_cache["balance"] is not None and now - _wallet_cache["ts"] < _WALLET_TTL:
-        return _wallet_cache["balance"]
-    try:
-        _k = os.environ.get("OPENROUTER_API_KEY", "")
-        r = _rq.get("https://openrouter.ai/api/v1/auth/key",
-                    headers={"Authorization": f"Bearer {_k}"}, timeout=5)
-        if r.status_code == 200:
-            d = r.json().get("data", {})
-            limit = d.get("limit")
-            if limit is not None:
-                bal = round(float(limit) - float(d.get("usage") or 0), 4)
-            else:
-                bal = 100.0
-            _wallet_cache["balance"] = bal
-            _wallet_cache["ts"] = now
-            return bal
-    except Exception:
-        pass
-    return None
-
-def _wallet_preflight(is_vault=False):
-    bal = _get_openrouter_balance()
-    if bal is None: return
-    threshold = WALLET_MIN_VAULT_USD if is_vault else WALLET_MIN_USD
-    if bal < threshold:
-        logger.warning(f"Wallet circuit breaker: balance=${bal:.2f} < ${threshold:.2f}")
-        raise HTTPException(status_code=503,
-            detail="Þ jónustan er tímabundið ótilðæk. Reyndu aftur eftir augnablik.")
-
-# ───────────────────────────────────────────────────────────
-SECURE_DOCS_DIR = Path("/workspace/mimir_net/secure_docs")
-SECURE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
-
-
-
-def _log_intent(endpoint: str, query, filename, file_size, tier) -> None:
-    """Sprint 64 B2-V2: observability hook. NEVER raises."""
-    if not _INTENT_AVAILABLE or _classify_intent is None:
-        return
-    try:
-        ir = _classify_intent(query=query, filename=filename,
-                              file_size=file_size, tier=tier)
-        logger.info(
-            f"[INTENT] endpoint={endpoint} domain={ir.domain} "
-            f"depth={ir.reasoning_depth} conf={ir.confidence_score:.2f} "
-            f"sens={ir.sensitivity} adapter={ir.adapter_hint} "
-            f"src={ir.source_hint}"
-        )
-    except Exception as _ie:
-        logger.warning(f"[INTENT] classify failed on {endpoint}: {type(_ie).__name__}: {_ie}")
 
 @app.post("/api/analyze-document")
 async def analyze_document(request: Request, file: Optional[UploadFile] = File(None), query: Optional[str] = Form(None)):
@@ -1551,11 +1258,6 @@ async def chat_endpoint(request: Request):
 
 
 # ── Sprint 28: K6 — /oryggi trust page ───────────────────────────────────────
-@app.get("/mock-checkout/{plan}/{amount}/{user_id}", response_class=HTMLResponse)
-async def checkout(plan: str, amount: int, user_id: str):
-    return HTMLResponse(content="<h2 style='font-family:system-ui;color:#e5e5e5;background:#0a0a0a;padding:3rem;text-align:center'>Áskriftarlegar eru ekki opnar enn. Hafðu samband: info@alvitur.is</h2>", status_code=503)
-
-
 def _estimate_tokens(text):
     return int(len((text or "").split()) * 1.3)
 

@@ -122,3 +122,11 @@ if __name__ == "__main__":
     # -- /PID lock --
     uvicorn.run("web_server:app", host="0.0.0.0", port=int(__import__("os").environ.get("ALVITUR_PORT", "8000")))
 
+
+
+# --- checkout GET (A.4c: flutt af web_server.py) ---
+@router.get("/mock-checkout/{plan}/{amount}/{user_id}", response_class=HTMLResponse)
+async def checkout(plan: str, amount: int, user_id: str):
+    return HTMLResponse(content="<h2 style='font-family:system-ui;color:#e5e5e5;background:#0a0a0a;padding:3rem;text-align:center'>Áskriftarlegar eru ekki opnar enn. Hafðu samband: info@alvitur.is</h2>", status_code=503)
+
+
