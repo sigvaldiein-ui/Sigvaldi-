@@ -13,6 +13,10 @@ from interfaces.utils.quota import WALLET_MIN_USD, WALLET_MIN_VAULT_USD
 logger = logging.getLogger("alvitur.web")
 
 
+
+_WALLET_TTL = 60  # sekúndur
+_wallet_cache: dict = {"balance": None, "ts": 0.0}
+
 def _get_openrouter_balance():
     import time as _t, requests as _rq
     now = _t.time()

@@ -5,6 +5,7 @@ Sprint 71 Track A.4c — extracted from interfaces/web_server.py.
 import io
 import logging
 import os
+from fastapi import HTTPException
 
 logger = logging.getLogger("alvitur.web")
 
@@ -19,6 +20,11 @@ async def _polish_fn_txt(*args, **kwargs) -> str:
 def _detect_filetype(data: bytes, filename: str) -> str:
     """Return 'pdf', 'docx', 'xlsx', or raise HTTPException."""
     ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    # CSV og plain text skrár hafa engan magic byte — extension-only check
+    if ext == 'csv':
+        return 'csv'
+    if ext == 'xls':
+        return 'xls'
     header = data[:4]
     if header == b'%PDF':
         if ext != 'pdf':
@@ -30,10 +36,14 @@ def _detect_filetype(data: bytes, filename: str) -> str:
             return 'docx'
         if ext == 'xlsx':
             return 'xlsx'
+        if ext == 'csv':
+            return 'csv'
+        if ext == 'xls':
+            return 'xls'
         raise HTTPException(status_code=415,
             detail="Office skjal þekkt en skráarending er óþêkkt. Sendu .docx eða .xlsx.")
     raise HTTPException(status_code=415,
-        detail="Skráargerð ekki stuðd. Styður PDF, Word (.docx) og Excel (.xlsx).")
+        detail="Skráargerð ekki stuðd. Styður PDF, Word (.docx), Excel (.xlsx) og CSV.")
 
 
 def _parse_docx(data: bytes) -> tuple[int, list[str]]:

@@ -213,7 +213,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # — 1. Staðfesta skrártegund —
     _ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
-    if _ext not in ("pdf", "docx", "xlsx"):
+    if _ext not in ("pdf", "docx", "xlsx", "csv", "xls"):
         raise HTTPException(status_code=400, detail="Skráargerð ekki stuð. Sendu PDF, Word eða Excel.")
 
     # S2: Stream size check before full read
@@ -277,10 +277,10 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # S5+S6: Unified Parser (Office + PDF)
     # Office files (XLSX/DOCX)
-    if _filetype in ('xlsx', 'docx'):
+    if _filetype in ('xlsx', 'xls', 'csv', 'docx'):
         import io
         try:
-            if _filetype == 'xlsx':
+            if _filetype in ('xlsx', 'xls', 'csv'):
                 # Sprint 62 Patch B: Pandas pre-processor (Reiknivélar-Agent).
                 # Returns markdown with real computed sums so LLM doesn't hallucinate.
                 try:
