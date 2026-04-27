@@ -9,7 +9,7 @@ import os
 logger = logging.getLogger("alvitur.web")
 
 
-async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
+async def _call_leid_a(system_prompt, user_msg, max_tokens=4096):
     """OpenRouter chain: Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage)."""
     from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY, MODEL_LEIDA_A_ULTIMATE
     import httpx as _hx

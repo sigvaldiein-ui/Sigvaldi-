@@ -330,29 +330,15 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     if t: parts.append(f"[Síða {idx+1}]\n{t}")
             return pages, parts
 
+        # Ephemeral processing — allar leiðir nota aðeins RAM (Sprint 72)
         texti_hlutar, sidur = [], 0
-        if _is_vault:
-            # VAULT: zero disk write
-            with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                fut = ex.submit(_parse_pdf, efni)
-                try:
-                    sidur, texti_hlutar = fut.result(timeout=90)
-                except _cf.TimeoutError:
-                    raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
-        else:
-            # GENERAL: disk write + cleanup
-            skra_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-            skra_slod = SECURE_DOCS_DIR / f"doc_{skra_id}.pdf"
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_parse_pdf, efni)
             try:
-                skra_slod.write_bytes(efni)
-                with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                    fut = ex.submit(_parse_pdf, efni)
-                    try:
-                        sidur, texti_hlutar = fut.result(timeout=90)
-                    except _cf.TimeoutError:
-                        raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
-            finally:
-                if skra_slod.exists(): skra_slod.unlink()
+                sidur, texti_hlutar = fut.result(timeout=90)
+            except _cf.TimeoutError:
+                raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
+        logger.info(f"[ALVITUR] Ephemeral processing confirmed — 0 bytes written to disk — tier={_tier}")
         
         heildartexti = "\n\n".join(texti_hlutar)
 
