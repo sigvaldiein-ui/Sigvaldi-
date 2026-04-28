@@ -132,8 +132,8 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
             bal = df[balance_col].dropna()
             if len(bal) >= 2:
                 out.append(f"\n### 📈 Stöðubreyting ({balance_col})")
-                out.append(f"- Fyrsta færsla: {bal.iloc[0]:,.0f} kr")
-                out.append(f"- Síðasta færsla: {bal.iloc[-1]:,.0f} kr")
+                out.append(f"- Fyrsta færsla (elsta): {bal.iloc[-1]:,.0f} kr")
+                out.append(f"- Síðasta færsla (nýjasta): {bal.iloc[0]:,.0f} kr")
                 out.append(f"- Breyting á tímabili: {bal.iloc[0] - bal.iloc[-1]:,.0f} kr")
         except Exception as e:
             logger.debug(f"[excel_preprocessor] balance: {e}")
