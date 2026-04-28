@@ -84,11 +84,12 @@ def _build_schema_markdown(df, filename: str) -> str:
 
 
 def schema_to_prompt_injection(schema_text: str) -> str:
+    """Byggir prompt með lýsigögnum — LLM fær tölfræði, ekki bönn."""
     return (
-        "\n[SCHEMA INJECTION — EKKI REIKNA SJÁLFUR]\n"
-        "Eftirfarandi er lýsigögn um töflureiknun. Þú SKALT nota þessar upplýsingar "
-        "til að svara spurningunni. Þú mátt EKKI reyna að reikna summur eða meðaltöl "
-        "í huganum — vísaðu í tölfræðina hér að neðan.\n\n"
+        "\n[LÝSIGÖGN ÚR SKJALI]\n"
+        "Eftirfarandi eru lýsigögn og tölfræði reiknuð af Python (pandas) úr skjalinu. "
+        "Notaðu þessar upplýsingar til að svara spurningu notandans. "
+        "Þú getur treyst tölunum — þær eru 100% nákvæmar.\n\n"
         f"{schema_text}\n"
-        "[END SCHEMA INJECTION]\n"
+        "[END LÝSIGÖGN]\n"
     )

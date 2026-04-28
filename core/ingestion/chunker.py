@@ -178,4 +178,14 @@ class LegalDocumentChunker:
                     related_refs=refs, source_url=url,
                     token_counter=self.token_counter,
                 ))
+        # Deduplicate chunk_ids med position suffix
+        from collections import Counter
+        id_counts = Counter(ch.chunk_id for ch in chunks)
+        id_seen = {}
+        for ch in chunks:
+            if id_counts[ch.chunk_id] > 1:
+                idx = id_seen.get(ch.chunk_id, 0)
+                id_seen[ch.chunk_id] = idx + 1
+                if idx > 0:
+                    ch.chunk_id = f"{ch.chunk_id}_p{idx}"
         return chunks

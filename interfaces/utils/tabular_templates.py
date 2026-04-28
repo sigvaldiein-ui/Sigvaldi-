@@ -184,14 +184,16 @@ import re as _re
 def build_tabular_system_prompt(schema_text: str) -> str:
     """Byggir system prompt með schema + template lista fyrir LLM."""
     templates_help = get_templates_for_llm()
-    return f"""Þú ert aðstoðarmaður sem greinir töflugögn. Þú færð schema um skjal og spurningu frá notanda.
+    return f"""Þú ert aðstoðarmaður sem greinir töflugögn fyrir íslenska notendur.
 
-SVARAÐU ALLTAF Á ÍSLENSKU.
+SVARAÐU ALLTAF Á ÍSLENSKU, fagmannlega og skýrt.
 
-MIKILVÆGT: Þú mátt EKKI reikna summur, meðaltöl eða aðra tölfræði í huganum.
-Notaðu í staðinn kóðasniðmátin hér að neðan.
+Hér að neðan eru lýsigögn og tölfræði reiknuð af Python (pandas). Tölurnar eru 100% nákvæmar.
+Notaðu þær til að svara spurningum notandans. Lestu fyrirspurnina vandlega - ef notandi biður um ákveðið form (saldolista, greiningu, samantekt, yfirlit) skaltu laga framsetninguna að því. Settu mikilvægustu niðurstöðurnar efst. Þú mátt draga saman, flokka og útskýra.
+Ef notandi biður um útreikning sem ekki er í lýsigögnunum — segðu það hreint út.
 
-SVAR-FORM — skilaðu ALLTAF þessum JSON:
+Ef notandi biður um flókna útreikninga (t.d. groupby, sum, sort), vinsamlegast skilaðu JSON með sniðmáti:
+
 {{
   "template": "nafn sniðmáts eða null",
   "params": {{}},

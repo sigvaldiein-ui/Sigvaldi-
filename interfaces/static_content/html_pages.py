@@ -1579,6 +1579,17 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
 .intake-tab { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); font-size: var(--text-sm); font-weight: 500; color: var(--color-text-muted); background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
 .intake-tab:hover { color: var(--color-text); }
 .intake-tab--active { color: var(--color-accent); border-bottom-color: var(--color-accent); font-weight: 600; }
+
+/* ── Valspjöld (Selectable Cards) ── */
+.intake-cards { display: flex; gap: var(--space-4); margin-bottom: var(--space-5); }
+.intake-card-option { flex: 1; display: flex; flex-direction: column; align-items: flex-start; padding: var(--space-4); border: 2px solid var(--color-border-light); border-radius: var(--radius-lg); background: var(--color-surface); cursor: pointer; text-align: left; font-family: var(--font-body); transition: all var(--transition-fast); }
+.intake-card-option:hover { border-color: var(--color-accent-border); }
+.intake-card-option--active { border-color: var(--color-accent); background: var(--color-accent-light); }
+.intake-card-option__icon { display: block; font-size: 1.5rem; margin-bottom: var(--space-2); }
+.intake-card-option__title { display: block; font-weight: 600; font-size: var(--text-base); color: var(--color-text); margin-bottom: var(--space-1); }
+.intake-card-option__desc { display: block; font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.5; }
+.intake-card-option__security { display: block; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border-light); font-size: var(--text-xs); color: var(--color-text-faint); }
+@media (max-width: 600px) { .intake-cards { flex-direction: column; } }
 .intake-trust { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--color-accent-light); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
 .intake-trust p { font-size: var(--text-sm); color: var(--color-accent); line-height: 1.5; }
 .intake-textarea { width: 100%; min-height: 120px; padding: var(--space-4); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-body); font-size: var(--text-base); line-height: 1.6; color: var(--color-text); resize: vertical; }
@@ -1673,7 +1684,7 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
         <h1 class="hero__heading" id="hero-heading">Greindu flókin skjöl og spurningar á sekúndum.</h1>
         <p class="hero__subtext">Íslensk gervigreindarlausn, byggð fyrir stjórnsýslu og fyrirtæki sem gera ströngustu kröfur um upplýsingaöryggi. <strong>Þín gögn, þín stjórn.</strong></p>
         <a href="#intake-card" class="hero__cta">
-          Byrja greiningu
+          Spyrja Alvitur
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M3.75 9h10.5M9.75 4.5L14.25 9l-4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
       </div>
@@ -1681,18 +1692,23 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
 
     <section class="intake-section" aria-label="Greiningarsvæði">
       <div class="intake-card" id="intake-card" role="region" aria-label="Inntakssvæði">
-        <div class="intake-tabs" role="tablist" aria-label="Greiningarhamur">
-          <button class="intake-tab intake-tab--active" id="tab-general" role="tab" aria-selected="true" aria-controls="intake-body" data-mode="general">Almenn greining</button>
-          <button class="intake-tab" id="tab-confidential" role="tab" aria-selected="false" aria-controls="intake-body" data-mode="confidential">
-            <svg class="intake-tab__lock" viewBox="0 0 14 14" fill="none" aria-hidden="true" width="14" height="14"><rect x="2" y="6" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.25"/><path d="M4.5 6V4.5a2.5 2.5 0 015 0V6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>
-            Trúnaðargreining
+        <div class="intake-cards" role="radiogroup" aria-label="Veldu greiningarleið">
+          <button class="intake-card-option intake-card-option--active" id="card-vitinn" role="radio" aria-checked="true" data-mode="general">
+            <span class="intake-card-option__icon">☀️</span>
+            <span class="intake-card-option__title">Vitinn</span>
+            <span class="intake-card-option__desc">Fyrir dagleg mál, lögfræði og rannsóknir. Þín spurning, öll þekking netsins — ein niðurstaða.</span>
+          </button>
+          <button class="intake-card-option" id="card-hvelfing" role="radio" aria-checked="false" data-mode="confidential">
+            <span class="intake-card-option__icon">🔒</span>
+            <span class="intake-card-option__title">Hvelfingin</span>
+            <span class="intake-card-option__desc">Fyrir trúnaðarmálin þín. Þú færð svarið — kerfið gleymir spurningunni.</span>
+            <span class="intake-card-option__security">Gögnin þín eyðast sjálfkrafa að vinnslu lokinni. Ekkert stafrænt fótspor verður til.</span>
           </button>
         </div>
 
-        <div id="trust-statement" class="intake-trust" hidden>
-          <svg class="intake-trust__icon" viewBox="0 0 18 18" fill="none" aria-hidden="true" width="18" height="18"><path d="M9 2L3 4.5v5C3 13.1 5.6 16 9 17c3.4-1 6-3.9 6-7.5v-5L9 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          <p>Gögnin þín eyðast sjálfkrafa að vinnslu lokinni. Ekkert rekstrarspor verður til.</p>
-        </div>
+
+
+        
 
         <div class="intake-body" id="intake-body">
           <textarea id="query-input" class="intake-textarea" placeholder="Skrifaðu fyrirspurn eða dragðu skjal hingað..." rows="5" aria-label="Fyrirspurn"></textarea>
@@ -1762,223 +1778,12 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
 
   <footer class="footer" role="contentinfo">
     <div class="footer__inner">
-      <p class="footer__copy">&copy; 2026 Orkuskipti ehf &middot; <a href="mailto:info@alvitur.is">info@alvitur.is</a></p>
+      <p class="footer__copy">&copy; 2026 Orkuskipti ehf. &middot; Kt. 510919-0330 &middot; Kópavogur &middot; <a href="mailto:info@alvitur.is">info@alvitur.is</a></p>
       <p class="footer__links"><a href="/personuvernd">Persónuverndarstefna</a><span>&middot;</span><a href="/skilmalar">Skilmálar</a></p>
       <p class="footer__eea">Gögn unnin innan EES</p>
     </div>
   </footer>
 
-  <script data-version="99">
-document.addEventListener('DOMContentLoaded', function() {
-  "use strict";
-
-  // ── State ──
-  var currentMode = "general";
-  var currentFile = null;
-  var busy = false;
-
-  // ── DOM refs ──
-  var tabGeneral = document.getElementById("tab-general");
-  var tabConfidential = document.getElementById("tab-confidential");
-  var trustStatement = document.getElementById("trust-statement");
-  var queryInput = document.getElementById("query-input");
-  var fileTrigger = document.getElementById("file-trigger");
-  var fileInput = document.getElementById("file-input");
-  var attachedFile = document.getElementById("attached-file");
-  var attachedName = document.getElementById("attached-name");
-  var attachedSize = document.getElementById("attached-size");
-  var removeFileBtn = document.getElementById("remove-file");
-  var submitBtn = document.getElementById("submit-btn");
-  var statusArea = document.getElementById("status-area");
-  var resultsArea = document.getElementById("results-area");
-  var resultsBody = document.getElementById("results-body");
-  var intakeCard = document.getElementById("intake-card");
-
-  // ── Tab toggle ──
-  function setMode(mode) {
-    currentMode = mode;
-    if (mode === "confidential") {
-      tabGeneral.classList.remove("intake-tab--active");
-      tabGeneral.setAttribute("aria-selected", "false");
-      tabConfidential.classList.add("intake-tab--active");
-      tabConfidential.setAttribute("aria-selected", "true");
-      trustStatement.hidden = false;
-    } else {
-      tabConfidential.classList.remove("intake-tab--active");
-      tabConfidential.setAttribute("aria-selected", "false");
-      tabGeneral.classList.add("intake-tab--active");
-      tabGeneral.setAttribute("aria-selected", "true");
-      trustStatement.hidden = true;
-    }
-  }
-  tabGeneral.addEventListener("click", function() { setMode("general"); });
-  tabConfidential.addEventListener("click", function() { setMode("confidential"); });
-
-  // ── File handling ──
-  function formatSize(bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / 1048576).toFixed(1) + " MB";
-  }
-
-  function attachFile(file) {
-    if (!file) return;
-    var allowed = [".pdf", ".docx", ".xlsx"];
-    var ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
-    if (allowed.indexOf(ext) === -1) {
-      showStatus("error", "Ógild skráargerð. Styður PDF, Word og Excel.");
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      showStatus("error", "Skráin er of stór. Hámark 20 MB.");
-      return;
-    }
-    currentFile = file;
-    attachedName.textContent = file.name;
-    attachedSize.textContent = formatSize(file.size);
-    attachedFile.hidden = false;
-    fileTrigger.style.display = "none";
-    clearStatus();
-  }
-
-  function removeFile() {
-    currentFile = null;
-    fileInput.value = "";
-    attachedFile.hidden = true;
-    fileTrigger.style.display = "";
-  }
-
-  fileTrigger.addEventListener("click", function() { fileInput.click(); });
-  fileInput.addEventListener("change", function() {
-    if (fileInput.files && fileInput.files[0]) attachFile(fileInput.files[0]);
-  });
-  removeFileBtn.addEventListener("click", removeFile);
-
-  // ── Drag and drop ──
-  intakeCard.addEventListener("dragover", function(e) {
-    e.preventDefault();
-    intakeCard.classList.add("intake-card--dragover");
-  });
-  intakeCard.addEventListener("dragleave", function() {
-    intakeCard.classList.remove("intake-card--dragover");
-  });
-  intakeCard.addEventListener("drop", function(e) {
-    e.preventDefault();
-    intakeCard.classList.remove("intake-card--dragover");
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-      attachFile(e.dataTransfer.files[0]);
-    }
-  });
-
-  // ── Status messages ──
-  function showStatus(type, msg) {
-    statusArea.innerHTML = '<span class="status-message status-message--' + type + '">' +
-      (type === "loading" ? '<span class="spinner"></span>' : '') + msg + '</span>';
-  }
-  function clearStatus() {
-    statusArea.innerHTML = "";
-  }
-
-  // ── Start analysis — real API call ──
-  function startAnalysis() {
-    if (busy) return;
-    var query = queryInput.value.trim();
-    if (!query && !currentFile) {
-      showStatus("error", "Sláðu inn fyrirspurn eða hengdu við skjal.");
-      return;
-    }
-
-    busy = true;
-    submitBtn.disabled = true;
-    resultsArea.hidden = true;
-    showStatus("loading", "Greining í gangi\u2026");
-
-    var fd = new FormData();
-    if (currentFile) fd.append("file", currentFile);
-    if (query) fd.append("query", query);
-
-    var ctrl = new AbortController();
-    var timeoutId = setTimeout(function() {
-      ctrl.abort();
-      busy = false;
-      submitBtn.disabled = false;
-      showStatus("error", "Fyrirspurnin rann út á tíma. Reyndu aftur.");
-    }, 180000);
-    // 🟢 Sprint 62 Patch H: UX progress hints fyrir löng skjöl
-    var hint15 = setTimeout(function(){ showStatus("info", "Greining í gangi..."); }, 15000);
-    var hint45 = setTimeout(function(){ showStatus("info", "Stórt skjal — sovereign Qwen3 vinnur, augnablik..."); }, 45000);
-    var hint90 = setTimeout(function(){ showStatus("info", "Næstum búið — klárar greininguna..."); }, 90000);
-    var _clearHints = function(){ clearTimeout(hint15); clearTimeout(hint45); clearTimeout(hint90); };
-
-    fetch("/api/analyze-document", {
-      method: "POST",
-      body: fd,
-      signal: ctrl.signal
-    }).then(function(r) {
-      clearTimeout(timeoutId); _clearHints();
-      if (!r.ok) {
-        return r.json().catch(function() { return {}; }).then(function(d) {
-          throw { status: r.status, data: d };
-        });
-      }
-      return r.json();
-    }).then(function(d) {
-      busy = false;
-      submitBtn.disabled = false;
-      clearStatus();
-      showResults(d);
-    }).catch(function(err) {
-      clearTimeout(timeoutId); _clearHints();
-      busy = false;
-      submitBtn.disabled = false;
-      if (err && err.name === "AbortError") return;
-      if (err && err.status) {
-        var d = err.data || {};
-        if (err.status === 422) {
-          var em = d.error_code === "no_text_extracted"
-            ? "Ekki tókst að lesa texta úr skjalinu. Reyndu annað skjal."
-            : (d.error || "Villa við úrvinnslu. Reyndu aftur.");
-          showStatus("error", em);
-          return;
-        }
-        if (err.status === 413) { showStatus("error", "Skráin er of stór. Hámark 20 MB."); return; }
-        if (err.status === 415) { showStatus("error", "Ógild skráargerð."); return; }
-        if (err.status === 429) { showStatus("error", "Of margar beiðnir. Reyndu aftur eftir stund."); return; }
-        showStatus("error", d.error || "Villa í þjónustu. Reyndu aftur síðar.");
-        return;
-      }
-      showStatus("error", "Tenging mistókst. Athugaðu nettengingu og reyndu aftur.");
-    });
-  }
-
-  submitBtn.addEventListener("click", startAnalysis);
-
-  // ── Show results ──
-  function showResults(d) {
-    var html = "";
-    // Sprint 63 Fasa 0.3c: robust — accept both keys
-    var _txt = d.summary || d.response;
-    if (_txt) {
-      var lines = _txt.split("\n");
-      for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim();
-        if (line) html += "<p>" + escapeHtml(line) + "</p>";
-      }
-    }
-    if (!html && d.success) {
-      html = "<pre>" + escapeHtml(JSON.stringify(d, null, 2)) + "</pre>";
-    }
-    resultsBody.innerHTML = html || "<p>Engar niðurstöður.</p>";
-    resultsArea.hidden = false;
-    resultsArea.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function escapeHtml(text) {
-    var div = document.createElement("div");
-    div.appendChild(document.createTextNode(text));
-    return div.innerHTML;
-  }
-});
-  </script>
+  <script src="/static/app.js?v=20260427"></script>
 </body>
 </html>"""

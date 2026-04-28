@@ -8,7 +8,7 @@ import httpx
 
 from interfaces.config_runtime import _VAULT_SEMAPHORE_WS, _MODEL_LEIDA_A, _MODEL_LEIDA_B
 from interfaces.models.schemas import ChatBeidni, ChatSvar, HeilsusvarModel
-from interfaces.utils.helpers import _polish_fn_txt, _detect_filetype, _parse_docx, _parse_xlsx
+from interfaces.utils.helpers import _polish_fn_txt, _detect_filetype, _parse_docx, _parse_xlsx, _estimate_tokens
 from interfaces.utils.quota import FREE_QUOTA, _quota_tracker_doc, _beta_tracker, _er_beta_fras, _er_beta_ip, _promota_beta
 from interfaces.utils.openrouter import _get_openrouter_balance, _wallet_preflight, _log_intent, SECURE_DOCS_DIR, MAX_PDF_SIZE
 from interfaces.pipeline import _call_leid_a, _call_leid_b, _vault_system_prompt
@@ -143,7 +143,6 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 _pipeline_source_txt = "unknown"
                 if _tier == "vault":
                     from interfaces.config import VAULT_MAX_INPUT_TOKENS as _vmax
-                    from interfaces.utils.helpers import _estimate_tokens
                     if _estimate_tokens(query or "") > _vmax:
                         return JSONResponse(status_code=413, content={
                             "error_code": "vault_input_too_large",
@@ -305,7 +304,8 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     from interfaces.utils.tabular_schema import extract_schema, schema_to_prompt_injection
                     _schema = extract_schema(efni, file.filename)
                     _schema_prompt = schema_to_prompt_injection(_schema)
-                    heildartexti = _schema_prompt + "\n\n" + heildartexti
+                    # Schema prompt fer aðeins í LLM system_prompt — ekki í svar til notanda
+                    pass  # heildartexti óbreytt
                     logger.info(f"[ALVITUR] B.2 schema injected, total chars: {len(heildartexti)}")
                 except Exception as _se:
                     logger.warning(f"[ALVITUR] B.2 schema injection skipped: {type(_se).__name__}: {_se}")
@@ -384,7 +384,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     from interfaces.utils.tabular_templates import build_tabular_system_prompt as _build_tprompt, parse_llm_template_response as _parse_tmpl, execute_template as _exec_tmpl
                     _b3c_schema = _ext_sch(efni, file.filename)
                     _b3c_sys = _build_tprompt(_b3c_schema)
-                    _msg_fallback = f"{_b3c_sys}\n\nSPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}"
+                    _msg_fallback = f"{_b3c_sys}\n\nTÖLFRÆÐI ÚR SKJALI (Python/pandas):\n{heildartexti}\n\nSPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}"
                 else:
                     _msg_fallback = f"SPURNING: {(query or '').strip() or 'Greindu þetta skjal.'}\n\nSKJAL:\n{heildartexti[:30000]}"
                 try:
@@ -497,6 +497,10 @@ SKJAL:
                             "engin upphrópunarmerki, formlegt B2B-mál."
                         )
                     _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
+
+                    # Sprint 71 B.2 — Schema injection fyrir Excel/CSV
+                    if '_schema_prompt' in dir() and _schema_prompt:
+                        _system_prompt = _schema_prompt + chr(92)+chr(110)+chr(92)+chr(110) + _system_prompt
 
                     # Sprint 70 Track D — RAG+ hook
                     print("DEBUG: RAG hook starting", flush=True)

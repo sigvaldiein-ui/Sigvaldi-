@@ -7,8 +7,9 @@
   'use strict';
 
   // ─── DOM refs ───
-  var tabGeneral = document.getElementById('tab-general');
-  var tabConfidential = document.getElementById('tab-confidential');
+  var cardVitinn = document.getElementById('card-vitinn');
+  var cardHvelfing = document.getElementById('card-hvelfing');
+  var trustStatementVitinn = document.getElementById('trust-statement-vitinn');
   var trustStatement = document.getElementById('trust-statement');
   var intakeCard = document.getElementById('intake-card');
   var queryInput = document.getElementById('query-input');
@@ -30,25 +31,31 @@
   // ─── Tab toggle ───
   function setMode(mode) {
     currentMode = mode;
-    var tabs = [tabGeneral, tabConfidential];
-    tabs.forEach(function (tab) {
-      var isActive = tab.getAttribute('data-mode') === mode;
+    var cards = [cardVitinn, cardHvelfing];
+    cards.forEach(function (card) {
+      var isActive = card.getAttribute('data-mode') === mode;
       if (isActive) {
-        tab.classList.add('intake-tab--active');
-        tab.setAttribute('aria-selected', 'true');
+        card.classList.add('intake-card-option--active');
+        card.setAttribute('aria-checked', 'true');
       } else {
-        tab.classList.remove('intake-tab--active');
-        tab.setAttribute('aria-selected', 'false');
+        card.classList.remove('intake-card-option--active');
+        card.setAttribute('aria-checked', 'false');
       }
     });
-    trustStatement.hidden = (mode !== 'confidential');
+    if (mode === 'confidential') {
+      trustStatement.hidden = false;
+      trustStatementVitinn.hidden = true;
+    } else {
+      trustStatement.hidden = true;
+      trustStatementVitinn.hidden = false;
+    }
   }
 
-  tabGeneral.addEventListener('click', function () { setMode('general'); });
-  tabConfidential.addEventListener('click', function () { setMode('confidential'); });
+  cardVitinn.addEventListener('click', function () { setMode('general'); });
+  cardHvelfing.addEventListener('click', function () { setMode('confidential'); });
 
-  // Keyboard nav between tabs
-  [tabGeneral, tabConfidential].forEach(function (tab, i, tabs) {
+  // Keyboard nav between cards
+  [cardVitinn, cardHvelfing].forEach(function (tab, i, tabs) {
     tab.addEventListener('keydown', function (e) {
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -159,6 +166,10 @@
       return;
     }
 
+  var currentController = null;
+    if (currentController) { try { currentController.abort(); } catch (e) {} }
+    var ctrl = new AbortController();
+    currentController = ctrl;
     busy = true;
     submitBtn.disabled = true;
     resultsArea.hidden = true;
@@ -170,11 +181,11 @@
 
     var tier = currentMode === 'confidential' ? 'vault' : 'general';
 
-    var controller = new AbortController();
     var timeoutId = setTimeout(function () {
-      controller.abort();
+      ctrl.abort();
       busy = false;
       submitBtn.disabled = false;
+      currentController = null;
       showStatus('error', 'Fyrirspurnin rann út á tíma. Reyndu aftur.');
     }, 180000);
 
@@ -182,7 +193,7 @@
       method: 'POST',
       body: fd,
       headers: { 'X-Alvitur-Tier': tier },
-      signal: controller.signal
+      signal: ctrl.signal
     })
     .then(function (r) {
       clearTimeout(timeoutId);
@@ -196,6 +207,7 @@
     .then(function (d) {
       busy = false;
       submitBtn.disabled = false;
+      currentController = null;
       clearStatus();
       showResults(d);
     })
@@ -203,6 +215,9 @@
       clearTimeout(timeoutId);
       busy = false;
       submitBtn.disabled = false;
+      clearStatus();
+      resultsArea.hidden = false;
+      if (currentController === ctrl) { currentController = null; }
 
       if (err && err.name === 'AbortError') return;
 
@@ -282,7 +297,7 @@
 
   function formatSummary(text) {
     return text
-      .split('\n')
+      .split(/\r?\n/)
       .filter(function (line) { return line.trim(); })
       .map(function (line) { return '<p>' + escapeHtml(line) + '</p>'; })
       .join('');

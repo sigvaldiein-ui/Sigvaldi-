@@ -93,6 +93,8 @@ def setja_upp_gagnagrunn() -> None:
             )
         """)
 
+        # --- Tafla 2b: memory_sessions ---
+        db.execute("""CREATE TABLE IF NOT EXISTS memory_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, session_title TEXT, summary_text TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (chat_id) REFERENCES users(chat_id))""")
         # --- Tafla 3: user_profiles ---
         # Afmörkuð persónueinkenni sem Mímir notar í System Prompt
         db.execute("""

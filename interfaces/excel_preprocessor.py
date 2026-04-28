@@ -20,7 +20,6 @@ _CATEGORY_HINTS = ('tegund', 'type', 'flokk', 'textalyk')
 _COUNTERPART_HINTS = ('mótaðil', 'motadil', 'counterp', 'viðtak', 'viðskiptam', 'lykill')
 _BALANCE_HINTS = ('staða', 'stada', 'balance', 'saldo')
 
-
 def _pick_column(df, hints):
     """Finna dálk sem matchar einhverja hint-string."""
     for col in df.columns:
@@ -28,7 +27,6 @@ def _pick_column(df, hints):
         if any(h in name for h in hints):
             return col
     return None
-
 
 def _pick_amount_column(df):
     """Finna líklegasta upphæðardálk (numeric, með + og -)."""
@@ -43,7 +41,6 @@ def _pick_amount_column(df):
             if len(non_null) > 5 and non_null.abs().max() > 100:
                 return col
     return None
-
 
 def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
     """
@@ -82,19 +79,10 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
     category_col = _pick_column(df, _CATEGORY_HINTS)
     counterpart_col = _pick_column(df, _COUNTERPART_HINTS)
     balance_col = _pick_column(df, _BALANCE_HINTS)
-
-    out = []
-    out.append("## 🔒 SAMTÖLUR — EKKI ENDURREIKNA")
-    out.append("")
-    out.append("**JÁRNREGLUR FYRIR LLM (má EKKI brjóta):**")
-    out.append("1. Tölur hér fyrir neðan eru reiknaðar af Python (pandas) — 100% nákvæmar.")
-    out.append("2. Þú mátt AÐEINS endurnota þessar tölur orðrétt. Ekki leggja þær saman á nýjan hátt.")
-    out.append("3. Ef þú býrð til nýja samtölu sem ekki er í þessum lista → Þú ert að búa til villu.")
-    out.append("4. \"Samtals innheimt\" = Jákvæðar færslur (aldrei groupby-summa af Tegund).")
-    out.append("5. \"Samtals útborgun\" = Neikvæðar færslur (aldrei summa af hluta Tegunda).")
-    out.append("6. Ef notandi biður um samtölu sem ekki er hér → segðu \"Ekki reiknað fyrirfram\".")
-    out.append("")
-    out.append(f"- **Skjal**: {df.shape[0]} línur × {df.shape[1]} dálkar")
+    out = []  # Járnreglur fjarlægðar — svar er hreint
+    # out.append("")
+    # out.append("")
+    # out.append(f"- **Skjal**: {df.shape[0]} línur × {df.shape[1]} dálkar")
     out.append(f"- **Dálkar í skjali**: {', '.join(str(c) for c in df.columns)}")
 
     if date_col:
@@ -106,7 +94,6 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
         except Exception as e:
             logger.debug(f"[excel_preprocessor] date parse: {e}")
 
-    if amount_col is not None:
         s = df[amount_col].dropna()
         pos = s[s > 0]
         neg = s[s < 0]
@@ -116,11 +103,6 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
         out.append(f"🔒 **NETTÓ HREYFING:** {s.sum():,.0f} kr")
         out.append(f"🔒 **HEILDARVELTA (|summa|):** {s.abs().sum():,.0f} kr")
         out.append(f"")
-        out.append(f"**Directive mapping (LLM endurritar beint):**")
-        out.append(f"- Ef notandi spyr \"samtals innheimt\" → svar: **{pos.sum():,.0f} kr**")
-        out.append(f"- Ef notandi spyr \"samtals útborgun\" → svar: **{neg.sum():,.0f} kr**")
-        out.append(f"- Ef notandi spyr \"nettó\" → svar: **{s.sum():,.0f} kr**")
-        out.append(f"- Ef notandi spyr \"heildarvelta\" → svar: **{s.abs().sum():,.0f} kr**")
 
         if category_col:
             try:
@@ -152,20 +134,11 @@ def preprocess_excel(file_input: Union[bytes, str, io.BytesIO]) -> str:
                 out.append(f"\n### 📈 Stöðubreyting ({balance_col})")
                 out.append(f"- Fyrsta færsla: {bal.iloc[0]:,.0f} kr")
                 out.append(f"- Síðasta færsla: {bal.iloc[-1]:,.0f} kr")
-                out.append(f"- Breyting á tímabili: {bal.iloc[-1] - bal.iloc[0]:,.0f} kr")
+                out.append(f"- Breyting á tímabili: {bal.iloc[0] - bal.iloc[-1]:,.0f} kr")
         except Exception as e:
             logger.debug(f"[excel_preprocessor] balance: {e}")
 
-    out.append("\n---\n## 📄 Raw gögn (fyrstu 50 línur)\n")
-    try:
-        out.append(df.head(50).to_markdown(index=False))
-        if df.shape[0] > 50:
-            out.append(f"\n*(+ {df.shape[0]-50} fleiri línur ekki sýndar — summur hér að ofan ná yfir allar línur)*")
-    except Exception as e:
-        out.append(f"[markdown render failed: {e}]")
-
     return "\n".join(out)
-
 
 if __name__ == "__main__":
     import sys
