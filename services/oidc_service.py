@@ -1,4 +1,4 @@
-"""OIDC Auðkenni service — einangrar OAuth rökfræði frá routes (Sprint 74 Fasi 3)."""
+"""OIDC Auðkenni service — einangrar OAuth rökfræði frá routes (Sprint 74 Fasi 1 fix)."""
 import logging
 import os
 import secrets
@@ -43,16 +43,18 @@ oauth.register(
     },
 )
 
-# --- State cache (CSRF vörn) ---
-_state_cache: dict[str, float] = {}
+# --- State cache (CSRF vörn, in-memory, engin SessionMiddleware þörf) ---
+_state_cache: dict[str, float] = {}   # state → timestamp
+_nonce_cache: dict[str, str] = {}     # state → actual nonce value
 
 
 def _clean_state_cache():
-    """Hreinsar útrunnin state úr skyndiminni."""
+    """Hreinsar útrunnin state + nonce úr skyndiminni (10 mín TTL)."""
     now = time.time()
     expired = [k for k, v in _state_cache.items() if now - v > 600]
     for k in expired:
         del _state_cache[k]
+        _nonce_cache.pop(k, None)
 
 
 async def build_login_url(request: Request) -> str:
@@ -60,11 +62,9 @@ async def build_login_url(request: Request) -> str:
     _clean_state_cache()
 
     state = secrets.token_hex(16)
-    nonce = secrets.token_hex(8)
+    nonce = secrets.token_hex(16)
     _state_cache[state] = time.time()
-
-    request.session["oidc_state"] = state
-    request.session["oidc_nonce"] = nonce
+    _nonce_cache[state] = nonce
 
     redirect_uri = REDIRECT_URI
     authorization_url = await oauth.audkenni.create_authorization_url(
@@ -79,15 +79,14 @@ async def build_login_url(request: Request) -> str:
 
 async def handle_callback(request: Request) -> JSONResponse:
     """Vinnur úr Auðkenni callback. Skilar JSON með session cookie."""
-    state_from_cache = request.session.get("oidc_state")
     state_from_query = request.query_params.get("state")
 
-    if not state_from_cache or state_from_cache != state_from_query:
+    if not state_from_query or state_from_query not in _state_cache:
         logger.warning("CSRF state mismatch — callback hafnað")
         raise HTTPException(status_code=403, detail="Ógilt authentication state")
 
-    if state_from_query in _state_cache:
-        del _state_cache[state_from_query]
+    nonce = _nonce_cache.pop(state_from_query, None)
+    del _state_cache[state_from_query]
 
     try:
         token = await oauth.audkenni.authorize_access_token(request)
