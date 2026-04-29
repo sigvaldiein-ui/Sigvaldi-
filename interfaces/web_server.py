@@ -12,7 +12,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 # Hlaða .env áður en app er búið til (yfirskrifar EKKI núverandi env breytur)
-load_dotenv("/workspace/.env", override=False)
+load_dotenv("/workspace/.env", override=True)
 
 from interfaces.app_factory import create_app
 
