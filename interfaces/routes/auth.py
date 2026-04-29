@@ -16,7 +16,7 @@ from interfaces.middleware.auth import (
     ACCESS_TOKEN_TTL,
 )
 from interfaces.models.user import hash_kennitala
-from core.db_manager import finna_eda_bua_til_oidc_user, uppfaera_oidc_user
+from services.user_service import finna_eda_bua_til_oidc_user, uppfaera_oidc_user
 
 logger = logging.getLogger("alvitur.auth")
 

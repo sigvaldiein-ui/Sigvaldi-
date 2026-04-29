@@ -1,178 +1,96 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-db_manager.py — Alvitur gagnagrunnsstjóri (Sprint 73 Fasi 3).
-
-Höfundur: Per skv. fyrirmælum Aðals Arkitektsins
-SOP: v6.0 — Auðkenni OIDC, sameinuð users tafla, tvöfalt salt.
-
-REGLUR (aldrei breyta):
-- Enginn samtalstexti í gagnagrunn — ALDREI
-- Aðeins: id, tími, intent, tokens, profiles
-- GDPR/Persónuvernd: kennitala alltaf hashed með APP_SALT
-- Per-user salt geymt fyrir framtíðar endur-hash
-"""
-
+"""Gagnagrunnsstjórnun — tengingar, töflur, analytics (Sprint 74 F3: user-föll → services/)."""
 import sqlite3
-import json
 import os
-from datetime import datetime, timedelta
-from pathlib import Path
+import logging
 
-from interfaces.models.user import hash_kennitala, generate_user_salt
+logger = logging.getLogger("alvitur.db")
 
-DB_SLOD = Path("/workspace/mimir_net/data/mimir_core.db")
+# --- Stillingar ---
+_GAGNAGRUNNS_SKRA = os.getenv("ALVITUR_DB_PATH", "/workspace/Sigvaldi-/data/alvitur.db")
 
 
 def tengja() -> sqlite3.Connection:
-    DB_SLOD.parent.mkdir(parents=True, exist_ok=True)
-    tenging = sqlite3.connect(str(DB_SLOD))
-    tenging.row_factory = sqlite3.Row
-    return tenging
+    """Skilar SQLite tengingu með row_factory stilltri."""
+    conn = sqlite3.connect(_GAGNAGRUNNS_SKRA)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def setja_upp_gagnagrunn() -> None:
-    """Setur upp allar töflur — keyrist við ræsingu."""
-    with tengja() as db:
-        db.execute("""
+    """Býr til töflur — keyrt við ræsingu."""
+    conn = tengja()
+    try:
+        conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                kennitala_hash      TEXT NOT NULL UNIQUE,
-                salt                TEXT NOT NULL,
-                nafn                TEXT DEFAULT '',
-                email               TEXT DEFAULT '',
-                straumur_customer_id TEXT,
-                subscription_plan   TEXT DEFAULT 'free',
-                subscription_end    TEXT,
-                free_queries_used   INTEGER DEFAULT 0,
-                created_at          TEXT DEFAULT (datetime('now')),
-                last_login          TEXT DEFAULT (datetime('now'))
-            )
-        """)
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kennitala_hash TEXT NOT NULL UNIQUE,
+                nafn TEXT,
+                email TEXT,
+                role TEXT NOT NULL DEFAULT 'user',
+                búinn_til TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sidast_breytt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS conversation_log (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     INTEGER,
-                intent      TEXT,
+            CREATE TABLE IF NOT EXISTS samtalsaga (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                intent TEXT,
                 tokens_used INTEGER DEFAULT 0,
-                model       TEXT DEFAULT 'unknown',
-                created_at  TEXT DEFAULT (datetime('now')),
+                model TEXT DEFAULT 'unknown',
+                fyrirspurn TEXT,
+                timi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
-            )
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_users_kennitala ON users(kennitala_hash);
+            CREATE INDEX IF NOT EXISTS idx_samtalsaga_user ON samtalsaga(user_id);
+            CREATE INDEX IF NOT EXISTS idx_samtalsaga_timi ON samtalsaga(timi);
         """)
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                user_id    INTEGER PRIMARY KEY,
-                profile_json TEXT DEFAULT '{}',
-                updated_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        """)
-
-        db.commit()
+        conn.commit()
+        logger.info("Gagnagrunnstöflur staðfestar.")
+    except Exception as e:
+        logger.error(f"Villa við uppsetningu gagnagrunns: {e}")
+        raise
+    finally:
+        conn.close()
 
 
-# --- OIDC User operations ---
-
-def finna_eda_bua_til_oidc_user(kennitala: str) -> dict:
-    """
-    Finnur notanda eftir kennitölu eða býr til nýjan.
-    APP_SALT tryggir sama hash fyrir sömu kennitölu.
-    Per-user salt geymt fyrir framtíðarþarfir.
-    Skilar dict með öllum dálkum.
-    """
-    kennitala_hash = hash_kennitala(kennitala)
-
-    with tengja() as db:
-        row = db.execute(
-            "SELECT * FROM users WHERE kennitala_hash = ?",
-            (kennitala_hash,)
-        ).fetchone()
-
-        if row:
-            db.execute(
-                "UPDATE users SET last_login = datetime('now') WHERE id = ?",
-                (row["id"],)
-            )
-            db.commit()
-            return dict(row)
-        else:
-            user_salt = generate_user_salt()
-            db.execute(
-                """INSERT INTO users (kennitala_hash, salt, nafn, email)
-                   VALUES (?, ?, '', '')""",
-                (kennitala_hash, user_salt)
-            )
-            db.commit()
-            new_row = db.execute(
-                "SELECT * FROM users WHERE kennitala_hash = ?",
-                (kennitala_hash,)
-            ).fetchone()
-            return dict(new_row)
-
-
-def uppfaera_oidc_user(user_id: int, nafn: str = None, email: str = None) -> None:
-    """Uppfærir nafn/email eftir innskráningu."""
-    with tengja() as db:
-        if nafn:
-            db.execute("UPDATE users SET nafn = ? WHERE id = ?", (nafn, user_id))
-        if email:
-            db.execute("UPDATE users SET email = ? WHERE id = ?", (email, user_id))
-        db.commit()
-
-
-# --- Conversation log ---
+# --- Analytics & Reporting ---
 
 def skra_samtal(user_id: int, intent: str, tokens_used: int = 0,
-                model: str = "unknown") -> int:
-    with tengja() as db:
-        cursor = db.execute(
-            "INSERT INTO conversation_log (user_id, intent, tokens_used, model) VALUES (?, ?, ?, ?)",
-            (user_id, intent, tokens_used, model)
+                 model: str = "unknown", fyrirspurn: str = "") -> None:
+    """Skráir samtal í gagnagrunn — analytics."""
+    conn = tengja()
+    try:
+        conn.execute(
+            "INSERT INTO samtalsaga (user_id, intent, tokens_used, model, fyrirspurn, timi) "
+            "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+            (user_id, intent, tokens_used, model, fyrirspurn),
         )
-        db.commit()
-        return cursor.lastrowid
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Villa við skráningu samtals: {e}")
+    finally:
+        conn.close()
 
-
-# --- Profile ---
-
-def saekja_profile(user_id: int) -> dict:
-    with tengja() as db:
-        row = db.execute(
-            "SELECT profile_json FROM user_profiles WHERE user_id = ?",
-            (user_id,)
-        ).fetchone()
-        if row:
-            return json.loads(row["profile_json"])
-        return {}
-
-
-def uppfaera_profile(user_id: int, lykilord: str, gildi: str) -> None:
-    profile = saekja_profile(user_id)
-    profile[lykilord] = gildi
-    with tengja() as db:
-        db.execute(
-            """INSERT INTO user_profiles (user_id, profile_json, updated_at)
-               VALUES (?, ?, datetime('now'))
-               ON CONFLICT(user_id) DO UPDATE SET
-               profile_json = excluded.profile_json,
-               updated_at = excluded.updated_at""",
-            (user_id, json.dumps(profile))
-        )
-        db.commit()
-
-
-# --- Health ---
 
 def generate_daily_report() -> str:
-    with tengja() as db:
-        user_count = db.execute("SELECT COUNT(*) as n FROM users").fetchone()["n"]
-        samtol = db.execute(
-            "SELECT COUNT(*) as n FROM conversation_log WHERE date(created_at) = date('now')"
-        ).fetchone()["n"]
-        tokens = db.execute(
-            "SELECT COALESCE(SUM(tokens_used),0) as n FROM conversation_log WHERE date(created_at) = date('now')"
-        ).fetchone()["n"]
-        return f"Notendur: {user_count} | Samtöl í dag: {samtol} | Tokens í dag: {tokens}"
+    """Býr til daglega samantekt — admin."""
+    conn = tengja()
+    try:
+        cur = conn.execute(
+            "SELECT COUNT(*) as samtol, SUM(tokens_used) as tokens "
+            "FROM samtalsaga WHERE date(timi) = date('now')"
+        )
+        row = cur.fetchone()
+        samtol = row["samtol"] or 0
+        tokens = row["tokens"] or 0
+        return f"Dags: {samtol} samtöl, {tokens} tokens."
+    except Exception as e:
+        logger.error(f"Villa við daglega skýrslu: {e}")
+        return "Villa við að sækja skýrslu."
+    finally:
+        conn.close()
