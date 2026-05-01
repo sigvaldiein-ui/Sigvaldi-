@@ -1,0 +1,43 @@
+{
+  "generated_utc": "2026-04-23T11:36:28.451089+00:00",
+  "n_total": 34,
+  "by_endpoint": {
+    "chat": 33,
+    "analyze-document/text-only": 1
+  },
+  "by_domain": {
+    "general": 34
+  },
+  "by_depth": {
+    "fast": 34
+  },
+  "by_sensitivity": {
+    "low": 34
+  },
+  "by_adapter": {
+    "None": 34
+  },
+  "by_source": {
+    "text": 34
+  },
+  "confidence_buckets": {
+    "<0.50": 6,
+    "0.50-0.60": 28,
+    "0.60-0.80": 0,
+    "0.80-1.00": 0
+  },
+  "confidence_stats": {
+    "min": 0.45,
+    "max": 0.5,
+    "mean": 0.491,
+    "p50": 0.5
+  },
+  "by_endpoint_domain": {
+    "chat|general": 33,
+    "analyze-document/text-only|general": 1
+  },
+  "by_source_file": {
+    "/workspace/web_server.log": 34
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="is">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alvitur | Örugg skjalagreining og gervigreind á stjórnsýslustigi</title>
+  <meta name="description" content="Greindu flókin skjöl, samninga og stjórnsýslugögn á sekúndum með íslenskri gervigreindarlausn. Hönnuð fyrir fullt gagnaöryggi. Engin gögn vistuð eða notuð í þjálfun.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://alvitur.is/">
+  <meta property="og:title" content="Alvitur | Örugg skjalagreining á stjórnsýslustigi">
+  <meta property="og:description" content="Greindu flókin skjöl og spurningar á sekúndum. Þín gögn, þín stjórn. Engin vistun í trúnaðarham.">
+
+  <!-- Fonts -->
+  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L6 28h6l4-10 4 10h6L16 4z' fill='%230A6B6E'/%3E%3C/svg%3E">
+<meta name="build-id" content="PROBE-1776251334">
+</head>
+<body>
+
+  <!-- Skip link -->
+  <a href="#intake" class="skip-link">Fara í greiningu</a>
+
+  <!-- ═══ NAV ═══ -->
+  <header class="nav" role="banner">
+    <div class="nav__inner">
+      <a href="#" class="nav__logo" aria-label="Alvitur forsíða">
+        <svg class="nav__logo-mark" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M18 6L8 30h5.5l4.5-11.5L22.5 30H28L18 6z" fill="currentColor"/>
+          <circle cx="18" cy="14" r="2.5" fill="currentColor" opacity="0.35"/>
+        </svg>
+        <span class="nav__logo-text">Alvitur</span>
+      </a>
+      <nav class="nav__links" aria-label="Aðalleiðsögn">
+        <a href="/oryggi" class="nav__link">Öryggi</a>
+        <a href="#about" class="nav__link">Um Alvitur</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ═══ HERO ═══ -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero__inner">
+        <h1 id="hero-heading" class="hero__heading">Greindu flókin skjöl og spurningar á&nbsp;sekúndum.</h1>
+        <p class="hero__subtext">Íslensk gervigreindarlausn fyrir stjórnsýslu og atvinnulífið, byggð með ströngustu kröfum um upplýsingaöryggi. <strong>Þín gögn, þín stjórn.</strong></p>
+        <a href="#intake" class="hero__cta">Hefjumst handa →</a>
+      </div>
+    </section>
+
+    <!-- ═══ INTAKE ═══ -->
+    <section id="intake" class="intake-section" aria-labelledby="intake-heading">
+      <h2 id="intake-heading" class="sr-only">Greiningarsvæði</h2>
+      <div class="intake-card" id="intake-card">
+
+        <!-- Toggle tabs -->
+        <div class="intake-tabs" role="tablist" aria-label="Greiningarstilling">
+          <button role="tab" id="tab-general" class="intake-tab intake-tab--active" aria-selected="true" aria-controls="panel-general" data-mode="general">
+            Almenn greining
+          </button>
+          <button role="tab" id="tab-confidential" class="intake-tab" aria-selected="false" aria-controls="panel-confidential" data-mode="confidential">
+            <svg class="intake-tab__lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+            Trúnaðargreining
+          </button>
+          <span class="intake-tabs__indicator" aria-hidden="true"></span>
+        </div>
+
+        <!-- Trust statement (confidential mode) -->
+        <div class="intake-trust" id="trust-statement" aria-live="polite" hidden>
+          <svg class="intake-trust__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4L8 1.5z"/><path d="M6 8l1.5 1.5L10.5 6"/></svg>
+          <p>Gögnin þín eyðast sjálfkrafa að vinnslu lokinni. Ekkert rekstrarspor verður til.</p>
+        </div>
+
+        <!-- Textarea -->
+        <div class="intake-body">
+          <label for="query-input" class="sr-only">Fyrirspurn</label>
+          <textarea id="query-input" class="intake-textarea" placeholder="Lýstu því sem þú leitar að..." rows="5"></textarea>
+        </div>
+
+        <!-- File attachment row -->
+        <div class="intake-file-row">
+          <div class="intake-file-left">
+            <button type="button" class="intake-file-btn" id="file-trigger" aria-label="Hengja við PDF skjal">
+              <svg class="intake-file-btn__icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14.5 10.5l-5 5a3.5 3.5 0 0 1-5-5l6.5-6.5a2.5 2.5 0 0 1 3.5 3.5l-6.5 6.5a1.5 1.5 0 0 1-2-2l5-5"/></svg>
+              Hengja við PDF
+            </button>
+            <input type="file" id="file-input" accept=".pdf,.docx,.xlsx" class="sr-only" aria-label="Velja PDF skjal">
+          </div>
+          <span class="intake-file-hint">Styður PDF</span>
+        </div>
+
+        <!-- Attached file display -->
+        <div class="intake-attached" id="attached-file" hidden>
+          <div class="intake-attached__info">
+            <svg class="intake-attached__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6L9 1.5z"/><path d="M9 1.5V6h4.5"/></svg>
+            <span class="intake-attached__name" id="attached-name"></span>
+            <span class="intake-attached__size" id="attached-size"></span>
+          </div>
+          <button type="button" class="intake-attached__remove" id="remove-file" aria-label="Fjarlægja skjal">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+
+        <!-- Submit -->
+        <button type="button" class="intake-submit" id="submit-btn">
+          Greina
+          <svg class="intake-submit__arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10h12m-4-4l4 4-4 4"/></svg>
+        </button>
+      </div>
+
+      <!-- Status messages -->
+      <div class="intake-status" id="status-area" aria-live="polite"></div>
+
+      <!-- Results area -->
+      <div class="intake-results" id="results-area" hidden>
+        <div class="results-card">
+          <div class="results-header">
+            <h3 class="results-title">Niðurstöður greiningar</h3>
+            <span class="results-badge">Lokið</span>
+          </div>
+          <div class="results-body" id="results-body"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ TRUST STRIP ═══ -->
+    <section id="trust" class="trust-strip" aria-label="Öryggisupplýsingar">
+      <div class="trust-strip__inner">
+        <div class="trust-strip__item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5 6.5 4.5 6.5 4.5-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2 2l12 12"/></svg>
+          <span>Ekkert stafrænt fótspor</span>
+        </div>
+        <span class="trust-strip__dot" aria-hidden="true">·</span>
+        <div class="trust-strip__item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5 9.5h2"/><path d="M2 2l12 12"/></svg>
+          <span>Gögn vistast aldrei</span>
+        </div>
+        <span class="trust-strip__dot" aria-hidden="true">·</span>
+        <div class="trust-strip__item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+          <span>Trúnaðarvinnsla</span>
+        </div>
+        <span class="trust-strip__dot" aria-hidden="true">·</span>
+        <div class="trust-strip__item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M9 1.5L3 9h4l-1 5.5L13 7H9l1-5.5z"/></svg>
+          <span>Svar á sekúndum</span>
+        </div>
+        <span class="trust-strip__dot" aria-hidden="true">·</span>
+        <div class="trust-strip__item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M2 14h12M3 14V7M13 14V7M6 14V7M10 14V7M1.5 7h13L8 2 1.5 7z"/></svg>
+          <span>Íslensk tækni og þjónusta</span>
+        </div>
+      </div>
+      <div class="trust-strip__link">
+        <a href="/oryggi">Sjá öryggisstefnu og gagnaforræði →</a>
+      </div>
+    </section>
+
+    <!-- ═══ BETA NOTE ═══ -->
+    <section id="about" class="beta-note" aria-label="Prufufasi">
+      <p>Alvitur er í prufufasa. Nýjar umbætur birtast reglulega.</p>
+    </section>
+  </main>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="footer" role="contentinfo">
+    <div class="footer__inner">
+      <p class="footer__copy">&copy; 2026 Orkuskipti ehf &middot; <a href="mailto:sigvaldi@alvitur.is">sigvaldi@alvitur.is</a></p>
+      <nav class="footer__links" aria-label="Tenglar í fæti">
+        <a href="/personuvernd">Persónuverndarstefna</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="/skilmalar">Skilmálar</a>
+      </nav>
+      <p class="footer__eea">Gögn unnin innan EES</p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js?v=1776839157" defer></script>
+</body>
+</html>

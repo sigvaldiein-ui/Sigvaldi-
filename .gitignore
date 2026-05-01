@@ -1,0 +1,60 @@
+# Secrets - ALDREI commit-a þessu!
+.env
+*.env.local
+*.env.production
+config/cf_token.txt
+config/cloudflared_cert.pem
+*.bak*
+logs/
+__pycache__/
+*.pyc
+*.log
+
+# Telegram - ekki í notkun
+scripts/morning_brief.py
+interfaces/telegram_bot_*.py
+
+# Secrets (ALDREI commit)
+config/mimir-drive-key.json
+config/*.key
+config/*.pem
+*.env
+.env*
+
+# Runtime files
+nohup.out
+*.log
+
+# Large data stores
+data/qdrant_store/
+data/bronze/
+
+# Safety backups (við höfum Git tags)
+interfaces/web_server.py.bak*
+interfaces/web_server.py.before-*
+interfaces/web_server.py.backup.*
+
+# Sprint 61 — fallback backups (aldrei committa)
+*.bak-fallback-*
+*.bak-*
+config/cf_token.txt
+tests/smoke.sh.bak.*
+data/beta_tracker.json
+data/beta_tracker.tmp
+
+# Sprint 68 B.0 — data policy
+# Bronze raw zips (too large, regenerated via fetch_lagasafn_snapshot.sh)
+data/bronze/logs/snapshots/
+data/bronze/logs/incremental/
+# But DO keep discovery samples for reproducibility (small, stable reference)
+!data/bronze/logs/samples/
+!data/bronze/logs/samples/*.html
+.ipynb_checkpoints/
+output/
+*.sqlite
+
+# Qdrant gögn (of stór fyrir GitHub)
+data/qdrant_laws_v2/
+data/qdrant_store/
+data/qdrant/
+*.sqlite

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="is">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upplýsingaöryggi og gagnaforræði | Alvitur</title>
+  <meta name="description" content="Alvitur tryggir fullt gagnaforræði: engin þjálfun á þínum gögnum, hýsing innan EES, og sjálfvirk gagnaeyðing í trúnaðarham.">
+
+  <!-- Fonts -->
+  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css">
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L6 28h6l4-10 4 10h6L16 4z' fill='%230A6B6E'/%3E%3C/svg%3E">
+
+  <style>
+    .oryggi-page { padding: calc(var(--nav-height) + var(--space-8)) var(--space-6) var(--space-12); }
+    .oryggi-back { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: 500; color: var(--color-primary); text-decoration: none; margin-bottom: var(--space-8); transition: color 0.15s; }
+    .oryggi-back:hover { color: var(--color-primary-hover); }
+    .oryggi-back svg { width: 16px; height: 16px; }
+    .oryggi-card { max-width: 720px; margin: 0 auto; background: var(--color-surface); border-radius: 16px; border: 1px solid var(--color-border-light); padding: var(--space-8) var(--space-8); }
+    @media (min-width: 768px) { .oryggi-card { padding: var(--space-12) var(--space-12); } }
+    .oryggi-badge { display: inline-block; background: var(--color-bg); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-muted); padding: 4px 12px; border-radius: 100px; margin-bottom: var(--space-6); }
+    .oryggi-title { font-family: var(--font-display); font-size: clamp(1.5rem, 1rem + 3vw, 2.25rem); font-weight: 700; color: var(--color-text); line-height: 1.2; margin-bottom: var(--space-3); }
+    .oryggi-subtitle { font-size: var(--text-lg); color: var(--color-text-muted); line-height: 1.6; margin-bottom: var(--space-8); }
+    .oryggi-intro { font-size: var(--text-base); color: var(--color-text); line-height: 1.7; margin-bottom: var(--space-10); padding-bottom: var(--space-8); border-bottom: 1px solid var(--color-border-light); }
+    .oryggi-section { margin-bottom: var(--space-10); }
+    .oryggi-section-title { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; color: var(--color-text); margin-bottom: var(--space-3); }
+    .oryggi-num { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: #E8F4F4; color: var(--color-primary); font-size: var(--text-sm); font-weight: 700; flex-shrink: 0; }
+    .oryggi-section p { font-size: var(--text-base); color: var(--color-text-muted); line-height: 1.7; padding-left: 44px; }
+    .oryggi-cta { display: flex; justify-content: center; margin-top: var(--space-10); padding-top: var(--space-8); border-top: 1px solid var(--color-border-light); }
+    .oryggi-cta a { display: inline-flex; align-items: center; justify-content: center; padding: var(--space-3) var(--space-6); background: var(--color-primary); color: white; font-size: var(--text-base); font-weight: 600; border-radius: 8px; text-decoration: none; transition: background 0.15s; }
+    .oryggi-cta a:hover { background: var(--color-primary-hover); }
+    .oryggi-footer-note { text-align: center; font-size: var(--text-xs); color: var(--color-text-faint); margin-top: var(--space-8); }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ NAV ═══ -->
+  <header class="nav" role="banner">
+    <div class="nav__inner">
+      <a href="./" class="nav__logo" aria-label="Alvitur forsíða">
+        <svg class="nav__logo-mark" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M18 6L8 30h5.5l4.5-11.5L22.5 30H28L18 6z" fill="currentColor"/>
+          <circle cx="18" cy="14" r="2.5" fill="currentColor" opacity="0.35"/>
+        </svg>
+        <span class="nav__logo-text">Alvitur</span>
+      </a>
+      <nav class="nav__links" aria-label="Aðalleiðsögn">
+        <a href="/oryggi" class="nav__link" aria-current="page">Öryggi</a>
+        <a href="/#about" class="nav__link">Um Alvitur</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="oryggi-page">
+    <div style="max-width: 720px; margin: 0 auto;">
+      <a href="/" class="oryggi-back">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Til baka á inntaksgátt
+      </a>
+    </div>
+
+    <article class="oryggi-card">
+      <header>
+        <span class="oryggi-badge">Enterprise öryggisstaðall</span>
+        <h1 class="oryggi-title">Upplýsingaöryggi og gagnaforræði</h1>
+        <h2 class="oryggi-subtitle">Arkitektúr hannaður fyrir stjórnsýslu og fyrirtæki þar sem engar málamiðlanir eru gerðar um gagnaleynd.</h2>
+      </header>
+
+      <p class="oryggi-intro">
+        Hjá Alvitri teljum við að stofnanir og fyrirtæki eigi ekki að þurfa að velja á milli þess að nýta kraft öflugustu gervigreindar heims og þess að vernda viðkvæm gögn. Við höfum smíðað íslenskt vinnsluumhverfi og arkitektúr sem tryggir fullt gagnaforræði í hverju skrefi.
+      </p>
+
+      <div>
+        <section class="oryggi-section">
+          <h3 class="oryggi-section-title">
+            <span class="oryggi-num">1</span>
+            Engin þjálfun á þínum gögnum
+          </h3>
+          <p>Opin gervigreindarlíkön nýta oft inntak notenda til að þjálfa sig fyrir framtíðina. Alvitur starfar öðruvísi. Við nýtum eingöngu lokuð fyrirtækjaskil (Enterprise APIs) við stærstu mállíkön heims, þar sem gilda ströng skilyrði um gagnavernd. Við ábyrgjumst lagalega og tæknilega að hvorki skjöl né fyrirspurnir sem fara í gegnum Alvitur verði nokkurn tímann nýtt til að þjálfa, fínstilla eða bæta gervigreindarlíkön birgja okkar. Hugverkið þitt er varið.</p>
+        </section>
+
+        <section class="oryggi-section">
+          <h3 class="oryggi-section-title">
+            <span class="oryggi-num">2</span>
+            Sjálfvirk gagnaeyðing í trúnaðarham
+          </h3>
+          <p>Fyrir viðkvæmustu upplýsingarnar krefst kerfið þess að notandi velji <strong>Trúnaðarvinnslu (Leið B)</strong>. Undir þessu vinnslulagi eru skjöl lesin beint inn í vinnsluminni (RAM) á netþjónum okkar — þau snerta aldrei varanlegan harðan disk. Að greiningu lokinni er minnið hreinsað og gögnin eyðast sjálfkrafa. Engin varanleg afrit verða til. Það er ekki hægt að ná í gögn sem eru ekki lengur til.</p>
+        </section>
+
+        <section class="oryggi-section">
+          <h3 class="oryggi-section-title">
+            <span class="oryggi-num">3</span>
+            Lögsaga og evrópskir innviðir
+          </h3>
+          <p>Allur vélbúnaður sem knýr gagnagátt Alviturs er hýstur í vottuðum gagnaverum innan Evrópska efnahagssvæðisins (EES). Kerfið lútur persónuverndarlögum (GDPR) að fullu. Með innbyggðri gagnaflokkun styður Alvitur við kröfur ISO 42001 og komandi löggjöf Evrópusambandsins (EU AI Act) um ábyrga og rekjanlega notkun gervigreindar.</p>
+        </section>
+
+        <section class="oryggi-section">
+          <h3 class="oryggi-section-title">
+            <span class="oryggi-num">4</span>
+            Sannanlegur rekjanleiki
+          </h3>
+          <p>Til að styðja við örugga skjalavörslu og innri endurskoðun heldur kerfið utan um dulkóðaða atvikaskrá (Audit Trail). Við skráum að vinnsla á ákveðnu öryggisstigi fór fram, ásamt metadata og tímasetningu, en innihald gagnanna eða skjalsins sjálfs er aldrei varðveitt á Trúnaðarleiðinni.</p>
+        </section>
+      </div>
+
+      <div class="oryggi-cta">
+        <a href="/">Hefja örugga greiningu</a>
+      </div>
+    </article>
+
+    <p class="oryggi-footer-note">Styður við kröfur ISO 42001 og GDPR.</p>
+  </main>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="footer" role="contentinfo">
+    <div class="footer__inner">
+      <p class="footer__copy">&copy; 2026 Orkuskipti ehf &middot; <a href="mailto:info@alvitur.is">info@alvitur.is</a></p>
+      <nav class="footer__links" aria-label="Tenglar í fæti">
+        <a href="#" target="_blank" rel="noopener noreferrer">Persónuverndarstefna</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="#" target="_blank" rel="noopener noreferrer">Skilmálar</a>
+      </nav>
+      <p class="footer__eea">Gögn unnin innan EES</p>
+    </div>
+  </footer>
+
+</body>
+</html>

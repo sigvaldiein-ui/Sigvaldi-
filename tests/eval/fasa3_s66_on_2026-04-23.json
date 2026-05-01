@@ -1,0 +1,689 @@
+{
+  "sprint": "S66",
+  "artifact": "Fasa 3 (fallback ON)",
+  "timestamp_utc": "2026-04-23T12:27:11.417806+00:00",
+  "fallback_enabled": true,
+  "fallback_model": "google/gemini-2.5-flash",
+  "n_queries": 40,
+  "canonical_domains": [
+    "legal",
+    "financial",
+    "general",
+    "technical",
+    "public"
+  ],
+  "metrics": {
+    "overall_accuracy": 0.65,
+    "domain_accuracy": 0.925,
+    "reasoning_depth_accuracy": 0.725,
+    "macro_f1": 0.91,
+    "low_confidence_count": 11,
+    "low_confidence_pct": 0.275,
+    "latency_p50_s": 0.577,
+    "latency_p95_s": 3.036,
+    "latency_total_s": 31.26,
+    "latency_avg_s": 0.782
+  },
+  "per_domain": {
+    "legal": {
+      "n_expected": 5,
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "financial": {
+      "n_expected": 5,
+      "tp": 4,
+      "fp": 1,
+      "fn": 1,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8
+    },
+    "general": {
+      "n_expected": 20,
+      "tp": 19,
+      "fp": 1,
+      "fn": 1,
+      "precision": 0.95,
+      "recall": 0.95,
+      "f1": 0.95
+    },
+    "technical": {
+      "n_expected": 5,
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "public": {
+      "n_expected": 5,
+      "tp": 4,
+      "fp": 1,
+      "fn": 1,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8
+    }
+  },
+  "confusion_matrix": {
+    "legal": {
+      "legal": 5,
+      "financial": 0,
+      "general": 0,
+      "technical": 0,
+      "public": 0
+    },
+    "financial": {
+      "legal": 0,
+      "financial": 4,
+      "general": 1,
+      "technical": 0,
+      "public": 0
+    },
+    "general": {
+      "legal": 0,
+      "financial": 0,
+      "general": 19,
+      "technical": 0,
+      "public": 1
+    },
+    "technical": {
+      "legal": 0,
+      "financial": 0,
+      "general": 0,
+      "technical": 5,
+      "public": 0
+    },
+    "public": {
+      "legal": 0,
+      "financial": 1,
+      "general": 0,
+      "technical": 0,
+      "public": 4
+    }
+  },
+  "per_category": {
+    "ambiguous": {
+      "n": 5,
+      "domain_acc": 0.8,
+      "depth_acc": 0.8
+    },
+    "edge": {
+      "n": 5,
+      "domain_acc": 1.0,
+      "depth_acc": 1.0
+    },
+    "file": {
+      "n": 5,
+      "domain_acc": 1.0,
+      "depth_acc": 1.0
+    },
+    "legal": {
+      "n": 5,
+      "domain_acc": 1.0,
+      "depth_acc": 0.4
+    },
+    "live_informed": {
+      "n": 5,
+      "domain_acc": 1.0,
+      "depth_acc": 1.0
+    },
+    "normal": {
+      "n": 5,
+      "domain_acc": 0.8,
+      "depth_acc": 0.6
+    },
+    "public": {
+      "n": 5,
+      "domain_acc": 0.8,
+      "depth_acc": 0.8
+    },
+    "technical": {
+      "n": 5,
+      "domain_acc": 1.0,
+      "depth_acc": 0.2
+    }
+  },
+  "per_fasa": {
+    "fasa_1": {
+      "n": 20,
+      "domain_acc": 0.9,
+      "depth_acc": 0.85,
+      "overall_acc": 0.75
+    },
+    "fasa_3": {
+      "n": 20,
+      "domain_acc": 0.95,
+      "depth_acc": 0.6,
+      "overall_acc": 0.55
+    }
+  },
+  "rows": [
+    {
+      "id": "N01",
+      "category": "normal",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.95,
+      "latency_s": 1.967,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "N02",
+      "category": "normal",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "public",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": false,
+      "depth_ok": true
+    },
+    {
+      "id": "N03",
+      "category": "normal",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.95,
+      "latency_s": 3.178,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "N04",
+      "category": "normal",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "deep",
+      "actual_domain": "general",
+      "actual_depth": "standard",
+      "confidence": 0.5,
+      "latency_s": 3.037,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "N05",
+      "category": "normal",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "deep",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.5,
+      "latency_s": 3.035,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "E01",
+      "category": "edge",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.45,
+      "latency_s": 3.036,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "E02",
+      "category": "edge",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.45,
+      "latency_s": 3.02,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "E03",
+      "category": "edge",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.5,
+      "latency_s": 3.027,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "E04",
+      "category": "edge",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.3,
+      "latency_s": 0.605,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "E05",
+      "category": "edge",
+      "fasa": 1,
+      "expected_domain": "financial",
+      "expected_depth": "fast",
+      "actual_domain": "financial",
+      "actual_depth": "fast",
+      "confidence": 0.75,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "A01",
+      "category": "ambiguous",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.3,
+      "latency_s": 0.581,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "A02",
+      "category": "ambiguous",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.3,
+      "latency_s": 0.576,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "A03",
+      "category": "ambiguous",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.4,
+      "latency_s": 0.628,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "A04",
+      "category": "ambiguous",
+      "fasa": 1,
+      "expected_domain": "financial",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.4,
+      "latency_s": 1.382,
+      "domain_ok": false,
+      "depth_ok": true
+    },
+    {
+      "id": "A05",
+      "category": "ambiguous",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "deep",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.4,
+      "latency_s": 0.742,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "F01",
+      "category": "file",
+      "fasa": 1,
+      "expected_domain": "financial",
+      "expected_depth": "deep",
+      "actual_domain": "financial",
+      "actual_depth": "deep",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "F02",
+      "category": "file",
+      "fasa": 1,
+      "expected_domain": "financial",
+      "expected_depth": "deep",
+      "actual_domain": "financial",
+      "actual_depth": "deep",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "F03",
+      "category": "file",
+      "fasa": 1,
+      "expected_domain": "financial",
+      "expected_depth": "deep",
+      "actual_domain": "financial",
+      "actual_depth": "deep",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "F04",
+      "category": "file",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "deep",
+      "actual_domain": "general",
+      "actual_depth": "deep",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "F05",
+      "category": "file",
+      "fasa": 1,
+      "expected_domain": "general",
+      "expected_depth": "deep",
+      "actual_domain": "general",
+      "actual_depth": "deep",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "L01",
+      "category": "legal",
+      "fasa": 3,
+      "expected_domain": "legal",
+      "expected_depth": "deep",
+      "actual_domain": "legal",
+      "actual_depth": "standard",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "L02",
+      "category": "legal",
+      "fasa": 3,
+      "expected_domain": "legal",
+      "expected_depth": "deep",
+      "actual_domain": "legal",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "L03",
+      "category": "legal",
+      "fasa": 3,
+      "expected_domain": "legal",
+      "expected_depth": "fast",
+      "actual_domain": "legal",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "L04",
+      "category": "legal",
+      "fasa": 3,
+      "expected_domain": "legal",
+      "expected_depth": "standard",
+      "actual_domain": "legal",
+      "actual_depth": "fast",
+      "confidence": 0.8,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "L05",
+      "category": "legal",
+      "fasa": 3,
+      "expected_domain": "legal",
+      "expected_depth": "fast",
+      "actual_domain": "legal",
+      "actual_depth": "fast",
+      "confidence": 0.9,
+      "latency_s": 0.526,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "T01",
+      "category": "technical",
+      "fasa": 3,
+      "expected_domain": "technical",
+      "expected_depth": "deep",
+      "actual_domain": "technical",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "T02",
+      "category": "technical",
+      "fasa": 3,
+      "expected_domain": "technical",
+      "expected_depth": "fast",
+      "actual_domain": "technical",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "T03",
+      "category": "technical",
+      "fasa": 3,
+      "expected_domain": "technical",
+      "expected_depth": "standard",
+      "actual_domain": "technical",
+      "actual_depth": "fast",
+      "confidence": 0.8,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "T04",
+      "category": "technical",
+      "fasa": 3,
+      "expected_domain": "technical",
+      "expected_depth": "deep",
+      "actual_domain": "technical",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "T05",
+      "category": "technical",
+      "fasa": 3,
+      "expected_domain": "technical",
+      "expected_depth": "standard",
+      "actual_domain": "technical",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "P01",
+      "category": "public",
+      "fasa": 3,
+      "expected_domain": "public",
+      "expected_depth": "standard",
+      "actual_domain": "public",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.75,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "P02",
+      "category": "public",
+      "fasa": 3,
+      "expected_domain": "public",
+      "expected_depth": "fast",
+      "actual_domain": "public",
+      "actual_depth": "fast",
+      "confidence": 0.9,
+      "latency_s": 0.678,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "P03",
+      "category": "public",
+      "fasa": 3,
+      "expected_domain": "public",
+      "expected_depth": "deep",
+      "actual_domain": "public",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.72,
+      "domain_ok": true,
+      "depth_ok": false
+    },
+    {
+      "id": "P04",
+      "category": "public",
+      "fasa": 3,
+      "expected_domain": "public",
+      "expected_depth": "fast",
+      "actual_domain": "public",
+      "actual_depth": "fast",
+      "confidence": 0.9,
+      "latency_s": 0.577,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "P05",
+      "category": "public",
+      "fasa": 3,
+      "expected_domain": "public",
+      "expected_depth": "fast",
+      "actual_domain": "financial",
+      "actual_depth": "fast",
+      "confidence": 0.65,
+      "latency_s": 0.0,
+      "domain_ok": false,
+      "depth_ok": true
+    },
+    {
+      "id": "G21",
+      "category": "live_informed",
+      "fasa": 3,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.95,
+      "latency_s": 0.635,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "G22",
+      "category": "live_informed",
+      "fasa": 3,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.9,
+      "latency_s": 0.619,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "G23",
+      "category": "live_informed",
+      "fasa": 3,
+      "expected_domain": "general",
+      "expected_depth": "standard",
+      "actual_domain": "general",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.543,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "G24",
+      "category": "live_informed",
+      "fasa": 3,
+      "expected_domain": "general",
+      "expected_depth": "fast",
+      "actual_domain": "general",
+      "actual_depth": "fast",
+      "confidence": 0.9,
+      "latency_s": 0.712,
+      "domain_ok": true,
+      "depth_ok": true
+    },
+    {
+      "id": "G25",
+      "category": "live_informed",
+      "fasa": 3,
+      "expected_domain": "general",
+      "expected_depth": "standard",
+      "actual_domain": "general",
+      "actual_depth": "standard",
+      "confidence": 0.9,
+      "latency_s": 0.688,
+      "domain_ok": true,
+      "depth_ok": true
+    }
+  ]
+}
