@@ -64,3 +64,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
         return response
+
+async def require_auth(request: Request):
+    """Dependency fyrir routes sem krefjast innskráningar."""
+    if not hasattr(request.state, "user") or request.state.user is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Not logged in")
+    return request.state.user
