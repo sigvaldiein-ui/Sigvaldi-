@@ -39,3 +39,13 @@ async def logout():
 async def session(request: Request):
     """Skilar núverandi session stöðu."""
     return await get_session_info(request)
+
+# --- Router fyrir callback á rót (/auth/callback) ---
+# Auðkenni hvíttlistar aðeins /auth/callback, ekki /api/auth/callback
+callback_router = APIRouter(prefix="", tags=["auth-callback"])
+
+@callback_router.get("/auth/callback")
+async def redirect_callback(request: Request):
+    """Tekur við Auðkenni callback og vísar á /api/auth/callback."""
+    params = request.query_params
+    return RedirectResponse(url=f"/api/auth/callback?{params}")

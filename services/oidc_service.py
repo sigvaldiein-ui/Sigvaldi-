@@ -37,6 +37,7 @@ oauth.register(
     client_id=AUDKENNI_CLIENT_ID,
     client_secret=AUDKENNI_CLIENT_SECRET,
     server_metadata_url=f"{AUDKENNI_BASE_URL}/.well-known/openid-configuration",
+    code_challenge_method='S256',
     client_kwargs={
         "scope": "openid profile",
         "token_endpoint_auth_method": "client_secret_basic",

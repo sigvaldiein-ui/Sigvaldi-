@@ -18,6 +18,7 @@ from interfaces.routes.health import router as health_router
 from interfaces.routes.tools import router as tools_router
 from interfaces.routes.checkout import router as checkout_router
 from interfaces.routes.pages import router as pages_router
+from interfaces.routes.auth import callback_router
 from interfaces.routes.analyze import router as analyze_router
 from interfaces.routes.chat import router as chat_router
 from interfaces.routes.auth import router as auth_router
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(tools_router)
     app.include_router(checkout_router)
     app.include_router(analyze_router)
+    app.include_router(callback_router)
     app.include_router(chat_router)
     app.include_router(auth_router)
 
