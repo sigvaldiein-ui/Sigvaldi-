@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def login(request: Request):
     """Hefur innskráningarferli — sendir á Auðkenni."""
     authorization_url = await build_login_url(request)
-    return RedirectResponse(url=authorization_url)
+    return RedirectResponse(url=authorization_url["url"])
 
 
 @router.get("/callback")

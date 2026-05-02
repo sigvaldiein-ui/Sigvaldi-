@@ -3,12 +3,14 @@ load_dotenv("/workspace/.env", override=True)
 
 """App factory — flutt úr web_server.py (Sprint 71 A.4e)."""
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from starlette.middleware.sessions import SessionMiddleware
 from interfaces.middleware.security import SecurityHeadersMiddleware
 from interfaces.middleware.auth import AuthMiddleware
 from interfaces.middleware.errors import validation_exception_handler
@@ -41,6 +43,7 @@ def create_app() -> FastAPI:
     app.exception_handler(RequestValidationError)(validation_exception_handler)
 
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET"))
     app.add_middleware(AuthMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
