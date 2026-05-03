@@ -140,6 +140,224 @@ async def _call_general_chain(system_prompt: str, query: str):
     return (None, None, None)
 
 
+
+from fastapi.responses import StreamingResponse
+import json as _json
+
+async def _stream_general_chain(system_prompt: str, query: str):
+    """OpenRouter streaming — sendir token jafnóðum til notanda."""
+    from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        yield f"data: {_json.dumps({'error': 'OPENROUTER_API_KEY missing'})}\n\n"
+        return
+    if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
+        yield f"data: {_json.dumps({'error': 'ZDR_CONFIRMED=false'})}\n\n"
+        return
+    
+    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
+    async with httpx.AsyncClient(timeout=180.0) as c:
+        for idx, model in enumerate(chain):
+            try:
+                async with c.stream(
+                    "POST",
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "HTTP-Referer": "https://alvitur.is",
+                        "X-Title": "Alvitur",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"SPURNING: {query}"},
+                        ],
+                        "max_tokens": 4096,
+                        "temperature": 0.2,
+                        "stream": True,
+                    },
+                ) as response:
+                    if response.status_code == 200:
+                        full_content = ""
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                                try:
+                                    data = _json.loads(line[6:])
+                                    delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if delta:
+                                        full_content += delta
+                                        yield f"data: {_json.dumps({'token': delta, 'model': model})}\n\n"
+                                except Exception:
+                                    pass
+                        yield f"data: {_json.dumps({'done': True, 'content': full_content, 'model': model, 'tier': 'general'})}\n\n"
+                        return
+                    else:
+                        logger.warning(f"[SSE] model={model} status={response.status_code}")
+            except Exception as e:
+                logger.warning(f"[SSE] model={model} exc={type(e).__name__}: {e}")
+        yield f"data: {_json.dumps({'error': 'All models failed'})}\n\n"
+
+
+
+import json as _json
+
+async def _stream_local_vault(system_prompt: str, query: str):
+    """Local vLLM streaming — sendir token jafnóðum (Sprint 79.2)."""
+    from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
+    try:
+        async with httpx.AsyncClient(timeout=float(VAULT_LOCAL_TIMEOUT)) as c:
+            async with c.stream(
+                "POST",
+                VAULT_LOCAL_URL,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": VAULT_LOCAL_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query},
+                    ],
+                    "max_tokens": 4096,
+                    "temperature": 0.3,
+                    "top_p": 0.9,
+                    "stream": True,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                },
+            ) as response:
+                if response.status_code == 200:
+                    full_content = ""
+                    model_name = VAULT_LOCAL_MODEL.rsplit("/", 1)[-1]
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                            try:
+                                data = _json.loads(line[6:])
+                                delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if delta:
+                                    full_content += delta
+                                    yield f"data: {_json.dumps({'token': delta, 'model': model_name})}\n\n"
+                            except Exception:
+                                pass
+                    yield f"data: {_json.dumps({'done': True, 'content': full_content, 'model': model_name, 'tier': 'vault'})}\n\n"
+                else:
+                    yield f"data: {_json.dumps({'error': f'vLLM status={response.status_code}'})}\n\n"
+    except Exception as e:
+        yield f"data: {_json.dumps({'error': f'vLLM exc: {type(e).__name__}: {e}'})}\n\n"
+
+
+
+
+async def _stream_openrouter(system_prompt: str, query: str):
+    """OpenRouter streaming með fallback (Sprint 79.2)."""
+    from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        logger.warning("[SSE] OpenRouter lykil vantar — notar local vLLM")
+        return
+    if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
+        logger.warning("[SSE] ZDR_CONFIRMED=false — notar local vLLM")
+        return
+    
+    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
+    async with httpx.AsyncClient(timeout=180.0) as c:
+        for idx, model in enumerate(chain):
+            try:
+                async with c.stream(
+                    "POST",
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "HTTP-Referer": "https://alvitur.is",
+                        "X-Title": "Alvitur",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"SPURNING: {query}"},
+                        ],
+                        "max_tokens": 4096,
+                        "temperature": 0.2,
+                        "stream": True,
+                    },
+                ) as response:
+                    if response.status_code == 200:
+                        full_content = ""
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                                try:
+                                    data = _json.loads(line[6:])
+                                    delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if delta:
+                                        full_content += delta
+                                        yield f"data: {_json.dumps({'token': delta, 'model': model.split('/')[-1], 'source': 'openrouter'})\n\n"
+                                except Exception:
+                                    pass
+                        yield f"data: {_json.dumps({'done': True, 'content': full_content, 'model': model, 'tier': 'general', 'source': 'openrouter'})\n\n"
+                        return
+            except Exception as e:
+                logger.warning(f"[SSE] OpenRouter {model} villa: {type(e).__name__}")
+        logger.warning("[SSE] Allar OpenRouter tilraunir mistókust")
+
+
+
+async def stream_chat(request: Request):
+    """SSE streaming endapunktur — Sprint 79.
+    Reynir OpenRouter fyrst, fellur í local vLLM ef það mistekst.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+    
+    query = body.get("query", "").strip()
+    if not query:
+        return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
+    
+    tier = body.get("tier", "general").lower()
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur"]) else "general"
+    rag_context = _get_rag_context(query, domain)
+    
+    # Velja system prompt eftir tier
+    if tier == "vault":
+        sys_prompt = _vault_system_prompt_chat(query, "", rag_context, now_str)
+    else:
+        sys_prompt = _general_system_prompt(query, "", rag_context, now_str)
+    
+    # Spr. 79.2: Vault beint í local, General reynir OpenRouter fyrst
+    async def _stream_with_fallback():
+        if tier == "vault":
+            async for token in _stream_local_vault(sys_prompt, query):
+                yield token
+            return
+        
+        # General: reynum OpenRouter fyrst
+        key = os.environ.get("OPENROUTER_API_KEY", "")
+        zdr = os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false")
+        if key and zdr == "true":
+            try:
+                async for token in _stream_openrouter(sys_prompt, query):
+                    yield token
+                return
+            except Exception as e:
+                logger.warning(f"[SSE] OpenRouter féll — notar local vLLM: {type(e).__name__}")
+        
+        # Fallback í local
+        async for token in _stream_local_vault(sys_prompt, query):
+            yield token
+    
+    return StreamingResponse(
+        _stream_with_fallback(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
 async def handle_chat(request: Request, query: str, tier: str = "general", ragnum=None, attached_files: list | None = None):
     """Sprint 61 — sovereign-aware chat endpoint.
     Tier 'vault' -> local vLLM only (no cloud fallback, 503 if down).

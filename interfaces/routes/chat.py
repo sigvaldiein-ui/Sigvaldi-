@@ -4,13 +4,20 @@ from interfaces.middleware.auth import require_auth
 from fastapi.responses import JSONResponse
 import os, hashlib, logging
 
-from interfaces.chat_routes import handle_chat
+from interfaces.chat_routes import handle_chat, stream_chat
 from interfaces.utils.quota import FREE_QUOTA, _quota_tracker_chat, _er_beta_fras, _er_beta_ip, _promota_beta
 from interfaces.utils.openrouter import _log_intent
 
 logger = logging.getLogger("alvitur.web")
 
 router = APIRouter()
+
+
+@router.post("/api/chat/stream")
+async def chat_stream_endpoint(request: Request):
+    """Sprint 79: SSE streaming endpoint."""
+    return await stream_chat(request)
+
 
 @router.post("/api/chat")
 async def chat_endpoint(request: Request, user = None):
