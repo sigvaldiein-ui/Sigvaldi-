@@ -72,4 +72,4 @@ async def chat_endpoint(request: Request, user = None):
             "message": "Þú hefur nýtt þr þr 5 ókeypis beiðnir. Uppfærðu til að halda áfram.",
         })
 
-    return await handle_chat(request, query, tier)
+    return await handle_chat(request, query, tier, _rag_result)

@@ -139,7 +139,7 @@ async def _call_general_chain(system_prompt: str, query: str):
     return (None, None, None)
 
 
-async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list | None = None):
+async def handle_chat(request: Request, query: str, tier: str = "general", ragnum=None, attached_files: list | None = None):
     """Sprint 61 — sovereign-aware chat endpoint.
     Tier 'vault' -> local vLLM only (no cloud fallback, 503 if down).
     Tier 'general' -> OpenRouter chain Haiku -> Sonnet -> gpt-4o-mini.
@@ -148,7 +148,10 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     logger.info(f"[ALVITUR] chat_routes Sprint61 tier={tier} query_len={len(query)} files={len(files)}")
 
     domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd", "gagnavernd"]) else "general"
-    rag = _get_rag_context(query, domain)
+    if ragnum and ragnum.chunks:
+        rag = "\n\n".join(c.get("text","")[:500] for c in ragnum.chunks[:3])
+    else:
+        rag = _get_rag_context(query, domain)
 
     # Sprint 70 D.5 — sovereign refusal (gildir fyrir bada tier-ar i chat_routes)
     if rag.startswith("__RAG_REFUSAL__:"):
