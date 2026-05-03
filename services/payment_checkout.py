@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Checkout + greiðslur — úr payment_handler.py"""
 from services.payment_config import *
-
 def bua_til_checkout(chat_id: int, plan: str, return_url: str = None) -> dict:
     """
     Býr til Straumur Hosted Checkout lotu.
