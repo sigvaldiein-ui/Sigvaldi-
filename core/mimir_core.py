@@ -12,8 +12,8 @@ from langchain.tools import tool
 # ==========================================
 # 🛡️ REKSTRARHEILLEIKI (SOP)
 # ==========================================
-ENV_PATH = '/workspace/mimir_net/config/.env'
-SANDBOX_DIR = '/workspace/mimir_net/sandbox'
+ENV_PATH = '/workspace/.env'
+SANDBOX_DIR = '/workspace/Sigvaldi-/sandbox'
 
 if not os.path.exists(ENV_PATH):
     print("❌ ERROR: .env skrá vantar í /config/. Stöðva ræsingu.")
@@ -78,7 +78,7 @@ def upload_to_drive(file_name: str) -> str:
     local_path = os.path.join(SANDBOX_DIR, file_name)
     if not os.path.exists(local_path):
         # Leita í rót ef hún er ekki í sandbox
-        local_path = os.path.join('/workspace/mimir_net', file_name)
+        local_path = os.path.join('/workspace/Sigvaldi-', file_name)
         
     if not os.path.exists(local_path):
         return f"Villa: fann ekki skrána {file_name} til að hlaða upp."
@@ -111,7 +111,7 @@ llm = ChatOpenAI(
 system_prompt = (
     "Þú ert Mímir Core, Alhliða gervigreind (AGI) og MBA/AI ráðgjafi Sigvalda. "
     "Þitt hlutverk er að veita hnitmiðuð, beitt og fagleg svör byggð á gögnum. "
-    "Þú vinnur í 'Hreinu herbergi' (/workspace/mimir_net/sandbox). "
+    "Þú vinnur í 'Hreinu herbergi' (/workspace/Sigvaldi-/sandbox). "
     "Allar greiningar skulu vera hnitmiðaðar og miða að því að hámarka virði AI.is."
 )
 

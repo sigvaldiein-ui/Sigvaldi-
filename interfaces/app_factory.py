@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     app.add_middleware(AuthMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
-    _static_dir = "/workspace/mimir_net/interfaces/static"
+    _static_dir = "/workspace/Sigvaldi-/interfaces/static"
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
     return app

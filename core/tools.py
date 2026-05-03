@@ -21,7 +21,7 @@ import zoneinfo
 from langchain_core.tools import tool
 from dotenv import load_dotenv
 
-load_dotenv('/workspace/mimir_net/config/.env')
+load_dotenv('/workspace/.env')
 
 
 @tool

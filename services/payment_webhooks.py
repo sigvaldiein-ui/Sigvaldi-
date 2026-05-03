@@ -172,7 +172,7 @@ def vinna_ur_webhook(payload: dict) -> dict:
     try:
         # Reyna að importa db_manager
         import sys
-        sys.path.insert(0, "/workspace/mimir_net/core")
+        sys.path.insert(0, "/workspace/Sigvaldi-/core")
         from db_manager import add_user
         add_user(
             chat_id=chat_id,

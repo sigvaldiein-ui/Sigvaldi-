@@ -51,7 +51,7 @@ except ImportError:
 # --- Stillingar ---
 
 # Lesa úr .env skrám á RunPod
-ENV_SLOD = Path("/workspace/mimir_net/config/.env")
+ENV_SLOD = Path("/workspace/.env")
 
 # Straumur API slóðir
 # STAGING: https://checkout-api.staging.straumur.is/api/v1
