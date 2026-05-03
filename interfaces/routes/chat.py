@@ -1,3 +1,4 @@
+from core.rag_orchestrator import retrieve_legal_context
 from fastapi import APIRouter, Request, Depends, HTTPException
 from interfaces.middleware.auth import require_auth
 from fastapi.responses import JSONResponse
@@ -28,6 +29,14 @@ async def chat_endpoint(request: Request, user = None):
     tier = _tier_body if _tier_body in ("general", "vault") else _tier_header
     if not query:
         return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
+
+    # Sprint 78: RAG retrieval fyrir Vitann (lagaheimildir)
+    _rag_result = None
+    if tier != "vault":
+        _rag_result = retrieve_legal_context(query, "legal", "general", tenant_id=None)
+        if _rag_result and _rag_result.chunks:
+            _context = "\n\nSAMHENGI (lagaheimildir):\n" + "\n---\n".join(c.get("text","")[:500] for c in _rag_result.chunks[:3])
+            query = query + _context
 
     # Sprint 46 Phase 1: IP quota check for /api/chat (was missing)
     import hashlib as _hl
