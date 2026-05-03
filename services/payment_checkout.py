@@ -2,6 +2,7 @@
 """Checkout + greiðslur — úr payment_handler.py (Sprint 76b skipting)"""
 from services.payment_config import *
 
+
 def bua_til_checkout(chat_id: int, plan: str, return_url: str = None) -> dict:
     """
     Býr til Straumur Hosted Checkout lotu.

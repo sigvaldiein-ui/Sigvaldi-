@@ -3,6 +3,7 @@
 from services.payment_config import *
 from services.payment_checkout import *
 
+
     """
     Reiknar HMAC-SHA256 undirskrift skv. Straumur forskrift.
     Docs: https://docs.straumur.is/webhooks/payment/hmac-validation
