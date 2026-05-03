@@ -16,6 +16,7 @@ from interfaces.middleware.auth import AuthMiddleware
 from interfaces.middleware.errors import validation_exception_handler
 from interfaces.routes.health import router as health_router
 from interfaces.routes.tools import router as tools_router
+from interfaces.routes.hvelfing import router as hvelfing_router
 from interfaces.routes.checkout import router as checkout_router
 from interfaces.routes.pages import router as pages_router
 from interfaces.routes.auth import callback_router
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(callback_router)
     app.include_router(chat_router)
     app.include_router(auth_router)
+    app.include_router(hvelfing_router)
 
     app.exception_handler(RequestValidationError)(validation_exception_handler)
 
