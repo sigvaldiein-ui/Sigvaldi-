@@ -97,7 +97,7 @@ def retrieve_legal_context(
         # Adaptive top_k
         results = client.query_points(
             collection_name=_COLLECTION,
-            query_vector=vec,
+            query=vec,
             limit=top_k,
             query_filter=filt,
             with_payload=True,
@@ -108,7 +108,7 @@ def retrieve_legal_context(
         if results and results[0].score < _SCORE_HIGH and top_k == _TOP_K_DEFAULT:
             results = client.query_points(
                 collection_name=_COLLECTION,
-                query_vector=vec,
+                query=vec,
                 limit=_TOP_K_EXPANDED,
                 query_filter=filt,
                 with_payload=True,
@@ -161,7 +161,7 @@ def retrieve_legal_context(
             if p.get("chunk_level") == "malsgrein" and p.get("parent_chunk_id"):
                 parent = client.query_points(
                     collection_name=_COLLECTION,
-                    query_vector=vec,
+                    query=vec,
                     limit=1,
                     query_filter=Filter(must=[
                         FieldCondition(key="chunk_id",
