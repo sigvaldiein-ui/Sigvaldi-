@@ -12,7 +12,7 @@ logger = logging.getLogger("alvitur.web")
 router = APIRouter()
 
 @router.post("/api/chat")
-async def chat_endpoint(request: Request, user = Depends(require_auth)):
+async def chat_endpoint(request: Request, user = None):
     """Sprint 45: Production chat endpoint.
     Sprint 46 Phase 1: Quota check + CF-Connecting-IP fix.
     """

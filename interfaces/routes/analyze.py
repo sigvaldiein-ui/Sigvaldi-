@@ -19,7 +19,7 @@ logger = logging.getLogger("alvitur.web")
 router = APIRouter()
 
 @router.post("/api/analyze-document")
-async def analyze_document(request: Request, user = Depends(require_auth), file: Optional[UploadFile] = File(None), query: Optional[str] = Form(None)):
+async def analyze_document(request: Request, user = None, file: Optional[UploadFile] = File(None), query: Optional[str] = Form(None)):
     """
     Sprint 21 — PDF Analyze Endpoint (Lag 1).
     Tekur við PDF skrá, les texta með PyMuPDF og búr til grófótta greiningu.
