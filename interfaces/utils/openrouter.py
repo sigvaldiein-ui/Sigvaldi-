@@ -50,7 +50,7 @@ def _wallet_preflight(is_vault=False):
             detail="Þ jónustan er tímabundið ótilðæk. Reyndu aftur eftir augnablik.")
 
 # ───────────────────────────────────────────────────────────
-SECURE_DOCS_DIR = Path("/workspace/mimir_net/secure_docs")
+SECURE_DOCS_DIR = Path("/workspace/Sigvaldi-/data/secure_docs")
 SECURE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
 
