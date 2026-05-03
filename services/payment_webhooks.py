@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Webhook + HMAC vinnsla — úr payment_handler.py (Sprint 76b skipting)"""
+"""Webhook + HMAC vinnsla — úr payment_handler.py"""
 from services.payment_config import *
 from services.payment_checkout import *
 
-
+def reikna_hmac(payload: dict, hmac_secret: str) -> str:
     """
     Reiknar HMAC-SHA256 undirskrift skv. Straumur forskrift.
     Docs: https://docs.straumur.is/webhooks/payment/hmac-validation

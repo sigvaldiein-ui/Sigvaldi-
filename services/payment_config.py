@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 payment_handler.py
 ------------------
@@ -133,4 +135,3 @@ def fa_hmac_secret() -> str:
 # HOSTED CHECKOUT — búa til greiðslulotu
 # =============================================================
 
-# --- Búið til úr payment_handler.py (Sprint 76b skipting) ---

@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Checkout + greiðslur — úr payment_handler.py (Sprint 76b skipting)"""
+"""Checkout + greiðslur — úr payment_handler.py"""
 from services.payment_config import *
 
 def bua_til_checkout(chat_id: int, plan: str, return_url: str = None) -> dict:
@@ -151,4 +152,3 @@ def athuga_stodu(checkout_reference: str) -> dict:
 # WEBHOOK — meðhöndla tilkynningu frá Straumi
 # =============================================================
 
-def reikna_hmac(payload: dict, hmac_secret: str) -> str:
