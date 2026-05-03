@@ -77,6 +77,48 @@ def skra_samtal(user_id: int, intent: str, tokens_used: int = 0,
         conn.close()
 
 
+
+
+# --- Audit Log (Sprint 79) ---
+
+def skra_audit(
+    user_id: int | None = None,
+    action: str = "UNKNOWN",
+    tier: str = "general",
+    query_text: str | None = None,
+    response_text: str | None = None,
+    tokens_used: int = 0,
+    model: str = "unknown",
+    pipeline_source: str | None = None,
+    rag_chunks_count: int = 0,
+    client_ip: str | None = None,
+    success: bool = True,
+    error_code: str | None = None,
+    metadata: str = "{}",
+) -> None:
+    """Skráir atburð í audit_log_v2 (mimir_memory.db)."""
+    import hashlib
+
+    query_hash = hashlib.sha256((query_text or "").encode()).hexdigest()[:16] if query_text else None
+    response_hash = hashlib.sha256((response_text or "").encode()).hexdigest()[:16] if response_text else None
+    client_ip_hash = hashlib.sha256((client_ip or "").encode()).hexdigest()[:16] if client_ip else None
+
+    try:
+        conn = sqlite3.connect("/workspace/Sigvaldi-/data/mimir_memory.db")
+        conn.execute(
+            """INSERT INTO audit_log_v2 
+               (user_id, action, tier, query_hash, response_hash, tokens_used, model, pipeline_source, rag_chunks_count, client_ip_hash, success, error_code, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, action, tier, query_hash, response_hash, tokens_used, model, pipeline_source, rag_chunks_count, client_ip_hash, success, error_code, metadata),
+        )
+        conn.commit()
+        logger.debug(f"[AUDIT] {action} skráð — user={user_id} success={success}")
+    except Exception as e:
+        logger.warning(f"[AUDIT] Villa við skráningu: {e}")
+    finally:
+        conn.close()
+
+
 def generate_daily_report() -> str:
     """Býr til daglega samantekt — admin."""
     conn = tengja()

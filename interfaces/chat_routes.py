@@ -9,6 +9,7 @@ import os, httpx, logging
 from datetime import datetime, timezone
 
 logger = logging.getLogger("alvitur.web")
+from core.db_manager import skra_audit
 
 # Sprint 61.2: Vault concurrency guard — serialize til að forðast OOM á A40 (40/46 GB)
 # Max 1 samtímis vault call. General tier óbreytt (cloud handle concurrency).
@@ -202,6 +203,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", ragnu
                 "error_code": "vault_local_unavailable",
                 "detail": "Trúnaðarþjónusta tímabundið ekki tiltæk. Local AI module er að ræsast — reyndu aftur eftir 1 mínútu.",
             })
+        skra_audit(action="CHAT_QUERY", tier=tier, query_text=query, success=True)
         return JSONResponse(content={
             "success": True,
             "response": content,
@@ -233,6 +235,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", ragnu
                 "detail": "Þjónusta tímabundið ekki aðgengileg. Reyndu eftir augnablik.",
             })
         logger.info(f"[ALVITUR] Sprint62G sovereign OK model={model}")
+        skra_audit(action="CHAT_QUERY", tier=tier, query_text=query, success=True)
         return JSONResponse(content={
             "success": True,
             "response": content,
@@ -240,6 +243,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", ragnu
             "domain": domain,
             "tier": "general_fallback",
         })
+        skra_audit(action="CHAT_QUERY", tier=tier, query_text=query, success=True)
     return JSONResponse(content={
         "success": True,
         "response": content,
