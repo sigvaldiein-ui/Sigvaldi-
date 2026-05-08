@@ -3133,6 +3133,28 @@ def _wallet_preflight(is_vault=False):
 
 # ───────────────────────────────────────────────────────────
 # Sprint 80b: SECURE_DOCS_DIR removed — Zero-Disk Hvelfingin uses /dev/shm
+
+def _get_session_id(request):
+    """Sprint 80b Gate 4: Extract JWT sub as session ID.
+    Falls back to IP if no valid JWT (unauthenticated routes).
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            import jwt as _jwt_mod
+            token = auth.split(" ", 1)[1]
+            payload = _jwt_mod.decode(token, options={"verify_signature": False})
+            sub = payload.get("sub", "")
+            if sub:
+                return "jwt:" + sub
+        except Exception:
+            pass
+    return (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+ — Zero-Disk Hvelfingin uses /dev/shm
 MAX_PDF_SIZE = 100 * 1024 * 1024  # Sprint 80b: raised to 100 MB (Cloudflare Free limit)
 
 
@@ -3177,22 +3199,18 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         _master_key_txt = os.environ.get("ALVITUR_MASTER_KEY_HASH", "")
         _req_key_txt = request.headers.get("X-Master-Key", "") if request else ""
         _is_admin_txt = bool(_master_key_txt and _req_key_txt and _hl.sha256(_req_key_txt.encode()).hexdigest() == _master_key_txt)
-        _client_ip_txt = (
-            request.headers.get("CF-Connecting-IP")
-            or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-            or (request.client.host if request.client else "unknown")
-        )
+        _session_id_txt = _get_session_id(request)
         # ── Sprint 64 A1: Beta check á text-only path (var vantar) ──
         # Speglarar logic í /api/chat (line ~3593) og analyze-document file-path (line ~3294)
         if _er_beta_fras(query or ""):
-            _promota_beta(_client_ip_txt)
-            logger.info(f"[BETA] {_client_ip_txt} promotaður í beta-tier (7d) via text-only")
-        _is_beta_txt = _er_beta_ip(_client_ip_txt)
+            _promota_beta(_session_id_txt)
+            logger.info(f"[BETA] {_session_id_txt} promotaður í beta-tier (7d) via text-only")
+        _is_beta_txt = _er_beta_ip(_session_id_txt)
         # ── /Sprint 64 A1 beta check ──
         _log_intent("analyze-document/text-only", query, None, None, _tier_hdr)
-        _quota_count_txt = _quota_tracker_doc.get(_client_ip_txt, 0) + 1
+        _quota_count_txt = _quota_tracker_doc.get(_session_id_txt, 0) + 1
         if not _is_admin_txt and not _is_beta_txt:
-            _quota_tracker_doc[_client_ip_txt] = _quota_count_txt
+            _quota_tracker_doc[_session_id_txt] = _quota_count_txt
         if _quota_count_txt > FREE_QUOTA and not _is_admin_txt and not _is_beta_txt:
             return JSONResponse(status_code=403, content={
                 "success": False,
@@ -3347,10 +3365,10 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     _req_key = request.headers.get("X-Master-Key", "") if request else ""
     import hashlib as _hl
     _is_admin = bool(_master_key and _req_key and _hl.sha256(_req_key.encode()).hexdigest() == _master_key)
-    _client_ip = (request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else "unknown"))
+    _session_id_file = _get_session_id(request)
     # Sprint 62 Patch A.1: define _is_beta early (was defined 240 lines later, causing NameError)
     try:
-        _is_beta = _er_beta_ip(_client_ip)
+        _is_beta = _er_beta_ip(_session_id_file)
     except Exception:
         _is_beta = False
     try:
@@ -3360,9 +3378,9 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         _fn, _fsize = None, None
     _log_intent("analyze-document/file", query, _fn, _fsize,
                 request.headers.get("X-Alvitur-Tier", "general") if request else "general")
-    _quota_count = _quota_tracker_doc.get(_client_ip, 0) + 1
+    _quota_count = _quota_tracker_doc.get(_session_id_file, 0) + 1
     if not _is_admin:
-        _quota_tracker_doc[_client_ip] = _quota_count
+        _quota_tracker_doc[_session_id_file] = _quota_count
     if _quota_count > FREE_QUOTA and not _is_admin and not _is_beta:
         return JSONResponse(status_code=403, content={
             "success": False,
@@ -3640,7 +3658,7 @@ async def chat_endpoint(request: Request):
     _req_key = request.headers.get("X-Master-Key", "")
     _is_admin = bool(_master_key and _req_key and _hl.sha256(_req_key.encode()).hexdigest() == _master_key)
     # CF-Connecting-IP has priority (real user IP behind Cloudflare)
-    _client_ip = (
+    _session_id_file = (
         request.headers.get("CF-Connecting-IP")
         or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or (request.client.host if request.client else "unknown")
@@ -3648,15 +3666,15 @@ async def chat_endpoint(request: Request):
     # ── Sprint 62: Beta check ──
     # Ef notandi skrifar beta-frasa → promotaður í 7 daga
     if _er_beta_fras(query):
-        _promota_beta(_client_ip)
-        logger.info(f"[BETA] {_client_ip} promotaður í beta-tier (7d)")
-    _is_beta = _er_beta_ip(_client_ip)
+        _promota_beta(_session_id_file)
+        logger.info(f"[BETA] {_session_id_file} promotaður í beta-tier (7d)")
+    _is_beta = _er_beta_ip(_session_id_file)
     # ── /Sprint 62 Beta check ──
     _log_intent("chat", query, None, None, tier)
 
-    _quota_count = _quota_tracker_chat.get(_client_ip, 0) + 1
+    _quota_count = _quota_tracker_chat.get(_session_id_file, 0) + 1
     if not _is_admin and not _is_beta:
-        _quota_tracker_chat[_client_ip] = _quota_count
+        _quota_tracker_chat[_session_id_file] = _quota_count
     # Sprint 64 A1: samræma gate við tracker-update (bæta not _is_beta)
     if _quota_count > FREE_QUOTA and not _is_admin and not _is_beta:
         return JSONResponse(status_code=403, content={
