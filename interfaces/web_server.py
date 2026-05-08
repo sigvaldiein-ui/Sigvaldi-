@@ -101,6 +101,7 @@ logging.basicConfig(
 import asyncio as _aio_ws
 _VAULT_SEMAPHORE_WS = _aio_ws.Semaphore(1)
 logger = logging.getLogger("alvitur.web")
+from core.zero_disk import touch_session, check_pressure
 
 # Sprint 54: pipeline_adapter skilar alltaf None — fallback path active
 
