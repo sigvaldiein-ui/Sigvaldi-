@@ -3109,9 +3109,8 @@ def _wallet_preflight(is_vault=False):
             detail="Þ jónustan er tímabundið ótilðæk. Reyndu aftur eftir augnablik.")
 
 # ───────────────────────────────────────────────────────────
-SECURE_DOCS_DIR = Path("/workspace/mimir_net/secure_docs")
-SECURE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-MAX_PDF_SIZE = 20 * 1024 * 1024  # Sprint 27 S2: raised to 20 MB
+# Sprint 80b: SECURE_DOCS_DIR removed — Zero-Disk Hvelfingin uses /dev/shm
+MAX_PDF_SIZE = 100 * 1024 * 1024  # Sprint 80b: raised to 100 MB (Cloudflare Free limit)
 
 
 
@@ -3414,19 +3413,13 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 except _cf.TimeoutError:
                     raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
         else:
-            # GENERAL: disk write + cleanup
-            skra_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-            skra_slod = SECURE_DOCS_DIR / f"doc_{skra_id}.pdf"
-            try:
-                skra_slod.write_bytes(efni)
-                with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                    fut = ex.submit(_parse_pdf, efni)
-                    try:
-                        sidur, texti_hlutar = fut.result(timeout=90)
-                    except _cf.TimeoutError:
-                        raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
-            finally:
-                if skra_slod.exists(): skra_slod.unlink()
+            # GENERAL: Zero-Disk — same memory-only pattern as VAULT (Sprint 80b)
+            with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(_parse_pdf, efni)
+                try:
+                    sidur, texti_hlutar = fut.result(timeout=90)
+                except _cf.TimeoutError:
+                    raise HTTPException(status_code=504, detail="Vinnsla tók of langan tíma.")
         
         heildartexti = "\n\n".join(texti_hlutar)
 
