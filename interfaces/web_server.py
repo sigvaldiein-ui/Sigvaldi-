@@ -3154,7 +3154,6 @@ def _get_session_id(request):
         or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or (request.client.host if request.client else "unknown")
     )
- — Zero-Disk Hvelfingin uses /dev/shm
 MAX_PDF_SIZE = 100 * 1024 * 1024  # Sprint 80b: raised to 100 MB (Cloudflare Free limit)
 
 
