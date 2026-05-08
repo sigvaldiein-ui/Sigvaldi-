@@ -40,6 +40,7 @@ Sprint 20 — V5.1 B2B Evidence Engine (Aðal áætlun, innleiðsla Per):
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 # Sprint 63 Track A: Load .env BEFORE any os.environ.get() calls
 # Sprint 63 Track B1: env-aware loading — .env.dev if ALVITUR_ENV=dev
@@ -193,10 +194,32 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 # ─── FastAPI forrit ────────────────────────────────────────────────────────────
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Sprint 80b: Zero-Disk Hvelfingin lifespan.
+    Gate 9: Swap fail-loud — refuses to start if swap is active.
+    Gate 11: /dev/shm pressure monitoring.
+    """
+    # Startup
+    from core.zero_disk import setup_zero_disk, idle_cleanup_loop
+    setup_zero_disk()
+    cleanup_task = asyncio.create_task(idle_cleanup_loop())
+    logger = logging.getLogger("alvitur.web")
+    logger.info("Zero-Disk Hvelfingin: /dev/shm mounted, swap asserted, cleanup loop started")
+    yield
+    # Shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("Zero-Disk Hvelfingin: cleanup loop stopped")
+
 app = FastAPI(
     title="Alvitur Enterprise AI",
     docs_url=None,   # Slökkva á Swagger UI í framleiðslu
     redoc_url=None,  # Slökkva á ReDoc í framleiðslu
+    lifespan=lifespan,
 )
 
 # Sprint 43b: Custom 422 handler — add error_code for frontend compatibility
