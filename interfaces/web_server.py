@@ -3691,6 +3691,31 @@ async def chat_endpoint(request: Request):
 
 
 # ── Sprint 28: K6 — /oryggi trust page ───────────────────────────────────────
+
+
+# ─── Sprint 80b: Zero-Disk admin endpoint ─────────────────────────────────────
+@app.get("/admin/zero-disk-status")
+async def zero_disk_status(request: Request):
+    """Gate 11: Return /dev/shm usage for monitoring."""
+    from core.zero_disk import _get_shm_usage, check_pressure, ZERO_DISK_ROOT
+    used, total = _get_shm_usage()
+    ratio = used / total if total > 0 else 0
+    # Get per-session size summary
+    sessions = {}
+    if ZERO_DISK_ROOT.exists():
+        for d in ZERO_DISK_ROOT.iterdir():
+            if d.is_dir():
+                total_s = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+                sessions[d.name] = total_s
+    return {
+        "shm_used_bytes": used,
+        "shm_total_bytes": total,
+        "shm_ratio": round(ratio, 4),
+        "pressure_active": check_pressure(),
+        "session_count": len(sessions),
+        "sessions": {k: {"bytes": v, "mb": round(v/1024/1024, 2)} for k, v in sessions.items()},
+    }
+
 @app.get("/oryggi", response_class=HTMLResponse)
 async def oryggi_page():
     """Sprint 29 T1 — Trust Center"""
