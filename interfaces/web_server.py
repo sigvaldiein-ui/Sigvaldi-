@@ -3365,6 +3365,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
     import hashlib as _hl
     _is_admin = bool(_master_key and _req_key and _hl.sha256(_req_key.encode()).hexdigest() == _master_key)
     _session_id_file = _get_session_id(request)
+    touch_session(_session_id_file)  # Sprint 80b Gate 6
     # Sprint 62 Patch A.1: define _is_beta early (was defined 240 lines later, causing NameError)
     try:
         _is_beta = _er_beta_ip(_session_id_file)
