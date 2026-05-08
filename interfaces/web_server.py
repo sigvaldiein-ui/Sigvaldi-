@@ -2124,8 +2124,8 @@ document.addEventListener('DOMContentLoaded', function() {
       showStatus("error", "Ógild skráargerð. Styður PDF, Word og Excel.");
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      showStatus("error", "Skráin er of stór. Hámark 20 MB.");
+    if (file.size > 100 * 1024 * 1024) {
+      showStatus("error", "Skráin er of stór (" + formatSize(file.size) + "). Hámark er 100 MB.");
       return;
     }
     currentFile = file;
@@ -2236,7 +2236,7 @@ document.addEventListener('DOMContentLoaded', function() {
           showStatus("error", em);
           return;
         }
-        if (err.status === 413) { showStatus("error", "Skráin er of stór. Hámark 20 MB."); return; }
+        if (err.status === 413) { showStatus("error", "Skráin er of stór (" + formatSize(file.size) + "). Hámark er 100 MB."); return; }
         if (err.status === 415) { showStatus("error", "Ógild skráargerð."); return; }
         if (err.status === 429) { showStatus("error", "Of margar beiðnir. Reyndu aftur eftir stund."); return; }
         showStatus("error", d.error || "Villa í þjónustu. Reyndu aftur síðar.");
