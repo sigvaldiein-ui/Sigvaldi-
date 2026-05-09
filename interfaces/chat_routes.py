@@ -18,15 +18,15 @@ _VAULT_SEMAPHORE = _aio.Semaphore(1)
 
 def _get_rag_context(query: str, domain: str) -> str:
     if domain != "legal":
-        return ""
+        return "\n""
     keywords = ["persónuvernd", "gagnavernd", "lög", "réttur", "heimild", "lag", "samþykki"]
     if any(kw in query.lower() for kw in keywords):
-        return """
+        return "\n"""
 [Heimildir]
 • Persónuverndarlög nr. 90/2018, 15. gr.: Réttur aðila til upplýsinga um meðferð persónuupplýsinga.
 • Upplýsingalög nr. 142/2012: Almennur aðgangur að opinberum gögnum.
 """
-    return ""
+    return "\n""
 
 
 async def _get_search_context(query: str, domain: str) -> str:
@@ -47,14 +47,14 @@ async def _get_search_context(query: str, domain: str) -> str:
                 if c.get('snippet'):
                     lines.append(f"  {c['snippet']}")
             logger.info(f"[AUDIT] chat_routes using web_search citations={len(result['citations'])}")
-            return "
+            return "\n"
 ".join(lines)
         else:
             logger.info(f"[AUDIT] chat_routes web_search returned no citations (fallback to RAG)")
     except Exception as e:
         logger.error(f"[AUDIT] chat_routes web_search failed: {type(e).__name__}: {e}")
 
-    return ""
+    return "\n""
 
 
 def _estimate_tokens(text: str) -> int:
