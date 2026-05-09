@@ -127,7 +127,6 @@ async def search_web(query: str, max_results: int = 5) -> Optional[Dict]:
     citations = deduplicate(citations)
 
     # Audit log
-    logger.info(f"[AUDIT] web_search query="{mask_pii_for_log(query)}" citations={len(citations)} raw_count={len(raw_results)}")
     return {
         "citations": citations,
         "markdown": render_markdown(citations),
