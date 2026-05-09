@@ -29,6 +29,34 @@ def _get_rag_context(query: str, domain: str) -> str:
     return ""
 
 
+async def _get_search_context(query: str, domain: str) -> str:
+    """Sprint 80c: Get context from RAG first, fall back to web search."""
+    # Try RAG first
+    rag = await _get_search_context(query, domain)
+    if rag:
+        return rag
+
+    # Try web search
+    try:
+        from tools.search_web import search_web
+        result = await search_web(query, max_results=3)
+        if result and result.get("citations"):
+            lines = ["[Vefleit – Mojeek]"]
+            for c in result["citations"]:
+                lines.append(f"• {c['title']}: {c['url']}")
+                if c.get('snippet'):
+                    lines.append(f"  {c['snippet']}")
+            logger.info(f"[AUDIT] chat_routes using web_search citations={len(result['citations'])}")
+            return "
+".join(lines)
+        else:
+            logger.info(f"[AUDIT] chat_routes web_search returned no citations (fallback to RAG)")
+    except Exception as e:
+        logger.error(f"[AUDIT] chat_routes web_search failed: {type(e).__name__}: {e}")
+
+    return ""
+
+
 def _estimate_tokens(text: str) -> int:
     return int(len((text or "").split()) * 1.3)
 

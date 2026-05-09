@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 
 import httpx
 
-from core.pii_filter import contains_pii
+from core.pii_filter import contains_pii, mask_pii_for_log
 from core.citation_schema import build_citation, deduplicate, render_markdown
 
 logger = logging.getLogger("alvitur.search_web")
@@ -126,6 +126,8 @@ async def search_web(query: str, max_results: int = 5) -> Optional[Dict]:
     citations = apply_boost(citations)
     citations = deduplicate(citations)
 
+    # Audit log
+    logger.info(f"[AUDIT] web_search query="{mask_pii_for_log(query)}" citations={len(citations)} raw_count={len(raw_results)}")
     return {
         "citations": citations,
         "markdown": render_markdown(citations),
