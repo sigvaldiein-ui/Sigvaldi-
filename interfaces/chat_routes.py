@@ -38,8 +38,8 @@ async def _get_search_context(query: str, domain: str) -> str:
         return rag
     logger.info("[80c] RAG empty, trying web search")
     try:
-        from tools.search_web import search_web
-        res = await search_web(query, max_results=3)
+        from tools.search_web_multi import search_web_multi
+        res = await search_web_multi(query, max_results=3)
         n_cites = len(res.get("citations", [])) if res else 0
         logger.info(f"[80c] search_web returned n_citations={n_cites}")
         if res and res.get("citations"):
