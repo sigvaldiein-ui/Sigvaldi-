@@ -30,25 +30,34 @@ def _get_rag_context(query: str, domain: str) -> str:
 
 
 async def _get_search_context(query: str, domain: str) -> str:
-    """Sprint 80c: Get context, trying RAG first, then web search."""
+    """Sprint 80c: RAG first, then web search."""
+    logger.info(f"[80c] _get_search_context CALLED query={query[:50]} domain={domain}")
     rag = _get_rag_context(query, domain)
     if rag:
+        logger.info(f"[80c] RAG returned len={len(rag)}")
         return rag
+    logger.info("[80c] RAG empty, trying web search")
     try:
         from tools.search_web import search_web
         res = await search_web(query, max_results=3)
+        n_cites = len(res.get("citations", [])) if res else 0
+        logger.info(f"[80c] search_web returned n_citations={n_cites}")
         if res and res.get("citations"):
             lines = ["[Vefleit - Mojeek]"]
             for c in res["citations"]:
-                lines.append(f"* {c.get('title', '')}: {c.get('url', '')}")
-                if c.get("snippet"):
-                    lines.append(f"  {c['snippet']}")
-            logger.info(f"[80c] Web search citations={len(res['citations'])}")
-            return "\n".join(lines)
+                title = c.get("title", "")
+                url = c.get("url", "")
+                snippet = c.get("snippet", "")
+                lines.append(f"* {title}: {url}")
+                if snippet:
+                    lines.append(f"  {snippet}")
+            context = chr(10).join(lines)
+            logger.info(f"[80c] returning web context len={len(context)}")
+            return context
     except Exception as e:
         logger.error(f"[80c] Web search failed: {type(e).__name__}: {e}")
+    logger.info("[80c] returning empty context")
     return ""
-
 
 def _estimate_tokens(text: str) -> int:
     return int(len((text or "").split()) * 1.3)
@@ -158,6 +167,7 @@ async def _call_general_chain(system_prompt: str, query: str):
 
 
 async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list | None = None):
+    logger.error("=== BREADCRUMB_CHAT_ROUTES_HANDLE_CHAT_v3 ===")
     """Sprint 61 — sovereign-aware chat endpoint.
     Tier 'vault' -> local vLLM only (no cloud fallback, 503 if down).
     Tier 'general' -> OpenRouter chain Haiku -> Sonnet -> gpt-4o-mini.
@@ -208,9 +218,16 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
             "tier": "vault",
         })
 
+    # 🟢 Sprint 80c: Vefleit bætt við á undan LLM kalli
+    logger.error("=== DEBUG pre _get_search_context ===")
+    search_context = await _get_search_context(query, domain)
+    logger.error(f"=== DEBUG post _get_search_context: got {len(search_context) if search_context else 0} chars")
+    enriched_rag = rag
+    if search_context:
+        enriched_rag += "\n[VEFFUNDIR]:\n" + search_context
     # ── Leið A: General OpenRouter chain ─────────────────────────────
     # 🟢 Sprint 62 Patch G: sovereign fallback ef Leið A mistekst eða key vantar
-    sys_prompt = _general_system_prompt(query, file_context, rag, now_str)
+    sys_prompt = _general_system_prompt(query, file_context, enriched_rag, now_str)
     _key_check = os.environ.get("OPENROUTER_API_KEY", "")
     content, model, usage = (None, None, {})
     if _key_check:
@@ -218,7 +235,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     if content is None:
         logger.warning("[ALVITUR] Sprint62G chat: Leið A down/no-key → sovereign Leið B")
         try:
-            vault_prompt = _vault_system_prompt_chat(query, file_context, rag, now_str)
+            vault_prompt = _vault_system_prompt_chat(query, file_context, enriched_rag, now_str)
             async with _VAULT_SEMAPHORE:
                 content, model, usage = await _call_vault_local(query, vault_prompt)
         except Exception as _fe:
