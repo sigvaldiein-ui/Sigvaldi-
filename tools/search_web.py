@@ -33,6 +33,17 @@ LEGAL_IS_DOMAINS = {
 }
 
 
+def _simplify_query_for_mojeek(query):
+    """Mojeek vinnur betur med lykilordum en islenskri natturulegri tungu."""
+    import re as _re
+    stop = {"hver","hvad","hvort","hvar","hvenaer","hvernig","hvers","vegna",
+            "er","var","verdur","munu","i","a","ad","og","eda","med","fra","til",
+            "the","is","are","of","in","to","for","what","who","when","where","how","why"}
+    cleaned = _re.sub(r"[?!.,;:]", "", query.lower())
+    words = [w for w in cleaned.split() if w not in stop and len(w) > 2]
+    return " ".join(words) if words else query.strip()
+
+
 def _is_legal_domain(url: str) -> bool:
     """Check if URL is an Icelandic legal domain."""
     try:
@@ -92,7 +103,7 @@ async def search_web(query: str, max_results: int = 5) -> Optional[Dict]:
 
     params = {
         "api_key": api_key,
-        "q": query.strip(),
+        "q": _simplify_query_for_mojeek(query),
         "fmt": "json",
     }
 
@@ -108,7 +119,7 @@ async def search_web(query: str, max_results: int = 5) -> Optional[Dict]:
         logger.error(f"Mojeek API error: {type(e).__name__}: {e}")
         return None
 
-    if data.get("status") != "OK":
+    if data.get("response", {}).get("status") != "OK":
         logger.warning(f"Mojeek non-OK status: {data.get('status')}")
         return None
 
