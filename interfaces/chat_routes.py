@@ -5,6 +5,7 @@ Leid B (vault):   LOCAL vLLM (qwen3-32b-awq) ONLY — NO cloud fallback
 """
 from fastapi import Request
 from fastapi.responses import JSONResponse
+import json
 import os, httpx, logging
 from datetime import datetime, timezone
 
@@ -39,7 +40,8 @@ async def _get_search_context(query: str, domain: str) -> str:
     logger.info("[80c] RAG empty, trying web search")
     try:
         from tools.search_web_multi import search_web_multi
-        res = await search_web_multi(query, max_results=3)
+        res = await search_web_multi(query, max_results=6)
+        logger.error(f"[DEBUG-RAW] search_web_multi returned {len(res.get('citations', []))} citations: {json.dumps([c.get('snippet','') for c in res.get('citations', [])], ensure_ascii=False)}")
         n_cites = len(res.get("citations", [])) if res else 0
         logger.info(f"[80c] search_web returned n_citations={n_cites}")
         if res and res.get("citations"):
@@ -67,25 +69,34 @@ def _vault_system_prompt_chat(query: str, file_context: str, rag: str, now_str: 
     return (
         f"Þú ert Alvitur — íslensk gervigreindaraðstoð á trúnaðarstigi (Vault).\n"
         f"Þú keyrir á íslenskri GPU. Gögn fara aldrei úr vélinni.\n"
-        f"Dagsetning: {now_str}\n{rag}{file_context}\n\n"
-        f"REGLUR UM ÍSLENSKU:\n"
-        f"1. Svaraðu ALLTAF á réttri íslensku með beygingum.\n"
-        f"2. Gættu að föllum og kynjum.\n"
-        f"3. Ekki búa til orð — umorðaðu ef óvisst.\n\n"
-        f"SPURNING NOTANDANS: {query}\n"
-        f"Svaraðu beint, stutt og faglega á íslensku."
+        f"Dagsetning: {now_str}\n\n"
+        f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n"
+        f"{rag}{file_context}\n"
+        f"=== ENDIR HEIMILDA ===\n\n"
+        f"MIKILVÆGAR REGLUR:\n"
+        f"1. Heimildirnar hér að ofan eru RAUNTÍMA gögn frá íslenskum opinberum vefjum.\n"
+        f"2. Notaðu ALLTAF heimildirnar FYRST. Þjálfunargögn þín geta verið úrelt.\n"
+        f"3. Ef heimildir staðfesta svar (t.d. nafn forsætisráðherra), notaðu þau orðrétt.\n"
+        f"4. Svaraðu á réttri íslensku með beygingum.\n"
+        f"5. Stutt, skýrt, faglegt svar.\n\n"
+        f"SPURNING NOTANDANS: {query}"
     )
 
 
 def _general_system_prompt(query: str, file_context: str, rag: str, now_str: str) -> str:
     return (
         f"Þú ert Alvitur, íslenskur sérfræðingur.\n"
-        f"Dagsetning: {now_str}\n{rag}{file_context}\n\n"
-        f"MIKILVÆGAST:\n"
-        f"1. SPURNING NOTANDANS ER: \"{query}\"\n"
-        f"2. Svaraðu BEINT þessari spurningu á íslensku.\n"
-        f"3. Ef skrár eru meðfylgjandi, notaðu þær AÐEINS til að svara — ekki lýsa þeim.\n"
-        f"4. Stutt, skýrt, faglegt svar."
+        f"Dagsetning: {now_str}\n\n"
+        f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n"
+        f"{rag}{file_context}\n"
+        f"=== ENDIR HEIMILDA ===\n\n"
+        f"MIKILVÆGAR REGLUR:\n"
+        f"1. Heimildirnar hér að ofan eru RAUNTÍMA gögn — notaðu þær FYRST.\n"
+        f"2. Þjálfunargögn þín geta verið úrelt — heimildir hafa forgang.\n"
+        f"3. SPURNING NOTANDANS: \"{query}\"\n"
+        f"4. Svaraðu BEINT spurningunni á íslensku, byggt á heimildum.\n"
+        f"5. Ef skrár eru meðfylgjandi, notaðu þær AÐEINS til að svara — ekki lýsa þeim.\n"
+        f"6. Stutt, skýrt, faglegt svar."
     )
 
 
@@ -94,6 +105,9 @@ async def _call_vault_local(query: str, system_prompt: str):
     from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
     try:
         async with httpx.AsyncClient(timeout=float(VAULT_LOCAL_TIMEOUT)) as c:
+            logger.error("X-RAY SYSTEM PROMPT: " + str(system_prompt[:500]))
+            logger.error("X-RAY USER QUERY: " + str(query))
+            logger.error(f"[X-RAY-FINAL] Payload to vLLM: {json.dumps({'model': VAULT_LOCAL_MODEL, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': query}], 'max_tokens': 4096, 'temperature': 0.3, 'top_p': 0.9}, indent=2, ensure_ascii=False)}")
             r = await c.post(
                 VAULT_LOCAL_URL,
                 headers={"Content-Type": "application/json"},
@@ -137,6 +151,9 @@ async def _call_general_chain(system_prompt: str, query: str):
     async with httpx.AsyncClient(timeout=180.0) as c:
         for idx, model in enumerate(chain):
             try:
+                logger.error("X-RAY SYSTEM PROMPT: " + str(system_prompt[:500]))
+                logger.error("X-RAY USER QUERY: " + str(query))
+                logger.error(f"[X-RAY-FINAL] Payload to vLLM: {json.dumps({'model': VAULT_LOCAL_MODEL, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': query}], 'max_tokens': 4096, 'temperature': 0.3, 'top_p': 0.9}, indent=2, ensure_ascii=False)}")
                 r = await c.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={

@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 STJORNARRADID_URL = "https://www.stjornarradid.is/rikisstjorn/skipan-rikisstjornar/"
 
 async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
-    """Sækir ráðherralista af Stjórnarráðssíðunni."""
+    """Sækir allan ráðherralistann — leitarorðið ákvarðar aðeins röðun."""
     citations = []
     try:
         async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Alvitur-Sovereign-Bot/1.0"}) as client:
@@ -16,7 +16,10 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
 
+            # Finna ráðherralistann
             minister_items = soup.find_all("div", class_="radherra-list__item")
+            # Bæta við sérstöku leitarorði fyrir titilinn
+            title_keywords = ''.join(c for c in query.lower() if c.isalpha() or c.isspace()).split()
             keywords = query.lower().split()
 
             for item in minister_items:
@@ -28,18 +31,26 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
                     title = title_tag.get_text(strip=True)
                     combined = f"{name} - {title}"
                     
-                    if any(kw in combined.lower() for kw in keywords):
-                        citations.append({
-                            "title": combined,
-                            "url": STJORNARRADID_URL,
-                            "snippet": f"{name} er {title} í ríkisstjórn Íslands.",
-                            "source": "stjornarradid",
-                            "rank": len(citations) + 1,
-                            "accessed_at": datetime.now(timezone.utc).isoformat(),
-                        })
+                    # Reikna hversu vel leitarorðið passar
+                    score = sum(1 for kw in keywords if kw in combined.lower())
+                    
+                    citations.append({
+                        "title": combined,
+                        "url": STJORNARRADID_URL,
+                        "snippet": f"{name} er {title} í ríkisstjórn Íslands.",
+                        "source": "stjornarradid",
+                        "score": score,
+                        "rank": 0,
+                        "accessed_at": datetime.now(timezone.utc).isoformat(),
+                    })
+
+            # Raða eftir score (best match fyrst), svo eftir nafni
+            citations.sort(key=lambda x: (-x["score"], x["title"]))
+            for i, c in enumerate(citations[:max_results], 1):
+                c["rank"] = i
 
         return {
-            "citations": citations,
+            "citations": citations[:max_results],
             "source": "stjornarradid",
             "raw_count": len(citations),
         }
@@ -48,7 +59,8 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-    result = _asyncio.run(fetch_stjornarradid("forsætisráðherra"))
-    for c in result["citations"]:
-        print(f"{c['rank']}. {c['snippet']}")
-    print(f"\nFjöldi: {result['raw_count']}")
+    for q in ["dómsmálaráðherra", "menntamálaráðherra", "utanríkisráðherra"]:
+        result = _asyncio.run(fetch_stjornarradid(q))
+        print(f"\n--- {q} ---")
+        for c in result["citations"]:
+            print(f"{c['rank']}. {c['snippet']}")
