@@ -1,3 +1,4 @@
+import re
 
 import asyncio
 import httpx
@@ -20,7 +21,11 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
             minister_items = soup.find_all("div", class_="radherra-list__item")
             # Bæta við sérstöku leitarorði fyrir titilinn
             title_keywords = ''.join(c for c in query.lower() if c.isalpha() or c.isspace()).split()
-            keywords = query.lower().split()
+            # Sía út stoppstafir (<4 stafir) til að forðast substring-villur
+            keywords = [kw for kw in query.lower().replace('?','').replace('!','').split() if len(kw) >= 4]
+            if not keywords:
+                keywords = query.lower().split()
+
 
             for item in minister_items:
                 name_tag = item.find("div", class_="radherra-list__item__name")
@@ -32,7 +37,8 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
                     combined = f"{name} - {title}"
                     
                     # Reikna hversu vel leitarorðið passar
-                    score = sum(1 for kw in keywords if kw in combined.lower())
+                    # Nota orðmörk til að forðast substring-villur
+                    score = sum(1 for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", combined.lower()))
                     
                     citations.append({
                         "title": combined,
@@ -44,8 +50,8 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
                         "accessed_at": datetime.now(timezone.utc).isoformat(),
                     })
 
-            # Raða eftir score (best match fyrst), svo eftir nafni
-            citations.sort(key=lambda x: (-x["score"], x["title"]))
+            # Raða eftir score (reiknað hér að ofan), svo stafrófsröð
+            citations.sort(key=lambda c: (-c.get("score", 0), c["title"]))
             for i, c in enumerate(citations[:max_results], 1):
                 c["rank"] = i
 
