@@ -6,7 +6,7 @@ Leid B (vault):   LOCAL vLLM (qwen3-32b-awq) ONLY — NO cloud fallback
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import json
-import os, httpx, logging
+import os, httpx, logging, re
 from datetime import datetime, timezone
 
 logger = logging.getLogger("alvitur.web")
@@ -29,6 +29,14 @@ def _get_rag_context(query: str, domain: str) -> str:
 """
     return ""
 
+
+
+def _strip_pii_for_search(query: str) -> tuple:
+    """Fjarlægir kennitölur úr leitarfyrirspurn fyrir Vault."""
+    KT_PATTERN = r'\b\d{6}-?\d{4}\b'
+    sanitized = re.sub(KT_PATTERN, '[KT]', query)
+    had_pii = sanitized != query
+    return sanitized, had_pii
 
 async def _get_search_context(query: str, domain: str) -> str:
     """Sprint 80c: RAG first, then web search."""
@@ -67,22 +75,15 @@ def _estimate_tokens(text: str) -> int:
 
 def _vault_system_prompt_chat(query: str, file_context: str, rag: str, now_str: str) -> str:
     return (
-        f"Þú ert Alvitur — íslensk gervigreindaraðstoð á trúnaðarstigi (Vault).\n"
-        f"Þú keyrir á íslenskri GPU. Gögn fara aldrei úr vélinni.\n"
-        f"Dagsetning: {now_str}\n\n"
-        f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n"
-        f"{rag}{file_context}\n"
-        f"=== ENDIR HEIMILDA ===\n\n"
-        f"MIKILVÆGAR REGLUR:\n"
-        f"1. Heimildirnar hér að ofan eru RAUNTÍMA gögn frá íslenskum opinberum vefjum.\n"
-        f"2. Notaðu ALLTAF heimildirnar FYRST. Þjálfunargögn þín geta verið úrelt.\n"
-        f"3. Ef heimildir staðfesta svar (t.d. nafn forsætisráðherra), notaðu þau orðrétt.\n"
-        f"4. Svaraðu á réttri íslensku með beygingum.\n"
-        f"5. Stutt, skýrt, faglegt svar.\n\n"
-        f"SPURNING NOTANDANS: {query}"
+        "Thu ert Alvitur. Dagsetning: " + now_str + ".\n\n"
+        "HEIMILD-GOGN (SKRADU THESSAR NAKVAEMLEGA):\n"
+        + rag + file_context + "\n"
+        "REGLUR:\n"
+        "1. Ef HEIMILD-GOGN innihalda nafn - notadu THAD nafn ordrett. EKKERT annath.\n"
+        "2. Thjalfunargogn eru URELT - heimildir hafa ALGJORAN forgang.\n"
+        "3. Stutt svar - einungis nafn og titill ef spurt um person.\n\n"
+        "SPURNING: " + query
     )
-
-
 def _general_system_prompt(query: str, file_context: str, rag: str, now_str: str) -> str:
     return (
         f"Þú ert Alvitur, íslenskur sérfræðingur.\n"
@@ -215,7 +216,26 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
                 "error_code": "vault_input_too_large",
                 "detail": f"Fyrirspurn er of stór fyrir Vault tier (max {VAULT_MAX_INPUT_TOKENS} tokens). Styttu textann eða skiptu í hluta.",
             })
-        sys_prompt = _vault_system_prompt_chat(query, file_context, rag, now_str)
+        # Sprint 80c v3: Rauntímaleit fyrir Hvelfinguna með PII-gátt
+        vault_search_context = ""
+        _search_query = query
+        try:
+            _search_query, _had_pii = _strip_pii_for_search(query)
+            _strict_no_external = os.environ.get("VAULT_STRICT_NO_EXTERNAL", "true").lower() == "true"
+            logger.error(f"[VAULT-DEBUG] had_pii={_had_pii} strict={_strict_no_external} query={_search_query[:40]}")
+            if _had_pii and _strict_no_external:
+                logger.warning("[VAULT-PII] PII fannst — sleppi external search (Fail-Secure)")
+            else:
+                vault_search_context = await _get_search_context(_search_query, domain)
+                if _had_pii:
+                    logger.info("[VAULT-PII] Pii fjarlægt úr leitarfyrirspurn, external search keyrt")
+        except Exception as _pii_exc:
+            logger.error(f"[VAULT-PII] Villa í PII gátt: {_pii_exc}")
+            vault_search_context = ""
+        vault_enriched_rag = rag
+        if vault_search_context:
+            vault_enriched_rag += "\n[VEFFUNDIR]:\n" + vault_search_context
+        sys_prompt = _vault_system_prompt_chat(query, file_context, vault_enriched_rag, now_str)
         # Sprint 61.2: semaphore til að forðast OOM
         async with _VAULT_SEMAPHORE:
             logger.info(f"[VAULT] semaphore acquired, processing vault call")
