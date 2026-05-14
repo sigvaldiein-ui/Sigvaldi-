@@ -6,9 +6,33 @@ from fastapi.responses import JSONResponse
 import json
 import os, httpx, logging, re
 from datetime import datetime, timezone
+import time
 from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
 
 logger = logging.getLogger("alvitur.web")
+
+# Sprint 82: Audit trail logging
+def _audit_log(timestamp: str, tier: str, query: str, intent: str,
+               search_context_len: int, citations_count: int,
+               pipeline_source: str, response_len: int, response_time_ms: float):
+    import os
+    audit_dir = os.path.join(os.path.dirname(__file__), '..', 'audit')
+    os.makedirs(audit_dir, exist_ok=True)
+    log_file = os.path.join(audit_dir, f"{timestamp[:10]}.jsonl")
+    entry = {
+        "timestamp": timestamp,
+        "tier": tier,
+        "query": query[:100],
+        "intent": intent,
+        "search_context_len": search_context_len,
+        "citations_count": citations_count,
+        "pipeline_source": pipeline_source,
+        "response_len": response_len,
+        "response_time_ms": round(response_time_ms, 2),
+    }
+    import json
+    with open(log_file, 'a') as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
 import asyncio as _aio
 _VAULT_SEMAPHORE = _aio.Semaphore(1)
@@ -123,6 +147,7 @@ async def _call_general_chain(system_prompt: str, query: str):
     return (None, None, None)
 
 async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list | None = None):
+    start_time = time.time()
     # FRUMSTILLING - Tryggja að citations séu alltaf til
     final_citations = []
     domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd"]) else "general"
@@ -151,6 +176,9 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
         if content is None:
             return JSONResponse(status_code=503, content={"success": False, "detail": "Vault busy/offline"})
 
+        _audit_log(now_str, "vault", query, domain, len(search_res.get("text", "")),
+                   len(final_citations), f"local_{model}", len(content or ""),
+                   (time.time() - start_time) * 1000)
         return JSONResponse(content={
             "success": True, "response": content, "citations": final_citations,
             "pipeline_source": f"local_{model}", "tier": "vault"
@@ -168,8 +196,13 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
             content, model, usage = await _call_vault_local(query, sys_prompt)
     
     if content is None:
+        _audit_log(now_str, tier, query, domain, len(search_res.get("text", "")),
+               len(final_citations), "none", 0, (time.time() - start_time) * 1000)
         return JSONResponse(status_code=503, content={"success": False, "detail": "All pipelines down"})
 
+    _audit_log(now_str, "general", query, domain, len(search_res.get("text", "")),
+               len(final_citations), str(model), len(content or ""),
+               (time.time() - start_time) * 1000)
     return JSONResponse(content={
         "success": True, "response": content, "citations": final_citations,
         "pipeline_source": model, "tier": "general"
