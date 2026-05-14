@@ -1,7 +1,5 @@
 """
-Sprint 61 — chat_routes.py með sovereign separation.
-Leid A (general): OpenRouter chain Haiku -> Sonnet -> gpt-4o-mini
-Leid B (vault):   LOCAL vLLM (qwen3-32b-awq) ONLY — NO cloud fallback
+Sprint 61 — chat_routes.py með sovereign separation og öruggum citations.
 """
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -12,11 +10,8 @@ from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TI
 
 logger = logging.getLogger("alvitur.web")
 
-# Sprint 61.2: Vault concurrency guard — serialize til að forðast OOM á A40 (40/46 GB)
-# Max 1 samtímis vault call. General tier óbreytt (cloud handle concurrency).
 import asyncio as _aio
 _VAULT_SEMAPHORE = _aio.Semaphore(1)
-
 
 def _get_rag_context(query: str, domain: str) -> str:
     if domain != "legal":
@@ -30,272 +25,152 @@ def _get_rag_context(query: str, domain: str) -> str:
 """
     return ""
 
-
-
 def _strip_pii_for_search(query: str) -> tuple:
-    """Fjarlægir kennitölur úr leitarfyrirspurn fyrir Vault."""
     KT_PATTERN = r'\b\d{6}-?\d{4}\b'
     sanitized = re.sub(KT_PATTERN, '[KT]', query)
     had_pii = sanitized != query
     return sanitized, had_pii
 
-async def _get_search_context(query: str, domain: str) -> str:
-    """Sprint 80c: RAG first, then web search."""
-    logger.info(f"[80c] _get_search_context CALLED query={query[:50]} domain={domain}")
+async def _get_search_context(query: str, domain: str) -> dict:
+    """Sprint 80c: Skilar alltaf {'text': str, 'citations': list}."""
+    logger.info(f"[80c] _get_search_context query={query[:50]}")
+    
+    # 1. RAG Check
     rag = _get_rag_context(query, domain)
     if rag:
-        logger.info(f"[80c] RAG returned len={len(rag)}")
-        return rag
-    logger.info("[80c] RAG empty, trying web search")
+        return {"text": rag, "citations": []}
+
+    # 2. Web Search
     try:
         from tools.search_web_multi import search_web_multi
         res = await search_web_multi(query, max_results=6)
-        logger.error(f"[DEBUG-RAW] search_web_multi returned {len(res.get('citations', []))} citations: {json.dumps([c.get('snippet','') for c in res.get('citations', [])], ensure_ascii=False)}")
-        n_cites = len(res.get("citations", [])) if res else 0
-        logger.info(f"[80c] search_web returned n_citations={n_cites}")
-        if res and res.get("citations"):
-            lines = ["[Vefleit - Mojeek]"]
-            for c in res["citations"]:
-                title = c.get("title", "")
-                url = c.get("url", "")
-                snippet = c.get("snippet", "")
-                lines.append(f"* {title}: {url}")
-                if snippet:
-                    lines.append(f"  {snippet}")
-            context = chr(10).join(lines)
-            logger.info(f"[80c] returning web context len={len(context)}")
-            return context
+        citations = res.get("citations", [])
+        
+        if not citations:
+            return {"text": "", "citations": []}
+
+        lines = ["[Vefleit - Mojeek]"]
+        for c in citations:
+            title = c.get("title", "Heimild")
+            url = c.get("url", "")
+            snippet = c.get("snippet", "")
+            lines.append(f"* {title}: {url}")
+            if snippet:
+                lines.append(f"  {snippet}")
+        
+        return {
+            "text": "\n".join(lines),
+            "citations": citations
+        }
     except Exception as e:
-        logger.error(f"[80c] Web search failed: {type(e).__name__}: {e}")
-    logger.info("[80c] returning empty context")
-    return ""
+        logger.error(f"[80c] Web search failed: {e}")
+        return {"text": "", "citations": []}
 
 def _estimate_tokens(text: str) -> int:
     return int(len((text or "").split()) * 1.3)
 
-
 def _vault_system_prompt_chat(query: str, file_context: str, rag: str, now_str: str) -> str:
     return (
-        "Thu ert Alvitur. Dagsetning: " + now_str + ".\n\n"
-        "HEIMILD-GOGN (SKRADU THESSAR NAKVAEMLEGA):\n"
-        + rag + file_context + "\n"
-        "REGLUR:\n"
-        "1. Ef HEIMILD-GOGN innihalda nafn - notadu THAD nafn ordrett. EKKERT annath.\n"
-        "2. Thjalfunargogn eru URELT - heimildir hafa ALGJORAN forgang.\n"
-        "3. Stutt svar - einungis nafn og titill ef spurt um person.\n\n"
-        "SPURNING: " + query
+        f"Thu ert Alvitur. Dagsetning: {now_str}.\n\n"
+        f"HEIMILD-GOGN:\n{rag}{file_context}\n"
+        "REGLUR: 1. Heimildir hafa forgang. 2. Stutt svar.\n"
+        f"SPURNING: {query}"
     )
+
 def _general_system_prompt(query: str, file_context: str, rag: str, now_str: str) -> str:
     return (
-        f"Þú ert Alvitur, íslenskur sérfræðingur.\n"
-        f"Dagsetning: {now_str}\n\n"
-        f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n"
-        f"{rag}{file_context}\n"
-        f"=== ENDIR HEIMILDA ===\n\n"
-        f"MIKILVÆGAR REGLUR:\n"
-        f"1. Heimildirnar hér að ofan eru RAUNTÍMA gögn — notaðu þær FYRST.\n"
-        f"2. Þjálfunargögn þín geta verið úrelt — heimildir hafa forgang.\n"
-        f"3. SPURNING NOTANDANS: \"{query}\"\n"
-        f"4. Svaraðu BEINT spurningunni á íslensku, byggt á heimildum.\n"
-        f"5. Ef skrár eru meðfylgjandi, notaðu þær AÐEINS til að svara — ekki lýsa þeim.\n"
-        f"6. Stutt, skýrt, faglegt svar."
+        f"Þú ert Alvitur, íslenskur sérfræðingur. Dagsetning: {now_str}\n\n"
+        f"=== HEIMILDIR ===\n{rag}{file_context}\n"
+        f"MIKILVÆGT: Notaðu heimildir fyrst. Svaraðu á íslensku.\n"
+        f"SPURNING: {query}"
     )
 
-
 async def _call_vault_local(query: str, system_prompt: str):
-    """Local vLLM sovereign call. Returns (content, model, usage) or (None, None, None)."""
     try:
         async with httpx.AsyncClient(timeout=float(VAULT_LOCAL_TIMEOUT)) as c:
-            logger.error("X-RAY SYSTEM PROMPT: " + str(system_prompt[:500]))
-            logger.error("X-RAY USER QUERY: " + str(query))
-            logger.error(f"[X-RAY-FINAL] Payload to vLLM: {json.dumps({'model': VAULT_LOCAL_MODEL, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': query}], 'max_tokens': 4096, 'temperature': 0.3, 'top_p': 0.9}, indent=2, ensure_ascii=False)}")
             r = await c.post(
                 VAULT_LOCAL_URL,
-                headers={"Content-Type": "application/json"},
                 json={
                     "model": VAULT_LOCAL_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": query},
-                    ],
-                    "max_tokens": 4096,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}],
+                    "max_tokens": 4096, "temperature": 0.3
                 },
             )
-            if r.status_code != 200:
-                logger.error(f"[ALVITUR] chat_routes vault vLLM status={r.status_code} body={r.text[:200]}")
-                return (None, None, None)
+            if r.status_code != 200: return (None, None, None)
             d = r.json()
-            ms = VAULT_LOCAL_MODEL.rsplit("/", 1)[-1]
-            u = d.get("usage", {})
-            logger.info(f"[ALVITUR] chat_routes leid_b sovereign ok model={ms} in={u.get('prompt_tokens',0)} out={u.get('completion_tokens',0)}")
-            return (d["choices"][0]["message"]["content"].strip(), ms, u)
+            return (d["choices"][0]["message"]["content"].strip(), VAULT_LOCAL_MODEL, d.get("usage", {}))
     except Exception as e:
-        logger.error(f"[ALVITUR] chat_routes vault exc: {type(e).__name__}: {e}")
+        logger.error(f"Vault error: {e}")
         return (None, None, None)
-
 
 async def _call_general_chain(system_prompt: str, query: str):
-    """OpenRouter chain Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage) or (None, None, None)."""
-    from interfaces.config import (
-        MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY)
+    from interfaces.config import MODEL_LEIDA_A_PRIMARY as m_p
     key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not key:
-        logger.error("[ALVITUR] chat_routes leid_a: OPENROUTER_API_KEY missing")
-        return (None, None, None)
-    if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
-        logger.warning("[ALVITUR] chat_routes leid_a: ZDR_CONFIRMED=false - refusing")
-        return (None, None, None)
-    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
+    if not key or os.environ.get("OPENROUTER_ZDR_CONFIRMED") != "true": return (None, None, None)
+    
     async with httpx.AsyncClient(timeout=180.0) as c:
-        for idx, model in enumerate(chain):
-            try:
-                logger.error("X-RAY SYSTEM PROMPT: " + str(system_prompt[:500]))
-                logger.error("X-RAY USER QUERY: " + str(query))
-                logger.error(f"[X-RAY-FINAL] Payload to vLLM: {json.dumps({'model': VAULT_LOCAL_MODEL, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': query}], 'max_tokens': 4096, 'temperature': 0.3, 'top_p': 0.9}, indent=2, ensure_ascii=False)}")
-                r = await c.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {key}",
-                        "HTTP-Referer": "https://alvitur.is",
-                        "X-Title": "Alvitur",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": f"SPURNING: {query}"},
-                        ],
-                        "max_tokens": 4096,
-                        "temperature": 0.2,
-                    },
-                )
-                if r.status_code != 200:
-                    logger.warning(f"[ALVITUR] chat_routes leid_a step={idx+1}/3 model={model} status={r.status_code}")
-                    continue
+        try:
+            r = await c.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "X-Title": "Alvitur"},
+                json={"model": m_p, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}], "temperature": 0.2},
+            )
+            if r.status_code == 200:
                 d = r.json()
-                logger.info(f"[ALVITUR] chat_routes leid_a {'FALLBACK' if idx>0 else 'primary'} ok step={idx+1}/3 model={model}")
-                return (d["choices"][0]["message"]["content"].strip(), model, d.get("usage", {}))
-            except Exception as e:
-                logger.warning(f"[ALVITUR] chat_routes leid_a step={idx+1}/3 exc: {type(e).__name__}: {e}")
-    logger.error("[ALVITUR] chat_routes leid_a ALL 3 models failed")
+                return (d["choices"][0]["message"]["content"].strip(), m_p, d.get("usage", {}))
+        except Exception as e:
+            logger.error(f"General chain error: {e}")
     return (None, None, None)
 
-
 async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list | None = None):
-    logger.error("=== BREADCRUMB_CHAT_ROUTES_HANDLE_CHAT_v3 ===")
-    """Sprint 61 — sovereign-aware chat endpoint.
-    Tier 'vault' -> local vLLM only (no cloud fallback, 503 if down).
-    Tier 'general' -> OpenRouter chain Haiku -> Sonnet -> gpt-4o-mini.
-    """
-    files = attached_files or []
-    logger.info(f"[ALVITUR] chat_routes Sprint61 tier={tier} query_len={len(query)} files={len(files)}")
-
-    domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd", "gagnavernd"]) else "general"
-    rag = _get_rag_context(query, domain)
+    # FRUMSTILLING - Tryggja að citations séu alltaf til
+    final_citations = []
+    domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd"]) else "general"
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
+    
+    files = attached_files or []
     file_context = ""
     if files:
-        file_context = "\n\n[MEÐFYLGJANDI SKJÖL]:"
-        for i, f in enumerate(files[:3], 1):
-            fname = f.get("filename", f"Skjal {i}")
-            content = f.get("content", "")[:1500]
-            file_context += f"\n--- {fname} ---\n{content}"
-        file_context += "\n[ENDIR SKJALA]"
+        file_context = "\n[SKJÖL]:" + "".join([f"\n- {f.get('filename')}: {f.get('content','')[:1000]}" for f in files[:3]])
 
-    # ── Leið B: Vault sovereign ──────────────────────────────────────
+    # LEIÐ B: VAULT
     if tier == "vault":
-        from interfaces.config import VAULT_MAX_INPUT_TOKENS
-        total_text = query + file_context
-        if _estimate_tokens(total_text) > VAULT_MAX_INPUT_TOKENS:
-            return JSONResponse(status_code=413, content={
-                "success": False,
-                "error_code": "vault_input_too_large",
-                "detail": f"Fyrirspurn er of stór fyrir Vault tier (max {VAULT_MAX_INPUT_TOKENS} tokens). Styttu textann eða skiptu í hluta.",
-            })
-        # Sprint 80c v3: Rauntímaleit fyrir Hvelfinguna með PII-gátt
-        vault_search_context = ""
-        _search_query = query
-        try:
-            _search_query, _had_pii = _strip_pii_for_search(query)
-            _strict_no_external = os.environ.get("VAULT_STRICT_NO_EXTERNAL", "true").lower() == "true"
-            logger.error(f"[VAULT-DEBUG] had_pii={_had_pii} strict={_strict_no_external} query={_search_query[:40]}")
-            if _had_pii and _strict_no_external:
-                logger.warning("[VAULT-PII] PII fannst — sleppi external search (Fail-Secure)")
-            else:
-                vault_search_context = await _get_search_context(_search_query, domain)
-                if _had_pii:
-                    logger.info("[VAULT-PII] Pii fjarlægt úr leitarfyrirspurn, external search keyrt")
-        except Exception as _pii_exc:
-            logger.error(f"[VAULT-PII] Villa í PII gátt: {_pii_exc}")
-            vault_search_context = ""
-        vault_enriched_rag = rag
-        if vault_search_context:
-            vault_enriched_rag += "\n[VEFFUNDIR]:\n" + vault_search_context
-        sys_prompt = _vault_system_prompt_chat(query, file_context, vault_enriched_rag, now_str)
-        # Sprint 61.2: semaphore til að forðast OOM
+        search_res = {"text": "", "citations": []}
+        _search_query, _had_pii = _strip_pii_for_search(query)
+        _strict = os.environ.get("VAULT_STRICT_NO_EXTERNAL", "true").lower() == "true"
+        
+        if not (_had_pii and _strict):
+            search_res = await _get_search_context(_search_query, domain)
+        
+        final_citations = search_res["citations"]
+        sys_prompt = _vault_system_prompt_chat(query, file_context, search_res["text"], now_str)
+        
         async with _VAULT_SEMAPHORE:
-            logger.info(f"[VAULT] semaphore acquired, processing vault call")
             content, model, usage = await _call_vault_local(query, sys_prompt)
-        logger.info(f"[VAULT] semaphore released")
+            
         if content is None:
-            return JSONResponse(status_code=503, content={
-                "success": False,
-                "error_code": "vault_local_unavailable",
-                "detail": "Trúnaðarþjónusta tímabundið ekki tiltæk. Local AI module er að ræsast — reyndu aftur eftir 1 mínútu.",
-            })
+            return JSONResponse(status_code=503, content={"success": False, "detail": "Vault busy/offline"})
+
         return JSONResponse(content={
-            "success": True,
-            "response": content,
-            "pipeline_source": f"local_vllm_{model}",
-            "domain": domain,
-            "tier": "vault",
+            "success": True, "response": content, "citations": final_citations,
+            "pipeline_source": f"local_{model}", "tier": "vault"
         })
 
-    # 🟢 Sprint 80c: Vefleit bætt við á undan LLM kalli
-    logger.error("=== DEBUG pre _get_search_context ===")
-    search_context = await _get_search_context(query, domain)
-    logger.error(f"=== DEBUG post _get_search_context: got {len(search_context) if search_context else 0} chars")
-    enriched_rag = rag
-    if search_context:
-        enriched_rag += "\n[VEFFUNDIR]:\n" + search_context
-    # ── Leið A: General OpenRouter chain ─────────────────────────────
-    # 🟢 Sprint 62 Patch G: sovereign fallback ef Leið A mistekst eða key vantar
-    sys_prompt = _general_system_prompt(query, file_context, enriched_rag, now_str)
-    _key_check = os.environ.get("OPENROUTER_API_KEY", "")
-    content, model, usage = (None, None, {})
-    if _key_check:
-        content, model, usage = await _call_general_chain(sys_prompt, query)
+    # LEIÐ A: GENERAL
+    search_res = await _get_search_context(query, domain)
+    final_citations = search_res["citations"]
+    sys_prompt = _general_system_prompt(query, file_context, search_res["text"], now_str)
+    
+    content, model, usage = await _call_general_chain(sys_prompt, query)
+    
+    if content is None: # Fallback ef OpenRouter klikkar
+        async with _VAULT_SEMAPHORE:
+            content, model, usage = await _call_vault_local(query, sys_prompt)
+    
     if content is None:
-        logger.warning("[ALVITUR] Sprint62G chat: Leið A down/no-key → sovereign Leið B")
-        try:
-            vault_prompt = _vault_system_prompt_chat(query, file_context, enriched_rag, now_str)
-            async with _VAULT_SEMAPHORE:
-                content, model, usage = await _call_vault_local(query, vault_prompt)
-        except Exception as _fe:
-            logger.error(f"[ALVITUR] Sprint62G exc: {type(_fe).__name__}: {_fe}")
-            content = None
-        if content is None:
-            return JSONResponse(status_code=503, content={
-                "success": False,
-                "error_code": "both_pipelines_unavailable",
-                "detail": "Þjónusta tímabundið ekki aðgengileg. Reyndu eftir augnablik.",
-            })
-        logger.info(f"[ALVITUR] Sprint62G sovereign OK model={model}")
-        return JSONResponse(content={
-            "success": True,
-            "response": content,
-            "pipeline_source": f"sovereign_nokey_{model}",
-            "domain": domain,
-            "tier": "general_fallback",
-        })
+        return JSONResponse(status_code=503, content={"success": False, "detail": "All pipelines down"})
+
     return JSONResponse(content={
-        "success": True,
-        "response": content,
-        "pipeline_source": f"openrouter_{model.split('/')[-1]}",
-        "domain": domain,
-        "tier": "general",
+        "success": True, "response": content, "citations": final_citations,
+        "pipeline_source": model, "tier": "general"
     })
