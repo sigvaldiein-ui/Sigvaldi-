@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Dict, Optional
@@ -50,7 +51,18 @@ async def fetch_stjornartidindi(query: str, max_results: int = 5) -> Dict:
             "source": "stjornartidindi",
             "raw_count": len(matches),
         }
+    except httpx.TimeoutException:
+        print("Stjornartidindi API: timeout eftir 10 sek", file=sys.stderr)
+        return {"citations": [], "source": "stjornartidindi", "error": "timeout", "raw_count": 0}
+    except httpx.HTTPStatusError as e:
+        print(f"Stjornartidindi API: HTTP {e.response.status_code}", file=sys.stderr)
+        return {"citations": [], "source": "stjornartidindi", "error": f"http_{e.response.status_code}", "raw_count": 0}
+    except ET.ParseError as e:
+        print(f"Stjornartidindi API: XML parse error — {e}", file=sys.stderr)
+        return {"citations": [], "source": "stjornartidindi", "error": "xml_parse_error", "raw_count": 0}
     except Exception as e:
+        print(f"Stjornartidindi API: óvænt villa — {type(e).__name__}: {e}", file=sys.stderr)
+        return {"citations": [], "source": "stjornartidindi", "error": f"unexpected_{type(e).__name__}", "raw_count": 0}
         return {"citations": [], "source": "stjornartidindi", "error": str(e), "raw_count": 0}
 
 # Prófun ef keyrt beint
