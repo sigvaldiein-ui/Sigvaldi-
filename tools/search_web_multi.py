@@ -44,7 +44,18 @@ async def _fetch_mojeek(query: str, max_results: int = 5) -> Dict:
             resp = await client.get(MOJEEK_BASE, params=params)
             resp.raise_for_status()
             data = resp.json()
+    except httpx.TimeoutException:
+        logger.error("Mojeek API: timeout eftir 10 sek")
+        return {"citations": [], "source": "mojeek", "error": "timeout", "raw_count": 0}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Mojeek API: HTTP {e.response.status_code}")
+        return {"citations": [], "source": "mojeek", "error": f"http_{e.response.status_code}", "raw_count": 0}
+    except json.JSONDecodeError:
+        logger.error("Mojeek API: ógilt JSON svar")
+        return {"citations": [], "source": "mojeek", "error": "invalid_json", "raw_count": 0}
     except Exception as e:
+        logger.error(f"Mojeek API: óvænt villa — {type(e).__name__}: {e}")
+        return {"citations": [], "source": "mojeek", "error": f"unexpected_{type(e).__name__}", "raw_count": 0}
         return {"citations": [], "source": "mojeek", "error": str(e), "raw_count": 0}
 
     if data.get("response", {}).get("status") != "OK":
