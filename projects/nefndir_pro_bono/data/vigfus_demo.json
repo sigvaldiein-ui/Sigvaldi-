@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "generated_by": "Alvitur AI rannsóknareining — 8. maí 2026",
+    "source_document": "Sagnfræðings 5-nefnda greining (PDF)",
+    "honest_unknowns_policy": "Þar sem opinber gögn vantar er gildi \"óþekkt\" með skýringu"
+  },
+  "nefndir": [
+    {
+      "nafn_is": "Auðlindanefnd",
+      "tegund": "Tímabundin ráðgjafarnefnd (þingsályktunarnefnd)",
+      "raduneyti": "Forsætisráðuneytið",
+      "ar": 1998,
+      "fjoldi": 9,
+      "karlar": 7,
+      "konur": 2,
+      "hlutfall_kvenna": 22,
+      "jafnrettisvordur": "🔴 Viðvörun: utan jafnréttisviðmiða (22% konur)",
+      "lagarot": "Þingsályktanir — engin lög",
+      "nofn": ["Jóhannes Nordal (formaður)", "Eiríkur Tómasson", "Ari Edwald", "Lúðvík Bergvinsson", "Margrét Frímannsdóttir", "Guðjón Hjörleifsson", "Ragnar Árnason", "Svanfríður Jónasdóttir", "Styrmir Gunnarsson"]
+    },
+    {
+      "nafn_is": "Stjórnarskrárnefnd",
+      "tegund": "Ráðgjafarnefnd / starfshópur",
+      "raduneyti": "Forsætisráðuneytið",
+      "ar": 2005,
+      "fjoldi": 9,
+      "karlar": 7,
+      "konur": 2,
+      "hlutfall_kvenna": 22,
+      "jafnrettisvordur": "🔴 Viðvörun: utan jafnréttisviðmiða (22% konur)",
+      "lagarot": "Lög nr. 33/1944 og lög nr. 90/2010",
+      "nofn": []
+    },
+    {
+      "nafn_is": "Verðlagsnefnd búvara",
+      "tegund": "Stjórnsýslunefnd",
+      "raduneyti": "Matvælaráðuneytið",
+      "ar": 2022,
+      "fjoldi": 7,
+      "karlar": 4,
+      "konur": 3,
+      "hlutfall_kvenna": 43,
+      "jafnrettisvordur": "🟢 Innan jafnréttisviðmiða (43% konur)",
+      "lagarot": "Lög nr. 99/1993, 7.–18. gr.",
+      "nofn": ["Kolbeinn Hólmar Stefánsson (formaður)", "Herdís Magna Gunnarsdóttir", "Reynir Þór Jónsson", "Elín Margrét Stefánsdóttir", "Pálmi Vilhjálmsson", "Helga Ingólfsdóttir", "Hrannar Már Gunnarsson"]
+    },
+    {
+      "nafn_is": "Stjórn Persónuverndar",
+      "tegund": "Stjórn sjálfstæðrar eftirlitsstofnunar",
+      "raduneyti": "Dómsmálaráðuneytið",
+      "ar": 2025,
+      "fjoldi": 5,
+      "karlar": 3,
+      "konur": 2,
+      "hlutfall_kvenna": 40,
+      "jafnrettisvordur": "🟢 Innan jafnréttisviðmiða (40% konur — aðalmenn)",
+      "lagarot": "Lög nr. 90/2018, 38. gr.",
+      "nofn": ["Dóra Sif Tynes (formaður)", "+4 aðalmenn, +5 varamenn"]
+    },
+    {
+      "nafn_is": "Dómnefnd um hæfni umsækjenda um embætti dómara",
+      "stutt_heiti": "Hæfnisnefnd dómara",
+      "tegund": "Fagráð / hæfnisnefnd",
+      "raduneyti": "Dómsmálaráðuneytið",
+      "ar": null,
+      "fjoldi": 5,
+      "karlar": null,
+      "konur": null,
+      "hlutfall_kvenna": null,
+      "jafnrettisvordur": "🟡 Óþekkt — heild ekki birt opinberlega",
+      "lagarot": "Lög nr. 50/2016, 11. gr.",
+      "nofn": ["Ása Ólafsdóttir (formaður)", "Sigurður Tómas Magnússon", "Helga Melkorka Óttarsdóttir", "Sigríður Þorgeirsdóttir", "Jóhannes Sigurðsson"]
+    }
+  ]
+}
