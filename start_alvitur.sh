@@ -7,3 +7,4 @@ while true; do
     echo "Uvicorn hrundi — endurræsi eftir 5 sek..."
     sleep 5
 done
+export VAULT_STRICT_NO_EXTERNAL=false

@@ -47,3 +47,31 @@ Per tilkynnti tvisvar að breytingar hefðu skilað réttum niðurstöðum án �
 - Kristrún Frostadóttir svar virkar
 - Heimildagátt er óvirk (source_gate.py er munaðarlaus skrá)
 - Git tree er hreint (aðeins untracked skrár)
+
+## Lærdómur #90 (nýr 12. maí 2026)
+
+**Vault tier framleiðir confident hallucinations án rauntímaleitar.**
+Staðfest 22:35: Hvelfingin svaraði „Jón Davíð Halldórsson" fyrir
+forsætisráðherra — algjör uppspuni, af fullkomnu öryggi.
+Orsök: Vault (`tier=vault`) fer beint á Qwen vLLM án
+`_get_search_context`. Engin leit, engar heimildir, engin vörn.
+P0 fix á morgun: tengja rauntímaleit við Hvelfinguna.
+
+## Sprint 81 Lessons (13.-14. maí 2026)
+
+### Lesson #91 — Lykkjubani
+while true án port cleanup eykur kerfisálag og veldur 
+endurteknum Errno 98 villum. Lausn: smart restart pattern
+með pkill á viðkomandi port áður en endurræst.
+
+### Lesson #92 — Python re import
+ast.parse staðfestir syntax en grípur ekki runtime NameError. 
+Þegar middleware er uppfært og nýtt import er kallað á, verður 
+að flytja `import re` (og önnur runtime dependencies) að toppi 
+módúlsins. Combined með Lesson #86: ÞARF RUNTIME SMOKE TEST 
+ofan á AST gate.
+
+### Lesson #93 — Nýtt terminal bjargar
+Þegar aðalskel frýs við cascading pkill operations, opnar 
+Sigvaldi nýtt terminal og keyrir cleanup þaðan. Operational 
+pattern fyrir RunPod environment.
