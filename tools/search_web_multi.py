@@ -22,6 +22,13 @@ SOURCE_WEIGHTS = {
     "wayback": 0.8,
 }
 
+# Sprint 82: Tier multipliers fyrir source trust layer
+TIER_MULTIPLIERS = {
+    "government": 1.0,   # default, engin auka boost
+    "legal": 0.75,       # ef Aðal velur Option A
+    "general": 1.0,
+}
+
 MOJEEK_BASE = "https://api.mojeek.com/search"
 
 def _simplify_query_for_mojeek(query: str) -> str:
@@ -76,8 +83,13 @@ async def _fetch_mojeek(query: str, max_results: int = 5) -> Dict:
 def rrf_merge(source_groups: List[Dict], k: int = 60) -> List[Dict]:
     scores: Dict[str, dict] = {}
     for group in source_groups:
-        w = SOURCE_WEIGHTS.get(group.get("source", ""), 1.0)
+        source = group.get("source", "")
+        base_w = SOURCE_WEIGHTS.get(source, 1.0)
         for citation in group.get("citations", []):
+            # Sprint 82: Tier-aware weighting
+            tier = citation.get("tier", "general")
+            tier_mult = TIER_MULTIPLIERS.get(tier, 1.0)
+            w = base_w * tier_mult
             if not citation.get("simhash"):
                 title = citation.get("title", "") or ""
                 snippet = citation.get("snippet", "") or ""

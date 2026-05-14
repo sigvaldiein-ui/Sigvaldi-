@@ -4,6 +4,14 @@ Converts raw search results into internal JSON and Markdown citation format.
 """
 import hashlib
 from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
+
+SOURCE_TIER_MAP = {
+    "stjornarradid": "government",
+    "stjornartidindi": "government",
+    "mojeek": "general",
+    "wayback": "general",
+}
 
 
 def canonicalize_url(url: str) -> str:
@@ -41,17 +49,23 @@ def simhash_64(text: str) -> str:
     return format(result, '016x')
 
 
-def build_citation(raw_result: Dict, source: str = "mojeek", rank: int = 1) -> Dict:
+def build_citation(raw_result: Dict, source: str = "mojeek", rank: int = 1,
+                   tier: Optional[str] = None, score: float = 0.0) -> Dict:
     """Build internal citation dict from a raw search result."""
     url = raw_result.get("url", "")
     title = raw_result.get("title", "")
     snippet = raw_result.get("desc", raw_result.get("snippet", ""))
+    
+    if tier is None:
+        tier = SOURCE_TIER_MAP.get(source, "general")
     
     return {
         "url": canonicalize_url(url),
         "title": title,
         "snippet": snippet,
         "source": source,
+        "tier": tier,
+        "score": score,
         "accessed_at": None,  # Filled by caller
         "rank": rank,
         "simhash": simhash_64(f"{title} {snippet}"),
