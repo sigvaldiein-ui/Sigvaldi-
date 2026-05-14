@@ -50,6 +50,26 @@ async def fetch_stjornarradid(query: str, max_results: int = 30) -> Dict:
                     # Reikna hversu vel leitarorðið passar
                     # Nota orðmörk til að forðast substring-villur
                     score = sum(1 for kw in keywords if kw in combined.lower())
+
+                    # Sprint 82: Title-exact-match boost (EXACT_TITLE_BOOST = 5.0)
+                    # Ef leitarorð er ráðherratitill og passar við titil ráðherrans, margfalda score
+                    for kw in keywords:
+                        if kw.endswith(("ráðherra", "ráðherra")) and kw in title.lower():
+                            score *= 5.0
+                            break
+                    
+                    # Fallback fyrir samsett orð sem finnast ekki beint (t.d. menntamálaráðherra)
+                    if score == 0:
+                        import unicodedata
+                        def _trigrams(s):
+                            s = ''.join(c.lower() for c in s if c.isalpha())
+                            return {s[i:i+3] for i in range(len(s)-2)}
+                        query_set = _trigrams(query)
+                        title_set = _trigrams(title)
+                        if query_set and title_set:
+                            jaccard = len(query_set & title_set) / len(query_set | title_set)
+                            if jaccard > 0.25:
+                                score = 1.0
                     
                     citations.append({
                         "title": combined,
