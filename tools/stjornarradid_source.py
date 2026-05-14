@@ -20,25 +20,19 @@ async def fetch_stjornarradid(query: str, max_results: int = 30) -> Dict:
 
             # Finna ráðherralistann
             minister_items = soup.find_all("div", class_="radherra-list__item")
-            # Bæta við sérstöku leitarorði fyrir titilinn
-            title_keywords = ''.join(c for c in query.lower() if c.isalpha() or c.isspace()).split()
-            # Sía út stoppstafir (<4 stafir) til að forðast substring-villur
-            keywords = [kw for kw in query.lower().replace('?','').replace('!','').split() if len(kw) >= 4]
-            if not keywords:
-                keywords = query.lower().split()
-            # Brjóta löng samsett orð í smærri einingar (t.d. menntamálaráðherra → mennta, mála, ráðherra)
-            expanded = []
+            # Undirbúa leitarorð — brjóta í 3+ stafa einingar
             import re as _re
-            for kw in keywords:
-                expanded.append(kw)
-                # Ef orðið er langt og inniheldur ekki bil, brjóta það í 3+ stafa búta
+            raw_kw = [kw for kw in query.lower().replace('?','').replace('!','').split() if len(kw) >= 4]
+            if not raw_kw:
+                raw_kw = query.lower().split()
+            keywords = []
+            for kw in raw_kw:
+                keywords.append(kw)
+                # Brjóta langt samsett orð (t.d. menntamálaráðherra → mennta, mála, ráðherra)
                 if len(kw) >= 8 and ' ' not in kw:
-                    # Finna alla 3+ stafa hluta sem gætu verið sjálfstæð orð
-                    parts = _re.findall(r'[a-záðéíóúýþæö]{3,}', kw)
-                    for p in parts:
-                        if p not in expanded and len(p) >= 3:
-                            expanded.append(p)
-            keywords = expanded
+                    for part in _re.findall(r'[a-záðéíóúýþæö]{3,}', kw):
+                        if part not in keywords:
+                            keywords.append(part)
 
 
             for item in minister_items:
@@ -52,7 +46,7 @@ async def fetch_stjornarradid(query: str, max_results: int = 30) -> Dict:
                     
                     # Reikna hversu vel leitarorðið passar
                     # Nota orðmörk til að forðast substring-villur
-                    score = sum(1 for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", combined.lower()))
+                    score = sum(1 for kw in keywords if kw in combined.lower())
                     
                     citations.append({
                         "title": combined,

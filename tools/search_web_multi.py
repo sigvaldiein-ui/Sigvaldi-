@@ -96,7 +96,7 @@ def rrf_merge(source_groups: List[Dict], k: int = 60) -> List[Dict]:
 async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     # Keyra allar fjórar heimildir samtímis
     stjornar, tidindi, mojeek, wayback = await asyncio.gather(
-        fetch_stjornarradid(query, max_results),
+        fetch_stjornarradid(query, 30),
         fetch_stjornartidindi(query, max_results),
         _fetch_mojeek(query, max_results),
         fetch_wayback_snapshots(query, max_results),
