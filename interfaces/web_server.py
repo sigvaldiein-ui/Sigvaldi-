@@ -155,6 +155,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        import re
         svar = await call_next(request)
 
         # HSTS — krefjast HTTPS í 1 ár með undirlénum
@@ -250,10 +251,20 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Sprint 81: Cache-Control fyrir hash-aðar static skrár
 class CacheControlMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
         import re
-        if re.match(r"^/static/.*\.[a-f0-9]{8}\.(js|css|woff2?|png|svg|ico)$", request.url.path):
+        response = await call_next(request)
+        path = request.url.path
+        
+        # 1. Hash-aðar static skrár → langur cache
+        if re.match(r'^/static/.*\.[a-f0-9]{8}\.(js|css|woff2?|png|svg|ico)$', path):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # 2. Dynamic efni → no-cache
+        elif path == "/" or path == "/index.html" or path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache"
+        # 3. Aðrar static skrár → 1 klst cache
+        elif path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        
         return response
 
 app.add_middleware(CacheControlMiddleware)
