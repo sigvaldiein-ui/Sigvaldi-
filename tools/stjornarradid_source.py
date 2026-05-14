@@ -33,6 +33,9 @@ async def fetch_stjornarradid(query: str, max_results: int = 30) -> Dict:
                     for part in _re.findall(r'[a-záðéíóúýþæö]{3,}', kw):
                         if part not in keywords:
                             keywords.append(part)
+            # Fjarlægja of algeng orð sem eru sameiginleg öllum ráðherrum
+            too_common = {'ráðherra', 'íslands', 'hver', 'eru', 'sem', 'fyrir', 'þetta', 'þessa', 'þessum'}
+            keywords = [kw for kw in keywords if kw not in too_common]
 
 
             for item in minister_items:
