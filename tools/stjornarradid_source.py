@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 STJORNARRADID_URL = "https://www.stjornarradid.is/rikisstjorn/skipan-rikisstjornar/"
 
-async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
+async def fetch_stjornarradid(query: str, max_results: int = 30) -> Dict:
     """Sækir allan ráðherralistann — leitarorðið ákvarðar aðeins röðun."""
     citations = []
     try:
@@ -26,6 +26,19 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
             keywords = [kw for kw in query.lower().replace('?','').replace('!','').split() if len(kw) >= 4]
             if not keywords:
                 keywords = query.lower().split()
+            # Brjóta löng samsett orð í smærri einingar (t.d. menntamálaráðherra → mennta, mála, ráðherra)
+            expanded = []
+            import re as _re
+            for kw in keywords:
+                expanded.append(kw)
+                # Ef orðið er langt og inniheldur ekki bil, brjóta það í 3+ stafa búta
+                if len(kw) >= 8 and ' ' not in kw:
+                    # Finna alla 3+ stafa hluta sem gætu verið sjálfstæð orð
+                    parts = _re.findall(r'[a-záðéíóúýþæö]{3,}', kw)
+                    for p in parts:
+                        if p not in expanded and len(p) >= 3:
+                            expanded.append(p)
+            keywords = expanded
 
 
             for item in minister_items:
@@ -53,11 +66,11 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
 
             # Raða eftir score (reiknað hér að ofan), svo stafrófsröð
             citations.sort(key=lambda c: (-c.get("score", 0), c["title"]))
-            for i, c in enumerate(citations[:max_results], 1):
+            for i, c in enumerate(citations, 1):
                 c["rank"] = i
 
         return {
-            "citations": citations[:max_results],
+            "citations": citations,
             "source": "stjornarradid",
             "raw_count": len(citations),
         }
@@ -70,7 +83,6 @@ async def fetch_stjornarradid(query: str, max_results: int = 5) -> Dict:
     except Exception as e:
         print(f"Stjornarradid API: óvænt villa — {type(e).__name__}: {e}", file=sys.stderr)
         return {"citations": [], "source": "stjornarradid", "error": f"unexpected_{type(e).__name__}", "raw_count": 0}
-        return {"citations": [], "source": "stjornarradid", "error": str(e), "raw_count": 0}
 
 if __name__ == "__main__":
     import asyncio as _asyncio
