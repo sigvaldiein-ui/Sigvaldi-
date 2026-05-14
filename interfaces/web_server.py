@@ -247,11 +247,39 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # D) Öryggishausar á allar beiðnir
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Sprint 81: Cache-Control fyrir hash-aðar static skrár
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        import re
+        if re.match(r"^/static/.*\.[a-f0-9]{8}\.(js|css|woff2?|png|svg|ico)$", request.url.path):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+app.add_middleware(CacheControlMiddleware)
+
 # Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
 from fastapi.staticfiles import StaticFiles
 # import os as _os
-_static_dir = "/workspace/mimir_net/interfaces/static"
+_static_dir = "/workspace/Sigvaldi-/interfaces/static"
 # _os.makedirs(_static_dir, exist_ok=True)
+
+@app.get("/static/app_v3.js")
+async def serve_app_v3():
+    from fastapi.responses import FileResponse
+    import os as _os
+    _path = _os.path.join(_os.path.dirname(__file__), "static", "app_v3.js")
+    return FileResponse(_path, media_type="text/javascript; charset=utf-8")
+
+
+@app.get("/static/app.js")
+async def serve_appjs_fixed():
+    """Beinn endapunktur fyrir app.js — fer framhjá StaticFiles skyggjageymslu."""
+    from fastapi.responses import FileResponse
+    import os as _os
+    _path = _os.path.join(_os.path.dirname(__file__), "static", "app.js")
+    return FileResponse(_path, media_type="text/javascript; charset=utf-8")
+
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 

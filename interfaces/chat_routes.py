@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 import json
 import os, httpx, logging, re
 from datetime import datetime, timezone
+from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
 
 logger = logging.getLogger("alvitur.web")
 
@@ -103,7 +104,6 @@ def _general_system_prompt(query: str, file_context: str, rag: str, now_str: str
 
 async def _call_vault_local(query: str, system_prompt: str):
     """Local vLLM sovereign call. Returns (content, model, usage) or (None, None, None)."""
-    from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
     try:
         async with httpx.AsyncClient(timeout=float(VAULT_LOCAL_TIMEOUT)) as c:
             logger.error("X-RAY SYSTEM PROMPT: " + str(system_prompt[:500]))
