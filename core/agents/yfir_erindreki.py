@@ -70,12 +70,13 @@ class YfirErindreki:
     
     Tvær rásir í V1:
     - VitansErindreki (default) fyrir almennar fyrirspurnir
-    - HvelfingarErindreki fyrir vault fyrirspurnir
+    - HvelfingarErindreki fyrir vault fyrirspurnir + PII
     """
     
     def __init__(self):
         self._agents: Dict[str, Agent] = {}
-        self._cache = SemanticCache()
+        self._cache_vitinn = SemanticCache()
+        self._cache_hvelfing = SemanticCache()
         self._breaker = CircuitBreaker()
         self._skra_agenta()
     
@@ -99,27 +100,33 @@ class YfirErindreki:
         if pii_result["has_pii"]:
             logger.info(f"PII fannst: {pii_result['pii_types']}")
         
-        # 2. Semantic Cache
-        cached = self._cache.get(query)
-        if cached:
-            logger.info("Skyndiminnishitt")
-            return cached
-        
-        # 3. Complexity Score
+        # 2. Complexity Score
         complexity = calculate_complexity(query, tier)
         logger.info(f"Flækjustig: {complexity.score:.2f} ({complexity.reasoning})")
         
-        # 4. Velja agent — tvær rásir
+        # 3. Velja agent — byggt á tier fyrst, síðan PII
         if tier == "vault":
             agent = self._agents.get("HvelfingarErindreki")
+            cache = self._cache_hvelfing
+        elif pii_result["has_pii"]:
+            agent = self._agents.get("HvelfingarErindreki")
+            cache = self._cache_hvelfing
+            logger.info(f"PII beinir í Hvelfingu: {pii_result['pii_types']}")
         else:
             agent = self._agents.get("VitansErindreki")
+            cache = self._cache_vitinn
         
         if not agent:
             return AgentResult(
                 response="Enginn agent tiltækur fyrir þessa fyrirspurn.",
                 confidence=0.0, agent_name="orchestrator", tier=tier
             )
+        
+        # 4. Skyndiminni — nota rétta cache-ið
+        cached = cache.get(query)
+        if cached:
+            logger.info(f"Skyndiminnishitt ({agent.name})")
+            return cached
         
         # 5. Circuit Breaker
         if not self._breaker.can_execute():
@@ -140,7 +147,7 @@ class YfirErindreki:
         try:
             result = await agent.execute(query, context)
             self._breaker.record_success()
-            self._cache.set(query, result)
+            cache.set(query, result)
             return result
         except Exception as e:
             logger.error(f"Agent villa: {e}")
