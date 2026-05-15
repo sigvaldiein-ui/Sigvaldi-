@@ -39,16 +39,24 @@ def _audit_log(timestamp: str, tier: str, query: str, intent: str,
 import asyncio as _aio
 _VAULT_SEMAPHORE = _aio.Semaphore(1)
 
-def _get_rag_context(query: str, domain: str) -> str:
+async def _get_rag_context(query: str, domain: str) -> str:
+    """Sækir lagalegt samhengi úr Qdrant í gegnum SearchLawTool."""
     if domain != "legal":
         return ""
-    keywords = ["persónuvernd", "gagnavernd", "lög", "réttur", "heimild", "lag", "samþykki"]
-    if any(kw in query.lower() for kw in keywords):
-        return """
-[Heimildir]
-• Persónuverndarlög nr. 90/2018, 15. gr.: Réttur aðila til upplýsinga um meðferð persónuupplýsinga.
-• Upplýsingalög nr. 142/2012: Almennur aðgangur að opinberum gögnum.
-"""
+    
+    try:
+        from interfaces.tools.search_law import SearchLawTool
+        tool = SearchLawTool()
+        hits = await tool.run(query)
+        if hits:
+            lines = ["[Heimildir — íslensk lög og reglugerðir]"]
+            for h in hits:
+                lines.append(f"• {h.get('title', '')}: {h.get('text', '')[:300]}")
+            return "\n".join(lines)
+    except Exception as e:
+        import sys
+        print(f"RAG villa: {e}", file=sys.stderr)
+    
     return ""
 
 def _strip_pii_for_search(query: str) -> tuple:
@@ -62,7 +70,7 @@ async def _get_search_context(query: str, domain: str) -> dict:
     logger.info(f"[80c] _get_search_context query={query[:50]}")
     
     # 1. RAG Check
-    rag = _get_rag_context(query, domain)
+    rag = await _get_rag_context(query, domain)
     if rag:
         return {"text": rag, "citations": []}
 
