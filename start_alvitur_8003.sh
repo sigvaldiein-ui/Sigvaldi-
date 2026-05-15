@@ -7,6 +7,7 @@
 cd /workspace/Sigvaldi-
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH=/workspace/Sigvaldi-
+export ALVITUR_FREE_QUOTA=1000
 export VAULT_STRICT_NO_EXTERNAL=false
 export ALVITUR_ENV=development
 

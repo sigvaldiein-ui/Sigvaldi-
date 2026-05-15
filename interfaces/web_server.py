@@ -3099,7 +3099,7 @@ WALLET_MIN_VAULT_USD = float(os.environ.get("WALLET_MIN_VAULT_USD", "10.0"))
 # PLG quota tracker (IP-based, in-memory)
 _quota_tracker_chat: dict = {}  # /api/chat quota per IP
 _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
-FREE_QUOTA = 5
+FREE_QUOTA = int(os.environ.get("ALVITUR_FREE_QUOTA", "5"))
 
 
 # ── Sprint 62: Beta tracker ──
