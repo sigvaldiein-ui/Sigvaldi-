@@ -8,6 +8,8 @@ import os, httpx, logging, re
 from datetime import datetime, timezone
 import time
 from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
+from core.agents.yfir_erindreki import yfir_erindreki
+from core.agent_core_v5 import AgentResult
 
 logger = logging.getLogger("alvitur.web")
 
@@ -157,53 +159,59 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     file_context = ""
     if files:
         file_context = "\n[SKJÖL]:" + "".join([f"\n- {f.get('filename')}: {f.get('content','')[:1000]}" for f in files[:3]])
-
-    # LEIÐ B: VAULT
-    if tier == "vault":
-        search_res = {"text": "", "citations": []}
-        _search_query, _had_pii = _strip_pii_for_search(query)
-        _strict = os.environ.get("VAULT_STRICT_NO_EXTERNAL", "true").lower() == "true"
-        
-        if not (_had_pii and _strict):
-            search_res = await _get_search_context(_search_query, domain)
-        
-        final_citations = search_res["citations"]
-        sys_prompt = _vault_system_prompt_chat(query, file_context, search_res["text"], now_str)
-        
-        async with _VAULT_SEMAPHORE:
-            content, model, usage = await _call_vault_local(query, sys_prompt)
-            
-        if content is None:
-            return JSONResponse(status_code=503, content={"success": False, "detail": "Vault busy/offline"})
-
-        _audit_log(now_str, "vault", query, domain, len(search_res.get("text", "")),
-                   len(final_citations), f"local_{model}", len(content or ""),
-                   (time.time() - start_time) * 1000)
-        return JSONResponse(content={
-            "success": True, "response": content, "citations": final_citations,
-            "pipeline_source": f"local_{model}", "tier": "vault"
-        })
-
-    # LEIÐ A: GENERAL
+    
+    # ── SPRINT 83: YfirErindreki (Orchestrator) ─────────────────
+    # Allar fyrirspurnir fara í gegnum YfirErindreka sem:
+    # 1. Greinir PII (PII Sentry)
+    # 2. Athugar skyndiminni (Semantic Cache)
+    # 3. Metur flækjustig (Complexity Score)
+    # 4. Velur réttan agent
+    # 5. Framkvæmir með Circuit Breaker vernd
+    
+    # Undirbúa context fyrir orchestrator
     search_res = await _get_search_context(query, domain)
     final_citations = search_res["citations"]
-    sys_prompt = _general_system_prompt(query, file_context, search_res["text"], now_str)
     
-    content, model, usage = await _call_general_chain(sys_prompt, query)
+    orchestrator_context = {
+        "search_text": search_res["text"],
+        "citations": final_citations,
+        "file_context": file_context,
+        "domain": domain,
+    }
     
-    if content is None: # Fallback ef OpenRouter klikkar
-        async with _VAULT_SEMAPHORE:
-            content, model, usage = await _call_vault_local(query, sys_prompt)
+    # Kalla á YfirErindreka
+    result = await yfir_erindreki.handle(query, tier, attached_files)
     
-    if content is None:
+    # Ef orchestrator skilar villu
+    if result.response is None or result.confidence == 0.0:
         _audit_log(now_str, tier, query, domain, len(search_res.get("text", "")),
-               len(final_citations), "none", 0, (time.time() - start_time) * 1000)
-        return JSONResponse(status_code=503, content={"success": False, "detail": "All pipelines down"})
-
-    _audit_log(now_str, "general", query, domain, len(search_res.get("text", "")),
-               len(final_citations), str(model), len(content or ""),
+                   len(final_citations), "orchestrator_error", 0,
+                   (time.time() - start_time) * 1000)
+        return JSONResponse(status_code=503, content={
+            "success": False,
+            "detail": result.response or "Þjónusta tímabundið ekki aðgengileg."
+        })
+    
+    # Skrá í audit trail
+    _audit_log(now_str, result.tier, query, domain, len(search_res.get("text", "")),
+               len(final_citations), f"{result.agent_name}_{result.model_used}",
+               len(result.response or ""),
                (time.time() - start_time) * 1000)
+    
+    # Skila svari
     return JSONResponse(content={
-        "success": True, "response": content, "citations": final_citations,
-        "pipeline_source": model, "tier": "general"
+        "success": True,
+        "response": result.response,
+        "citations": final_citations,
+        "pipeline_source": f"{result.agent_name}_{result.model_used}",
+        "tier": result.tier,
+        "confidence": result.confidence,
+        "cost_usd": result.cost_usd,
     })
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    files = attached_files or []
+    file_context = ""
+    if files:
+        file_context = "\n[SKJÖL]:" + "".join([f"\n- {f.get('filename')}: {f.get('content','')[:1000]}" for f in files[:3]])
+
