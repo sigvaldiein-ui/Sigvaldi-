@@ -47,7 +47,7 @@ async def _fetch_mojeek(query: str, max_results: int = 5) -> Dict:
 
     params = {"api_key": api_key, "q": _simplify_query_for_mojeek(query), "fmt": "json"}
     try:
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Alvitur-Sovereign-Bot/1.0"}) as client:
+        async with httpx.AsyncClient(timeout=300.0, headers={"User-Agent": "Alvitur-Sovereign-Bot/1.0"}) as client:
             resp = await client.get(MOJEEK_BASE, params=params)
             resp.raise_for_status()
             data = resp.json()
@@ -80,7 +80,24 @@ async def _fetch_mojeek(query: str, max_results: int = 5) -> Dict:
 
     return {"citations": citations, "source": "mojeek", "raw_count": len(raw_results)}
 
-def rrf_merge(source_groups: List[Dict], k: int = 60) -> List[Dict]:
+def _relevance_score(query: str, citation: dict) -> float:
+    """Reiknar einfalt Jaccard similarity milli fyrirspurnar og heimildartexta."""
+    import re
+    def tokenize(s):
+        # Fjarlægja greinarmerki, skipta í orð, lágstafa
+        return set(re.sub(r'[^\w\s]', '', s.lower()).split())
+    q_tokens = tokenize(query)
+    c_text = (citation.get("title", "") + " " + citation.get("snippet", ""))
+    c_tokens = tokenize(c_text)
+    if not q_tokens or not c_tokens:
+        return 0.0
+    intersection = q_tokens & c_tokens
+    union = q_tokens | c_tokens
+    return len(intersection) / len(union) if union else 0.0
+
+RELEVANCE_THRESHOLD = 0.12
+
+def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
     scores: Dict[str, dict] = {}
     for group in source_groups:
         source = group.get("source", "")
@@ -101,6 +118,12 @@ def rrf_merge(source_groups: List[Dict], k: int = 60) -> List[Dict]:
                 scores[url] = {**citation, "rrf": rrf, "_weight": w}
 
     merged = sorted(scores.values(), key=lambda x: -x["rrf"])
+    
+    # Sprint 84: Relevance filter — sía út óviðkomandi heimildir
+    # Þetta kemur í veg fyrir að "Hvað er klukkan í Tokyo?" fái
+    # tilvitnanir úr Stjórnarráðinu.
+    if merged:
+        merged = [c for c in merged if _relevance_score(query, c) >= RELEVANCE_THRESHOLD]
     for i, c in enumerate(merged, 1):
         c["rank"] = i
     return merged
@@ -115,7 +138,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     )
 
     # Sameina með RRF
-    merged = rrf_merge([stjornar, tidindi, mojeek, wayback])
+    merged = rrf_merge([stjornar, tidindi, mojeek, wayback], query)
     merged = deduplicate(merged)
     merged = merged[:max_results]
     md = render_markdown(merged)

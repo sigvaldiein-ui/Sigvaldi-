@@ -17,18 +17,17 @@ class HvelfingarErindreki(Agent):
     
     @property
     def cost_per_call(self) -> float:
-        return 0.001  # Staðbundið vLLM, nánast ekkert kostnaður
+        return 0.001
     
     @property
     def tier(self) -> str:
         return "vault"
     
     async def can_handle(self, query: str, complexity: ComplexityScore) -> float:
-        """VaultAgent getur alltaf svarað — en confidence fer eftir flækjustigi."""
         if complexity.domain == "vault":
             return 0.95
         if complexity.requires_external:
-            return 0.3  # Vault á ekki að sækja ytri gögn
+            return 0.3
         return 0.7
     
     async def execute(self, query: str, context: dict) -> AgentResult:
@@ -39,13 +38,16 @@ class HvelfingarErindreki(Agent):
         start = time.time()
         
         # Sækja leitarsamhengi (PII-hreinsað)
-        search_context = context.get("search_text", "")
-        citations = context.get("citations", [])
+        search_text = context.get("search_text", "")
+        citations = context.get("citations", []) if context.get("citations") else []
         file_context = context.get("file_context", "")
+        
+        # DEBUG: sjá hvað við fengum
+        print(f"DEBUG Hvelfing: search_text={len(search_text)} stafir, citations={len(citations)}", file=sys.stderr)
         
         system_prompt = (
             f"Thu ert Alvitur — íslenskur trúnaðar-agentur.\n\n"
-            f"HEIMILD-GOGN:\n{search_context}{file_context}\n\n"
+            f"HEIMILD-GOGN:\n{search_text}{file_context}\n\n"
             f"REGLUR: 1. Heimildir hafa algjöran forgang. "
             f"2. Ef heimildir vantar, segðu það hreint út. "
             f"3. Stutt, nákvæmt svar.\n\n"
@@ -93,8 +95,9 @@ class HvelfingarErindreki(Agent):
                 return result
                 
         except Exception as e:
-            import sys
-            print(f"HvelfingarErindreki villa: {e}", file=sys.stderr)
+            import traceback
+            print(f"HvelfingarErindreki villa: type={type(e).__name__} msg='{str(e)}'", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             return AgentResult(
                 response="Villa kom upp í trúnaðarþjónustu.",
                 confidence=0.0,

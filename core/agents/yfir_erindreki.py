@@ -91,7 +91,14 @@ class YfirErindreki:
         logger.info(f"Agenta skráðir: {list(self._agents.keys())}")
     
     async def handle(self, query: str, tier: str = "general",
-                     attached_files: list = None) -> AgentResult:
+                     attached_files: list = None,
+                     search_context: dict = None) -> AgentResult:
+        import sys
+        if search_context:
+            print(f"DEBUG2 Yfir: search_context type={type(search_context).__name__}, keys={list(search_context.keys()) if hasattr(search_context, 'keys') else 'N/A'}", file=sys.stderr)
+            print(f"DEBUG2 Yfir: citations={search_context.get('citations', 'KEY_MISSING')}", file=sys.stderr)
+        else:
+            print(f"DEBUG2 Yfir: search_context is None", file=sys.stderr)
         """Aðal-aðferðin. Tekur á móti fyrirspurn og skilar niðurstöðu."""
         start = time.time()
         
@@ -141,6 +148,9 @@ class YfirErindreki:
             "pii_detected": pii_result["has_pii"],
             "pii_warning": pii_result["warning"],
             "complexity": complexity,
+            "search_text": search_context.get("search_text", "") if search_context else "",
+            "citations": search_context.get("citations", []) if search_context else [],
+            "file_context": search_context.get("file_context", "") if search_context else "",
         }
         
         # 7. Framkvæma

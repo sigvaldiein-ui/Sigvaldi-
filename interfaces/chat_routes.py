@@ -39,10 +39,10 @@ def _audit_log(timestamp: str, tier: str, query: str, intent: str,
 import asyncio as _aio
 _VAULT_SEMAPHORE = _aio.Semaphore(1)
 
-async def _get_rag_context(query: str, domain: str) -> str:
-    """Sækir lagalegt samhengi úr Qdrant í gegnum SearchLawTool."""
+async def _get_rag_context(query: str, domain: str) -> dict:
+    """Sækir lagalegt samhengi úr Qdrant í gegnum SearchLawTool og skilar DICT."""
     if domain != "legal":
-        return ""
+        return {"text": "", "citations": []}
     
     try:
         from interfaces.tools.search_law import SearchLawTool
@@ -50,14 +50,20 @@ async def _get_rag_context(query: str, domain: str) -> str:
         hits = await tool.run(query)
         if hits:
             lines = ["[Heimildir — íslensk lög og reglugerðir]"]
+            citations = []
             for h in hits:
                 lines.append(f"• {h.get('title', '')}: {h.get('text', '')[:300]}")
-            return "\n".join(lines)
+                citations.append({
+                    "url": h.get("source", ""),
+                    "title": h.get("title", ""),
+                    "snippet": h.get("text", "")[:200]
+                })
+            return {"text": "\n".join(lines), "citations": citations}
     except Exception as e:
         import sys
         print(f"RAG villa: {e}", file=sys.stderr)
     
-    return ""
+    return {"text": "", "citations": []}
 
 def _strip_pii_for_search(query: str) -> tuple:
     KT_PATTERN = r'\b\d{6}-?\d{4}\b'
@@ -70,9 +76,9 @@ async def _get_search_context(query: str, domain: str) -> dict:
     logger.info(f"[80c] _get_search_context query={query[:50]}")
     
     # 1. RAG Check
-    rag = await _get_rag_context(query, domain)
-    if rag:
-        return {"text": rag, "citations": []}
+    rag_result = await _get_rag_context(query, domain)
+    if rag_result.get("text"):
+        return rag_result
 
     # 2. Web Search
     try:
@@ -142,7 +148,7 @@ async def _call_general_chain(system_prompt: str, query: str):
     key = os.environ.get("OPENROUTER_API_KEY", "")
     if not key or os.environ.get("OPENROUTER_ZDR_CONFIRMED") != "true": return (None, None, None)
     
-    async with httpx.AsyncClient(timeout=180.0) as c:
+    async with httpx.AsyncClient(timeout=300.0) as c:
         try:
             r = await c.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -178,6 +184,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     
     # Undirbúa context fyrir orchestrator
     search_res = await _get_search_context(query, domain)
+    import sys; sys.stderr.write(f"DEBUG search_res: text_len={len(search_res.get('text', ''))}, citations_len={len(search_res.get('citations', []))}\n")
     final_citations = search_res["citations"]
     
     orchestrator_context = {
@@ -188,7 +195,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     }
     
     # Kalla á YfirErindreka
-    result = await yfir_erindreki.handle(query, tier, attached_files)
+    result = await yfir_erindreki.handle(query, tier, attached_files, orchestrator_context)
     
     # Ef orchestrator skilar villu
     if result.response is None or result.confidence == 0.0:
