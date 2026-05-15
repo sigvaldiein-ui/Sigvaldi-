@@ -75,3 +75,21 @@ ofan á AST gate.
 Þegar aðalskel frýs við cascading pkill operations, opnar 
 Sigvaldi nýtt terminal og keyrir cleanup þaðan. Operational 
 pattern fyrir RunPod environment.
+
+### Lesson #94 — PATH handling í ræsiskriftum
+nohup hefur minimal PATH. Ræsiskriftur verða að setja PATH og PYTHONPATH 
+sjálfar, og nota fulla slóð á python3. start_alvitur.sh Exit 127 leyst.
+
+### Lesson #95 — Token rotation discipline
+CF Tunnel token getur orðið ógilt. Þarf að skrá rotation í viðhaldsáætlun
+og hafa skjótan endurheimtingarferil. DNS record + nýtt token workflow staðfest.
+
+### Lesson #96 — Cache isolation per tier
+Skyndiminni verður að vera einangrað eftir tier (Vitinn / Hvelfing).
+Sameiginlegt skyndiminni veldur því að vault-svör leka yfir í almennar
+fyrirspurnir. Lausn: tvö aðskilin skyndiminni í YfirErindreka.
+
+### Lesson #97 — Routing by content, not user flag
+Routing rökfræði verður að byggja á innihaldi fyrirspurnar (PII Sentry,
+domain, complexity), ekki bara `tier` frá notanda. Notandi getur valið
+vault, en kerfið á líka að geta flokkað viðkvæmar fyrirspurnir sjálft.
