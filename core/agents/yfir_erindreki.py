@@ -1,7 +1,6 @@
 """
 Sprint 83 — YfirErindreki (Orchestrator)
-Miðlægur stjórnandi sem tekur á móti fyrirspurn, flokkar hana,
-velur réttan agent og skilar niðurstöðu.
+Miðlægur stjórnandi með tvær rásir: VitansErindreki (default) + HvelfingarErindreki (vault).
 """
 import sys, os, time, logging
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -22,7 +21,7 @@ logger = logging.getLogger("alvitur.orchestrator")
 class CircuitBreaker:
     """Verndar gegn keðjuverkandi villum."""
     max_failures: int = 3
-    reset_timeout: float = 60.0  # sekúndur
+    reset_timeout: float = 60.0
     failure_count: int = 0
     last_failure_time: float = 0.0
     is_open: bool = False
@@ -60,7 +59,7 @@ class SemanticCache:
     
     def set(self, query: str, result: AgentResult):
         if len(self._cache) >= self._max_size:
-            self._cache.pop(next(iter(self._cache)))  # Fjarlægja elsta
+            self._cache.pop(next(iter(self._cache)))
         self._cache[query.strip().lower()] = result
 
 # ── YfirErindreki ────────────────────────────────────────
@@ -69,13 +68,9 @@ class YfirErindreki:
     """
     Aðal-stjórnandi fyrir allar fyrirspurnir.
     
-    Flæði:
-    1. PII Sentry → greinir viðkvæm gögn
-    2. Semantic Cache → athugar hvort svar sé til
-    3. Complexity Score → metur flækjustig
-    4. Velur agent → út frá tier + flækjustigi
-    5. Circuit Breaker → verndar gegn villum
-    6. Framkvæmir → skilar niðurstöðu
+    Tvær rásir í V1:
+    - VitansErindreki (default) fyrir almennar fyrirspurnir
+    - HvelfingarErindreki fyrir vault fyrirspurnir
     """
     
     def __init__(self):
@@ -88,27 +83,21 @@ class YfirErindreki:
         """Skrá alla tiltæka agenta."""
         vault = HvelfingarErindreki()
         self._agents[vault.name] = vault
-        # Fleiri agentar bætast við í síðari sprettum
+        
+        vitans = VitansErindreki()
+        self._agents[vitans.name] = vitans
+        
         logger.info(f"Agenta skráðir: {list(self._agents.keys())}")
     
     async def handle(self, query: str, tier: str = "general",
                      attached_files: list = None) -> AgentResult:
-        """
-        Aðal-aðferðin. Tekur á móti fyrirspurn og skilar niðurstöðu.
-        """
+        """Aðal-aðferðin. Tekur á móti fyrirspurn og skilar niðurstöðu."""
         start = time.time()
         
         # 1. PII Sentry
         pii_result = detect_pii(query)
         if pii_result["has_pii"]:
             logger.info(f"PII fannst: {pii_result['pii_types']}")
-            # V1: soft-warn — skila viðvörun en höldum áfram
-            if tier == "vault":
-                # Þegar í vault — engin breyting
-                pass
-            else:
-                # Bæta viðvörun við svarið
-                pass  # warning fer í metadata
         
         # 2. Semantic Cache
         cached = self._cache.get(query)
@@ -120,29 +109,23 @@ class YfirErindreki:
         complexity = calculate_complexity(query, tier)
         logger.info(f"Flækjustig: {complexity.score:.2f} ({complexity.reasoning})")
         
-        # 4. Velja agent
+        # 4. Velja agent — tvær rásir
         if tier == "vault":
             agent = self._agents.get("HvelfingarErindreki")
         else:
-            # V1: aðeins HvelfingarErindreki til
-            # Í síðari sprettum: velja út frá complexity
-            agent = self._agents.get("HvelfingarErindreki")
+            agent = self._agents.get("VitansErindreki")
         
         if not agent:
             return AgentResult(
                 response="Enginn agent tiltækur fyrir þessa fyrirspurn.",
-                confidence=0.0,
-                agent_name="orchestrator",
-                tier=tier
+                confidence=0.0, agent_name="orchestrator", tier=tier
             )
         
         # 5. Circuit Breaker
         if not self._breaker.can_execute():
             return AgentResult(
                 response="Þjónusta tímabundið óvirk vegna tæknivanda.",
-                confidence=0.0,
-                agent_name="orchestrator",
-                tier=tier
+                confidence=0.0, agent_name="orchestrator", tier=tier
             )
         
         # 6. Undirbúa context
@@ -164,9 +147,7 @@ class YfirErindreki:
             self._breaker.record_failure()
             return AgentResult(
                 response="Villa kom upp við úrvinnslu fyrirspurnar.",
-                confidence=0.0,
-                agent_name=agent.name,
-                tier=tier
+                confidence=0.0, agent_name=agent.name, tier=tier
             )
 
 # Singleton
