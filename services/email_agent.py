@@ -42,7 +42,7 @@ def send_email(to_address: str, subject: str, body: str) -> str:
         msg['Precedence'] = 'bulk'
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        with smtplib.SMTP(SMTP_SERVER, 587, timeout=30) as server:
+        with smtplib.SMTP(SMTP_SERVER, 587, timeout=300.0) as server:
             server.ehlo()
             server.starttls()
             server.ehlo()

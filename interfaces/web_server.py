@@ -90,6 +90,8 @@ except Exception:
     _classify_intent = None
     _INTENT_AVAILABLE = False, validator
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from interfaces.routes.auth import router as auth_router
 import uvicorn
 
 # ─── Lög stillingar ───────────────────────────────────────────────────────────
@@ -268,6 +270,13 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(CacheControlMiddleware)
+
+
+# Session middleware fyrir OIDC Auðkenni
+import os
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "dev-secret"))
+# Sprint 84: Auðkenni.is OIDC routes
+app.include_router(auth_router)
 
 # Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
 from fastapi.staticfiles import StaticFiles
