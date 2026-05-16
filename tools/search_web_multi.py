@@ -13,6 +13,7 @@ import httpx
 from tools.stjornarradid_source import fetch_stjornarradid
 from tools.stjornartidindi_source import fetch_stjornartidindi
 from tools.sources.wayback_source import fetch_wayback_snapshots
+from tools.sources.visindavefur_source import fetch_visindavefur
 from core.citation_schema import build_citation, deduplicate, render_markdown, simhash_64
 
 SOURCE_WEIGHTS = {
@@ -20,6 +21,7 @@ SOURCE_WEIGHTS = {
     "stjornartidindi": 2.0,
     "mojeek": 1.0,
     "wayback": 0.8,
+    "visindavefur": 1.2,
 }
 
 # Sprint 82: Tier multipliers fyrir source trust layer
@@ -139,15 +141,16 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
 
 async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     # Keyra allar fjórar heimildir samtímis
-    stjornar, tidindi, mojeek, wayback = await asyncio.gather(
+    stjornar, tidindi, mojeek, wayback, visindavefur = await asyncio.gather(
         fetch_stjornarradid(query, 30),
         fetch_stjornartidindi(query, max_results),
         _fetch_mojeek(query, max_results),
         fetch_wayback_snapshots(query, max_results),
+        fetch_visindavefur(query, max_results),
     )
 
     # Sameina með RRF
-    merged = rrf_merge([stjornar, tidindi, mojeek, wayback], query)
+    merged = rrf_merge([stjornar, tidindi, mojeek, wayback, visindavefur], query)
     merged = deduplicate(merged)
     merged = merged[:max_results]
     md = render_markdown(merged)
@@ -155,7 +158,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     return {
         "citations": merged,
         "markdown": md,
-        "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback]),
+        "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback, visindavefur]),
     }
 
 if __name__ == "__main__":
