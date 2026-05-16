@@ -1,0 +1,10 @@
+{
+  "date": "2026-05-16",
+  "total_queries": 33,
+  "citation_precision_rate_pct": 33,
+  "grounding_rate_pct": 33,
+  "vitinn_median_ms": 71394.47,
+  "vitinn_p95_ms": 165901.19,
+  "vault_median_ms": 37519.33,
+  "vault_p95_ms": 76030.78
+}
