@@ -83,9 +83,18 @@ async def _fetch_mojeek(query: str, max_results: int = 5) -> Dict:
 def _relevance_score(query: str, citation: dict) -> float:
     """Reiknar einfalt Jaccard similarity milli fyrirspurnar og heimildartexta."""
     import re
+    STOP_WORDS = {
+        # Íslensk stopporð
+        "er", "í", "og", "að", "á", "um", "af", "með", "til", "frá", "sem", "eru", "var",
+        "hvað", "hver", "hvernig", "hvar", "hvenær", "hvers", "vegna",
+        # Ensk stopporð
+        "the", "is", "are", "of", "in", "to", "for", "what", "who", "when", "where", "how", "why",
+        "a", "an", "and", "or", "but", "with", "from", "that", "this", "it", "on", "at", "by"
+    }
     def tokenize(s):
-        # Fjarlægja greinarmerki, skipta í orð, lágstafa
-        return set(re.sub(r'[^\w\s]', '', s.lower()).split())
+        # Fjarlægja greinarmerki, skipta í orð, lágstafa, hunsa stopporð
+        tokens = re.sub(r'[^\w\s]', '', s.lower()).split()
+        return {t for t in tokens if t not in STOP_WORDS and len(t) > 1}
     q_tokens = tokenize(query)
     c_text = (citation.get("title", "") + " " + citation.get("snippet", ""))
     c_tokens = tokenize(c_text)
@@ -95,7 +104,7 @@ def _relevance_score(query: str, citation: dict) -> float:
     union = q_tokens | c_tokens
     return len(intersection) / len(union) if union else 0.0
 
-RELEVANCE_THRESHOLD = 0.12
+RELEVANCE_THRESHOLD = 0.15
 
 def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
     scores: Dict[str, dict] = {}
