@@ -93,3 +93,26 @@ fyrirspurnir. Lausn: tvö aðskilin skyndiminni í YfirErindreka.
 Routing rökfræði verður að byggja á innihaldi fyrirspurnar (PII Sentry,
 domain, complexity), ekki bara `tier` frá notanda. Notandi getur valið
 vault, en kerfið á líka að geta flokkað viðkvæmar fyrirspurnir sjálft.
+
+### Lesson #98 — RAG gagnaflæði: dict skilagildi í stað strengs
+Þegar föll skila bæði texta og fylki (t.d. citations) verður að nota dict 
+skilagildi, ekki streng. _get_rag_context skilaði streng og citations töpuðust.
+Lausn: skila {"text": ..., "citations": ...} í gegnum alla keðjuna.
+
+### Lesson #99 — Stopporð í relevance threshold
+Einföld Jaccard similarity án stopporðasíunar veldur því að óviðkomandi 
+heimildir (t.d. Stjórnarráðið fyrir "Hvað er klukkan í Tokyo?") fá of hátt 
+score vegna sameiginlegra smáorða (er, í, og). Lausn: sía út stopporð 
+áður en similarity er reiknað. RELEVANCE_THRESHOLD = 0.15.
+
+### Lesson #100 — Broad regex find/replace á 20+ skrám er anti-pattern
+Þegar breyta þarf mörgum skrám með regex getur ein regluleg segð haft 
+ólíka merkingarsviði í ólíkum módúlum. Lausn: per-file validation, 
+surgical re-apply, ekki broad re-pattern. Skráð eftir atvik 15. maí 2026.
+
+### Lesson #101 — Multi-iteration recognition pattern
+Þegar executor hefur reynt 5+ tilraunir á sömu fix án empirical progress 
+er það signal um eitt af þrennu: (a) root cause hypothesis er röng, 
+(b) skráin er skemmd frá fyrri tilraunum og þarf git checkout, 
+(c) architectural approach er rangur. Lausn: pause, escalate til alternate 
+reviewer, skrifa skýrslu með empirical evidence af öllum tilraunum.
