@@ -16,13 +16,14 @@ logger = logging.getLogger("alvitur.web")
 # Sprint 82: Audit trail logging
 def _audit_log(timestamp: str, tier: str, query: str, intent: str,
                search_context_len: int, citations_count: int,
-               pipeline_source: str, response_len: int, response_time_ms: float):
+               pipeline_source: str, response_len: int, response_time_ms: float, user_id: str = "anonymous"):
     import os
     audit_dir = os.path.join(os.path.dirname(__file__), '..', 'audit')
     os.makedirs(audit_dir, exist_ok=True)
     log_file = os.path.join(audit_dir, f"{timestamp[:10]}.jsonl")
     entry = {
         "timestamp": timestamp,
+        "user_id": user_id,
         "tier": tier,
         "query": query[:100],
         "intent": intent,
@@ -166,6 +167,12 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     start_time = time.time()
     # FRUMSTILLING - Tryggja að citations séu alltaf til
     final_citations = []
+    audit_user_id = "anonymous"
+    try:
+        from interfaces.middleware.auth import get_current_user
+        cu = get_current_user(request)
+        if cu: audit_user_id = str(cu.get("user_id", "anonymous"))
+    except: pass
     domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd"]) else "general"
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
@@ -201,7 +208,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     if result.response is None or result.confidence == 0.0:
         _audit_log(now_str, tier, query, domain, len(search_res.get("text", "")),
                    len(final_citations), "orchestrator_error", 0,
-                   (time.time() - start_time) * 1000)
+                   (time.time() - start_time) * 1000, audit_user_id)
         return JSONResponse(status_code=503, content={
             "success": False,
             "detail": result.response or "Þjónusta tímabundið ekki aðgengileg."
@@ -211,7 +218,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     _audit_log(now_str, result.tier, query, domain, len(search_res.get("text", "")),
                len(final_citations), f"{result.agent_name}_{result.model_used}",
                len(result.response or ""),
-               (time.time() - start_time) * 1000)
+               (time.time() - start_time) * 1000, audit_user_id)
     
     # Skila svari
     return JSONResponse(content={
