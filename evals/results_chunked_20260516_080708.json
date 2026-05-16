@@ -1,0 +1,252 @@
+[
+  {
+    "id": 1,
+    "query": "Hver er forsætisráðherra Íslands?",
+    "success": true,
+    "citations": 3,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 66406
+  },
+  {
+    "id": 2,
+    "query": "Hvað er klukkan í Reykjavík?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 66404
+  },
+  {
+    "id": 3,
+    "query": "Hverjir eru skilmálar Alvitur?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 66404
+  },
+  {
+    "id": 4,
+    "query": "Hver er menntamálaráðherra?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 66403
+  },
+  {
+    "id": 5,
+    "query": "Hvaða lög gilda um persónuvernd?",
+    "success": true,
+    "citations": 3,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 65752
+  },
+  {
+    "id": 6,
+    "query": "Hvað er Vault?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 82650
+  },
+  {
+    "id": 7,
+    "query": "Hver er saga Alþingis?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 83060
+  },
+  {
+    "id": 8,
+    "query": "Hvernig er veðrið í dag?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 82932
+  },
+  {
+    "id": 9,
+    "query": "Hvað er íslenska krónan?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 83059
+  },
+  {
+    "id": 10,
+    "query": "Hverjir eru stærstu bankar Íslands?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 82931
+  },
+  {
+    "id": 11,
+    "query": "Hvað segja persónuverndarlög 90/2018 um rétt aðila?",
+    "success": true,
+    "citations": 3,
+    "tier": "vault",
+    "pipeline": "HvelfingarErindreki_qwen3-32b-awq",
+    "latency_ms": 10372
+  },
+  {
+    "id": 12,
+    "query": "Berðu saman íslensk persónuverndarlög við GDPR",
+    "success": true,
+    "citations": 3,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 45491
+  },
+  {
+    "id": 13,
+    "query": "Hvaða reglugerðir gilda um gagnavernd?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 45905
+  },
+  {
+    "id": 14,
+    "query": "Hver er munurinn á lögum og reglugerðum?",
+    "success": true,
+    "citations": 3,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 45490
+  },
+  {
+    "id": 15,
+    "query": "Hvaða heimildir hafa stofnanir til gagnavinnslu?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 45904
+  },
+  {
+    "id": 16,
+    "query": "Hvernig ber að meðhöndla viðkvæmar persónuupplýsingar?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 56066
+  },
+  {
+    "id": 17,
+    "query": "Hvaða lagagreinar fjalla um upplýsingarétt?",
+    "success": true,
+    "citations": 3,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 56052
+  },
+  {
+    "id": 18,
+    "query": "Hver er refsirammi fyrir gagnabrot?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 56411
+  },
+  {
+    "id": 19,
+    "query": "Hvað er ákvæði 15. gr. persónuverndarlaga?",
+    "success": true,
+    "citations": 3,
+    "tier": "vault",
+    "pipeline": "HvelfingarErindreki_qwen3-32b-awq",
+    "latency_ms": 56053
+  },
+  {
+    "id": 20,
+    "query": "Hvaða kröfur gerir GDPR til íslenskra fyrirtækja?",
+    "success": true,
+    "citations": 0,
+    "tier": "vitinn",
+    "pipeline": "VitansErindreki_qwen3-32b-awq",
+    "latency_ms": 56411
+  },
+  {
+    "id": 21,
+    "query": "Kennitala 123456-7890 — hver er staða málsins?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90097
+  },
+  {
+    "id": 22,
+    "query": "Sendið staðfestingu á sigvaldi@alvitur.is",
+    "success": false,
+    "error": "",
+    "latency_ms": 90096
+  },
+  {
+    "id": 23,
+    "query": "Pétur býr að Laugavegur 22 — hver er staðan?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90095
+  },
+  {
+    "id": 24,
+    "query": "Hringdu í síma 555-1234",
+    "success": false,
+    "error": "",
+    "latency_ms": 90095
+  },
+  {
+    "id": 25,
+    "query": "Guðrún Jónsdóttir — hver er staða málsins?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90094
+  },
+  {
+    "id": 26,
+    "query": "Hvað er klukkan í Tokyo?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90106
+  },
+  {
+    "id": 27,
+    "query": "Hver er forseti Íslands?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90105
+  },
+  {
+    "id": 28,
+    "query": "Hvað er óskilgreint orð xyzzz?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90105
+  },
+  {
+    "id": 29,
+    "query": "Hvað segja íslensk lög um gervigreind?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90105
+  },
+  {
+    "id": 30,
+    "query": "Hvað er munurinn á hval og skógi?",
+    "success": false,
+    "error": "",
+    "latency_ms": 90105
+  }
+]
