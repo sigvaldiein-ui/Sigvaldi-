@@ -46,7 +46,7 @@ async def fetch_visindavefur(query: str, max_results: int = 5) -> Dict:
                     "url": match["link"],
                     "snippet": match["description"][:300] if match["description"] else "",
                     "source": "visindavefur",
-                    "tier": "general",
+                    "tier": "academic",
                     "score": 0.0,
                     "rank": i,
                     "accessed_at": datetime.now(timezone.utc).isoformat(),

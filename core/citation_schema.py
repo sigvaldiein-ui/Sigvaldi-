@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Literal
 SOURCE_TIER_MAP = {
     "stjornarradid": "government",
     "stjornartidindi": "government",
+    "althingi": "government",
+    "visindavefur": "academic",
     "mojeek": "general",
     "wayback": "general",
 }
@@ -109,3 +111,15 @@ def deduplicate(citations: List[Dict], threshold: int = 3) -> List[Dict]:
         if not is_dup:
             seen.append(c)
     return seen
+
+
+def source_cap(citations: List[Dict], max_per_source: int = 2) -> List[Dict]:
+    """Takmarka fjölda citations frá sama source."""
+    counts: Dict[str, int] = {}
+    result = []
+    for c in citations:
+        src = c.get("source", "unknown")
+        if counts.get(src, 0) < max_per_source:
+            result.append(c)
+            counts[src] = counts.get(src, 0) + 1
+    return result

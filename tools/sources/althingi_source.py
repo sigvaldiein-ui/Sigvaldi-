@@ -55,6 +55,7 @@ async def fetch_althingi(query: str, max_results: int = 5) -> Dict:
                     "url": match["html_link"],
                     "snippet": match["description"] or f"Þingmál {match['malnr']} á {match['thingnr']}. þingi",
                     "source": "althingi",
+                    "tier": "government",
                     "score": match["score"],
                     "rank": i,
                     "accessed_at": datetime.now(timezone.utc).isoformat(),

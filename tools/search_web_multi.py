@@ -15,7 +15,7 @@ from tools.stjornartidindi_source import fetch_stjornartidindi
 from tools.sources.wayback_source import fetch_wayback_snapshots
 from tools.sources.visindavefur_source import fetch_visindavefur
 from tools.sources.althingi_source import fetch_althingi
-from core.citation_schema import build_citation, deduplicate, render_markdown, simhash_64
+from core.citation_schema import build_citation, deduplicate, render_markdown, simhash_64, source_cap
 
 SOURCE_WEIGHTS = {
     "stjornarradid": 2.0,
@@ -105,8 +105,10 @@ def _relevance_score(query: str, citation: dict) -> float:
     if not q_tokens or not c_tokens:
         return 0.0
     intersection = q_tokens & c_tokens
-    union = q_tokens | c_tokens
-    return len(intersection) / len(union) if union else 0.0
+    # Query coverage: hve margir query tokens finnast í citation
+    # Jaccard er of strangur þegar citation text er langur
+    coverage = len(intersection) / len(q_tokens) if q_tokens else 0.0
+    return coverage
 
 RELEVANCE_THRESHOLD = 0.15
 
@@ -136,7 +138,9 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
     # Þetta kemur í veg fyrir að "Hvað er klukkan í Tokyo?" fái
     # tilvitnanir úr Stjórnarráðinu.
     if merged:
-        merged = [c for c in merged if _relevance_score(query, c) >= RELEVANCE_THRESHOLD]
+        merged = [c for c in merged if
+                  c.get("tier") in ("government", "academic") or
+                  _relevance_score(query, c) >= RELEVANCE_THRESHOLD]
     for i, c in enumerate(merged, 1):
         c["rank"] = i
     return merged
@@ -155,6 +159,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     # Sameina með RRF
     merged = rrf_merge([stjornar, tidindi, mojeek, wayback, visindavefur, althingi], query)
     merged = deduplicate(merged)
+    merged = source_cap(merged, max_per_source=2)
     merged = merged[:max_results]
     md = render_markdown(merged)
 
@@ -162,6 +167,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
         "citations": merged,
         "markdown": md,
         "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback, visindavefur, althingi]),
+        "source": "multi",
     }
 
 if __name__ == "__main__":
