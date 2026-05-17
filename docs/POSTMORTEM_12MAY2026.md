@@ -116,3 +116,5 @@ er það signal um eitt af þrennu: (a) root cause hypothesis er röng,
 (b) skráin er skemmd frá fyrri tilraunum og þarf git checkout, 
 (c) architectural approach er rangur. Lausn: pause, escalate til alternate 
 reviewer, skrifa skýrslu með empirical evidence af öllum tilraunum.
+### Lesson #102 — Tablet Clipboard Paradigm (Vélbúnaðar- og Samhengisblinda)
+Þegar HITL keyrir bash í gegnum tablet (Galaxy Tab) yfir Chrome -> Cloudflare tunnel -> RunPod container, breytir clipboard chain löngum textablokkum: gæsalappir tætast og falin non-breaking spaces (\xa0) eru inserted í pasted bash. Þetta veldur SyntaxError og IndentationError þrátt fyrir git checkout. Empirically staðfest Sprint 84 (16. maí 2026) með 7+ failed sed/re.sub tilraunum á chat_routes.py. Lausn: heredoc (cat << EOF > skra.py) einangrar texta frá clipboard interpretation. sed -i og re.sub á multi-line Python með íslenskum stöfum eru bannaðar. Cross-ref: Lesson #78, Lesson #91. Skráð 17. maí 2026.

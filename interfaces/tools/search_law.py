@@ -44,7 +44,7 @@ class SearchLawTool(BaseTool):
             from qdrant_client import QdrantClient
             from sentence_transformers import SentenceTransformer
 
-            model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+            model = SentenceTransformer("intfloat/multilingual-e5-large")
             vector = model.encode([query], convert_to_numpy=True)[0]
 
             client = QdrantClient(path=_QDRANT_PATH)

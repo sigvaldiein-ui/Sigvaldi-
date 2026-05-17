@@ -173,7 +173,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
         cu = get_current_user(request)
         if cu: audit_user_id = str(cu.get("user_id", "anonymous"))
     except: pass
-    domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "réttur", "persónuvernd"]) else "general"
+    domain = "legal" if any(kw in query.lower() for kw in ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]) else "general"
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
     files = attached_files or []
