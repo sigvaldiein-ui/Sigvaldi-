@@ -41,3 +41,4 @@ config/cf_token.txt
 tests/smoke.sh.bak.*
 data/qdrant_laws_v2/
 data/qdrant_laws_v2/
+data/qdrant_laws_v2/
