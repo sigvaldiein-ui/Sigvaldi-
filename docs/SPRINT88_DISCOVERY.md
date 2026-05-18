@@ -52,3 +52,35 @@ Núverandi fallbeygingarstuðningur byggir á einfaldri heuristik:
 - **Phase 0:** DEV virkar með `ALVITUR_DEV_MODE=1`, engin kvóta-blokkun, engin 500 villa.
 - **Phase C:** Guard (`_validate_response`) er tengdur og empirical sannaður.
 - **Phase A:** Öll empirical gögn safnað. Discovery doc tilbúið.
+
+---
+
+## Phase B — BÍN Integration (18. maí 2026)
+
+| Verk | Staða |
+|------|-------|
+| BÍN wrapper skrifaður | ✅ `tools/sources/bin_wrapper.py` |
+| `_name_root_bin` bætt við source_gate | ✅ Virkt, BÍN svarar rétt fyrir mannanöfn |
+| `_validate_response` guard | ✅ Virkt í `handle_chat` |
+| `validate_and_retry` | 🟡 By-pass-að — virkjast í síðari spretti |
+
+## Phase C — Timeout lagfært (18. maí 2026)
+
+| Verk | Staða |
+|------|-------|
+| SearchLawTool timeout | ✅ 10s → 30s |
+| RAG fyrirspurnir klárast | ✅ 4 citations, 200 OK |
+
+## Phase D — Hagstofa PX-Web (18. maí 2026)
+
+| Verk | Staða |
+|------|-------|
+| API rannsókn | 🟡 Skilar `Bad Request` — þarfnast dýpri rannsóknar |
+
+## Næstu skref — 19. maí 2026
+
+| Forgangur | Verk |
+|-----------|------|
+| 1 | Rannsaka Hagstofu PX-Web með réttri API-slóð |
+| 2 | Skoða reglugerd.is |
+| 3 | Fínstilla vLLM — skoða hvort hægt sé að flýta svörum |
