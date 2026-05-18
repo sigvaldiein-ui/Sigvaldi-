@@ -84,3 +84,35 @@ Núverandi fallbeygingarstuðningur byggir á einfaldri heuristik:
 | 1 | Rannsaka Hagstofu PX-Web með réttri API-slóð |
 | 2 | Skoða reglugerd.is |
 | 3 | Fínstilla vLLM — skoða hvort hægt sé að flýta svörum |
+
+---
+
+## Phase D — Hagstofa PX-Web (uppfært 18. maí 2026)
+
+| Verk | Staða |
+|------|-------|
+| MAN00101 / MAN10001 (mannfjöldi) | ✅ Virkt — mannfjöldatölur frá Hagstofu með numeric snippets |
+| VIS01000 (vísitala neysluverðs, verðbólga) | ✅ Lagfært API-path í `HAGSTOFA_API` (`Efnahagur/visitolur/1_vnv/1_vnv/VIS01000.px`), skilar numeric snippet fyrir verðbólgu |
+| VIN01002 (atvinnuþátttaka, atvinnuleysi) | ✅ Nýtt table_id fyrir atvinnuleysi (`Samfelag/vinnumarkadur/vinnumarkadsrannsokn/3_arstolur/VIN01002.px`), skilar numeric snippet fyrir atvinnuleysi |
+| LAN10001 (meðallaun) | ✅ Óbreytt í þessari lotu |
+
+Empirical próf (Task 2):
+
+- `fetch_hagstofa("verðbólga 2026", 5)` → `table_id=VIS01000`, `error=None`, `raw_count=2`, snippet áform: „Vísitala neysluverðs og breytingar — 683.8“.
+- `fetch_hagstofa("atvinnuleysi 2026", 5)` → `table_id=VIN01002`, `error=None`, `raw_count=2`, snippet áform: „Atvinnuþátttaka, atvinnuleysi 1991–2025 — 81.0“.
+
+---
+
+## Phase E — Vísindavefur timeout (18. maí 2026)
+
+| Verk | Staða |
+|------|-------|
+| `fetch_visindavefur` timeout | ✅ Lækkað úr 10s í 5s (`httpx.AsyncClient(timeout=5)`) |
+| Error-handling | ✅ Heldur áfram að skila `{"citations": [], "error": "timeout"}` án þess að blokkera /api/chat |
+| Orchestrator | ✅ `search_web_multi.py` keyrir Vísindavef samhliða öðrum sources með `asyncio.gather` og fær partial results ef Vísindavefur tímast út |
+
+Empirical próf (Task 3):
+
+- Beint kall: `fetch_visindavefur("hantaveira", 5)` → `elapsed_s ≈ 1.15s`, `raw_count=1`, `error=None`, citations=1 (rétt Vísindavefur-svar).
+- Þetta tryggir að Vísindavefur blokkerar ekki lengur heila /api/chat beiðni í átt að 60s timeout; aðrir sovereign/official sources (Hagstofa, Alþingi, Stjórnarráð) ná alltaf að skila.
+
