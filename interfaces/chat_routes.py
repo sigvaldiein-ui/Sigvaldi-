@@ -1,3 +1,4 @@
+import re
 """
 Sprint 61 — chat_routes.py með sovereign separation og öruggum citations.
 """
@@ -73,39 +74,72 @@ def _strip_pii_for_search(query: str) -> tuple:
     return sanitized, had_pii
 
 async def _get_search_context(query: str, domain: str) -> dict:
-    """Sprint 80c: Skilar alltaf {'text': str, 'citations': list}."""
-    logger.info(f"[80c] _get_search_context query={query[:50]}")
+    """Sprint 87 Phase E: tier-first/source-first context með Hagstofu forgangi fyrir hag- og mannfjöldagögn."""
+    logger.info(f"[87E] _get_search_context query={query[:50]}")
     
-    # 1. RAG Check
+    q = (query or "").lower()
+    hagstofa_keywords = [
+        "íbúafjöldi", "ibúafjöldi", "ibúar", "íbúar", "mannfjöldi", "mannfjoldi",
+        "fólksfjöldi", "population", "verðbólga", "verdbolga", "verdbólga",
+        "atvinnuleysi", "laun", "hagstofa"
+    ]
+    needs_hagstofa = any(kw in q for kw in hagstofa_keywords)
+
+    # 1. Legal RAG hefur áfram forgang fyrir legal domain
     rag_result = await _get_rag_context(query, domain)
     if rag_result.get("text"):
         return rag_result
 
-    # 2. Web Search
+    citations = []
+    lines = []
+
+    # 2. Hagstofa fyrst fyrir mannfjölda/efnahag
+    if needs_hagstofa:
+        try:
+            from tools.sources.hagstofa_source import fetch_hagstofa
+            hag = await fetch_hagstofa(query, 5)
+            hag_citations = hag.get("citations", [])
+            if hag_citations:
+                citations.extend(hag_citations)
+                lines.append("[Hagstofa Íslands]")
+                for c in hag_citations:
+                    title = c.get("title", "Hagstofa")
+                    url = c.get("url", "")
+                    snippet = c.get("snippet", "")
+                    lines.append(f"* {title}: {url}")
+                    if snippet:
+                        lines.append(f"  {snippet}")
+        except Exception as e:
+            logger.error(f"[87E] Hagstofa fetch failed: {e}")
+
+    # 3. Web search sem secondary context
     try:
         from tools.search_web_multi import search_web_multi
         res = await search_web_multi(query, max_results=6)
-        citations = res.get("citations", [])
+        web_citations = res.get("citations", [])
         
-        if not citations:
-            return {"text": "", "citations": []}
-
-        lines = ["[Vefleit - Mojeek]"]
-        for c in citations:
-            title = c.get("title", "Heimild")
-            url = c.get("url", "")
-            snippet = c.get("snippet", "")
-            lines.append(f"* {title}: {url}")
-            if snippet:
-                lines.append(f"  {snippet}")
-        
-        return {
-            "text": "\n".join(lines),
-            "citations": citations
-        }
+        if web_citations:
+            if lines:
+                lines.append("")
+            lines.append("[Vefleit - Mojeek]")
+            for c in web_citations:
+                title = c.get("title", "Heimild")
+                url = c.get("url", "")
+                snippet = c.get("snippet", "")
+                lines.append(f"* {title}: {url}")
+                if snippet:
+                    lines.append(f"  {snippet}")
+            citations.extend(web_citations)
     except Exception as e:
-        logger.error(f"[80c] Web search failed: {e}")
+        logger.error(f"[87E] Web search failed: {e}")
+
+    if not citations:
         return {"text": "", "citations": []}
+
+    return {
+        "text": "\n".join(lines),
+        "citations": citations
+    }
 
 def _estimate_tokens(text: str) -> int:
     return int(len((text or "").split()) * 1.3)
@@ -139,7 +173,7 @@ async def _call_vault_local(query: str, system_prompt: str):
             )
             if r.status_code != 200: return (None, None, None)
             d = r.json()
-            return (d["choices"][0]["message"]["content"].strip(), VAULT_LOCAL_MODEL, d.get("usage", {}))
+            return (re.sub(r"<think>.*?</think>", "", d["choices"][0]["message"]["content"], flags=re.DOTALL).strip(), VAULT_LOCAL_MODEL, d.get("usage", {}))
     except Exception as e:
         logger.error(f"Vault error: {e}")
         return (None, None, None)
@@ -158,7 +192,7 @@ async def _call_general_chain(system_prompt: str, query: str):
             )
             if r.status_code == 200:
                 d = r.json()
-                return (d["choices"][0]["message"]["content"].strip(), m_p, d.get("usage", {}))
+                return (re.sub(r"<think>.*?</think>", "", d["choices"][0]["message"]["content"], flags=re.DOTALL).strip(), m_p, d.get("usage", {}))
         except Exception as e:
             logger.error(f"General chain error: {e}")
     return (None, None, None)
@@ -220,10 +254,16 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
                len(result.response or ""),
                (time.time() - start_time) * 1000, audit_user_id)
     
-    # Skila svari
+    # Skila svari með server-side guard gegn uppspunnum heimildum
+    cleaned = re.sub(r"<think>.*?</think>", "", result.response or "", flags=re.DOTALL).strip()
+    is_valid, guarded_response = _validate_response(cleaned, final_citations)
+    
+    if not is_valid:
+        logger.warning("[Guard] VitansErindreki svar var hafnað, notað determinískt fallback.")
+    
     return JSONResponse(content={
         "success": True,
-        "response": result.response,
+        "response": guarded_response,
         "citations": final_citations,
         "pipeline_source": f"{result.agent_name}_{result.model_used}",
         "tier": result.tier,
