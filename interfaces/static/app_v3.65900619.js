@@ -209,7 +209,10 @@
     if (data.citations && data.citations.length > 0) {
       html += '<div class="results-citations"><h4>Heimildir</h4><ul>';
       data.citations.forEach(function (c) {
-        html += '<li>' + escapeHtml(c) + '</li>';
+        var label = c.title || c.url || String(c);
+        var href = c.url || '#';
+        var snippet = c.snippet ? '<br><small>' + escapeHtml(c.snippet.substring(0,120)) + '…</small>' : '';
+        html += '<li><a href="' + escapeHtml(href) + '" target="_blank">' + escapeHtml(label) + '</a>' + snippet + '</li>';
       });
       html += '</ul></div>';
     }

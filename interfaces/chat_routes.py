@@ -197,6 +197,62 @@ async def _call_general_chain(system_prompt: str, query: str):
             logger.error(f"General chain error: {e}")
     return (None, None, None)
 
+
+HALLUCINATED_PATTERNS = [
+    r"https?://[^\s]*openai\.com[^\s]*",
+    r"https?://[^\s]*chatgpt\.com[^\s]*",
+    r"https?://[^\s]*example\.com[^\s]*",
+    r"samkvæmt\s+OpenAI",
+    r"samkvæmt\s+ChatGPT",
+]
+
+def _build_deterministic_fallback(citations: list) -> str:
+    if citations:
+        top = citations[:3]
+        bullets = []
+        for c in top:
+            title = c.get("title") or "Heimild"
+            snippet = (c.get("snippet") or "").strip()
+            if snippet:
+                bullets.append(f"- {title}: {snippet}")
+            else:
+                bullets.append(f"- {title}")
+        return "Ég get ekki staðfest svarið nægilega vel út frá tiltækum heimildum. Hér eru áreiðanlegustu heimildirnar sem fundust:\n" + "\n".join(bullets)
+    return "Ég get ekki staðfest svarið nægilega vel út frá tiltækum heimildum."
+
+def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
+    text = (response_text or "").strip()
+    if not text:
+        return False, _build_deterministic_fallback(citations)
+
+    lowered = text.lower()
+    for pattern in HALLUCINATED_PATTERNS:
+        if re.search(pattern, lowered, flags=re.IGNORECASE):
+            return False, _build_deterministic_fallback(citations)
+
+    if citations:
+        source_titles = [
+            (c.get("title") or "").strip()
+            for c in citations
+            if (c.get("title") or "").strip()
+        ]
+        if source_titles:
+            mentions_any_source = any(title.lower() in lowered for title in source_titles[:5])
+            has_generic_grounding = any(
+                marker in lowered for marker in [
+                    "samkvæmt heimild",
+                    "samkvæmt gögnum",
+                    "samkvæmt upplýsingum",
+                    "heimildir",
+                    "samkvæmt hagstofu",
+                    "samkvæmt lögum",
+                ]
+            )
+            if not mentions_any_source and not has_generic_grounding and len(text) > 280:
+                return False, _build_deterministic_fallback(citations)
+
+    return True, text
+
 async def handle_chat(request: Request, query: str, tier: str = "general", attached_files: list | None = None):
     start_time = time.time()
     # FRUMSTILLING - Tryggja að citations séu alltaf til

@@ -15,6 +15,7 @@ from tools.stjornartidindi_source import fetch_stjornartidindi
 from tools.sources.wayback_source import fetch_wayback_snapshots
 from tools.sources.visindavefur_source import fetch_visindavefur
 from tools.sources.althingi_source import fetch_althingi
+from tools.sources.hagstofa_source import fetch_hagstofa
 from core.citation_schema import build_citation, deduplicate, render_markdown, simhash_64, source_cap
 
 SOURCE_WEIGHTS = {
@@ -24,6 +25,7 @@ SOURCE_WEIGHTS = {
     "wayback": 0.8,
     "visindavefur": 1.2,
     "althingi": 1.5,
+    "hagstofa": 0.7,
 }
 
 # Sprint 82: Tier multipliers fyrir source trust layer
@@ -147,17 +149,18 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
 
 async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     # Keyra allar fjórar heimildir samtímis
-    stjornar, tidindi, mojeek, wayback, visindavefur, althingi = await asyncio.gather(
+    stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa = await asyncio.gather(
         fetch_stjornarradid(query, 30),
         fetch_stjornartidindi(query, max_results),
         _fetch_mojeek(query, max_results),
         fetch_wayback_snapshots(query, max_results),
         fetch_visindavefur(query, max_results),
         fetch_althingi(query, max_results),
+        fetch_hagstofa(query, max_results),
     )
 
     # Sameina með RRF
-    merged = rrf_merge([stjornar, tidindi, mojeek, wayback, visindavefur, althingi], query)
+    merged = rrf_merge([stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa], query)
     merged = deduplicate(merged)
     merged = source_cap(merged, max_per_source=2)
     merged = merged[:max_results]
@@ -166,7 +169,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     return {
         "citations": merged,
         "markdown": md,
-        "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback, visindavefur, althingi]),
+        "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa]),
         "source": "multi",
     }
 

@@ -23,9 +23,9 @@ KEYWORD_FASTPATH = {
     "verðbólga": "VIS01000",
     "neysluveris": "VIS01000",
     "neysluverð": "VIS01000",
-    "atvinnuleysi": "VIN00910",
-    "atvinnuthattaka": "VIN00910",
-    "atvinnuþátttaka": "VIN00910",
+    "atvinnuleysi": "VIN01002",
+    "atvinnuthattaka": "VIN01002",
+    "atvinnuþátttaka": "VIN01002",
     "laun": "LAN10001",
     "meðallaun": "LAN10001",
     "sveitarfelag": "MAN10001",
@@ -45,13 +45,13 @@ TABLE_META = {
     },
     "VIS01000": {
         "title": "Vísitala neysluverðs og breytingar",
-        "url": f"{HAGSTOFA_API}/Efnahagur/visitolur/visitalaNeysluverdis/VIS01000.px",
+        "url": f"{HAGSTOFA_API}/Efnahagur/visitolur/1_vnv/1_vnv/VIS01000.px",
         "public_url": "https://px.hagstofa.is/pxis/pxweb/is/Efnahagur/Efnahagur__visitolur__1_vnv__1_vnv/VIS01000.px",
     },
-    "VIN00910": {
-        "title": "Atvinnuþátttaka og atvinnuleysi",
-        "url": f"{HAGSTOFA_API}/Atvinnuvegir/vinnumarkadur/atvinnuthattaka/VIN00910.px",
-        "public_url": "https://px.hagstofa.is/pxis/pxweb/is/Atvinnuvegir/Atvinnuvegir__vinnumarkadur__1_vinnumarkadsrannsoknir__3_arstolur/VIN00910.px",
+    "VIN01002": {
+        "title": "Atvinnuþátttaka, atvinnuleysi 1991-2025",
+        "url": f"{HAGSTOFA_API}/Samfelag/vinnumarkadur/vinnumarkadsrannsokn/3_arstolur/VIN01002.px",
+        "public_url": "https://px.hagstofa.is/pxis/pxweb/is/Samfelag/Samfelag__vinnumarkadur__vinnumarkadsrannsokn__3_arstolur/VIN01002.px",
     },
     "LAN10001": {
         "title": "Meðallaun eftir starfsstéttum",

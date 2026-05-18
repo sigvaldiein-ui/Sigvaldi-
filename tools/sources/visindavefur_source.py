@@ -19,7 +19,7 @@ async def fetch_visindavefur(query: str, max_results: int = 5) -> Dict:
     """
     citations = []
     try:
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Alvitur-Sovereign-Bot/1.0"}) as client:
+        async with httpx.AsyncClient(timeout=5, headers={"User-Agent": "Alvitur-Sovereign-Bot/1.0"}) as client:
             resp = await client.get(VISINDAVEFUR_RSS_URL)
             resp.raise_for_status()
             root = ET.fromstring(resp.text)
@@ -58,7 +58,7 @@ async def fetch_visindavefur(query: str, max_results: int = 5) -> Dict:
             "raw_count": len(matches),
         }
     except httpx.TimeoutException:
-        print("Visindavefur API: timeout eftir 10 sek", file=sys.stderr)
+        print("Visindavefur API: timeout eftir 5 sek", file=sys.stderr)
         return {"citations": [], "source": "visindavefur", "error": "timeout", "raw_count": 0}
     except httpx.HTTPStatusError as e:
         print(f"Visindavefur API: HTTP {e.response.status_code}", file=sys.stderr)
