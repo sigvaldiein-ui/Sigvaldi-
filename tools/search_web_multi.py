@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from typing import Dict, List
 
 import httpx
+import re
 
+from tools.sources.bin_wrapper import get_nominative
 from tools.stjornarradid_source import fetch_stjornarradid
 from tools.stjornartidindi_source import fetch_stjornartidindi
 from tools.sources.wayback_source import fetch_wayback_snapshots
@@ -17,6 +19,66 @@ from tools.sources.visindavefur_source import fetch_visindavefur
 from tools.sources.althingi_source import fetch_althingi
 from tools.sources.hagstofa_source import fetch_hagstofa
 from core.citation_schema import build_citation, deduplicate, render_markdown, simhash_64, source_cap
+
+
+BIN_STOP_WORDS = {
+    "hver","hvað","hvar","hvenær","hvernig","hvort","hvers","vegna",
+    "er","eru","var","voru","verður","mun","munu",
+    "í","á","um","af","með","til","frá","og","eða","en",
+    "núna","hér","þar","sem",
+    "the","is","are","of","in","to","for","what","who","when","where","how","why",
+}
+
+def _tokenize_for_bin(query: str) -> list[str]:
+    cleaned = re.sub(r'[?!.,;:\(\)\[\]\"\']', " ", query)
+    parts = cleaned.split()
+    tokens: list[str] = []
+    for p in parts:
+        t = p.strip()
+        if not t:
+            continue
+        tokens.append(t)
+    return tokens
+
+async def lemmatize_query_terms(query: str, max_bin_calls: int = 5) -> str:
+    tokens = _tokenize_for_bin(query)
+
+    candidates: list[str] = []
+    for i, t in enumerate(tokens):
+        tl = t.lower()
+        if tl in BIN_STOP_WORDS:
+            continue
+        if t.isdigit() or len(t) < 4:
+            continue
+        # Verja eiginnöfn / staðanöfn: sleppa öllum Titlecase orðum í V1
+        if t[:1].isupper():
+            continue
+        candidates.append(t)
+
+    candidates = candidates[:max_bin_calls]
+
+    if not candidates:
+        return query.strip()
+
+    tasks = [get_nominative(c) for c in candidates]
+    try:
+        lemmas = await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception:
+        return query.strip()
+
+    lemma_map: dict[str, str] = {}
+    for orig, res in zip(candidates, lemmas):
+        if isinstance(res, Exception) or res is None:
+            continue
+        lemma_map[orig] = res
+
+    normalized_tokens: list[str] = []
+    for t in tokens:
+        lemma = lemma_map.get(t)
+        normalized_tokens.append(lemma if lemma else t)
+
+    normalized = " ".join(normalized_tokens).strip()
+    return normalized or query.strip()
 
 SOURCE_WEIGHTS = {
     "stjornarradid": 2.0,
@@ -148,15 +210,18 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
     return merged
 
 async def search_web_multi(query: str, max_results: int = 5) -> Dict:
-    # Keyra allar fjórar heimildir samtímis
+    # Phase D: BÍN-based query normalization
+    normalized_query = await lemmatize_query_terms(query)
+
+    # Keyra allar heimildir samtímis
     stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa = await asyncio.gather(
-        fetch_stjornarradid(query, 30),
-        fetch_stjornartidindi(query, max_results),
-        _fetch_mojeek(query, max_results),
-        fetch_wayback_snapshots(query, max_results),
-        fetch_visindavefur(query, max_results),
-        fetch_althingi(query, max_results),
-        fetch_hagstofa(query, max_results),
+        fetch_stjornarradid(normalized_query, 30),
+        fetch_stjornartidindi(normalized_query, max_results),
+        _fetch_mojeek(normalized_query, max_results),
+        fetch_wayback_snapshots(normalized_query, max_results),
+        fetch_visindavefur(normalized_query, max_results),
+        fetch_althingi(normalized_query, max_results),
+        fetch_hagstofa(normalized_query, max_results),
     )
 
     # Sameina með RRF
