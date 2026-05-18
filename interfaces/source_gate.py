@@ -5,6 +5,7 @@ Notar stofnaleit (fyrstu 5 stafir) til að höndla íslenska fallbeygingu.
 """
 import logging
 import re
+import asyncio
 from typing import Optional, Tuple
 
 logger = logging.getLogger("alvitur.source_gate")
@@ -23,6 +24,17 @@ def _extract_names(text: str) -> set:
 def _name_root(name: str) -> str:
     """Skilar fyrstu 5 stöfum í lágstöfum sem stofn fyrir íslenska fallbeygingu."""
     return name.split()[0][:5].lower() if name and name[0].isupper() else ""
+
+async def _name_root_bin(name: str) -> str:
+    """Sækir nefnimynd úr BÍN og skilar fyrstu 5 stöfum."""
+    try:
+        from tools.sources.bin_wrapper import get_nominative
+        nom = await get_nominative(name)
+        if nom:
+            return nom.split()[0][:5].lower()
+    except Exception:
+        pass
+    return _name_root(name)
 
 
 def _names_in_rag(name_root_set: set, rag: str) -> bool:
