@@ -3112,6 +3112,23 @@ WALLET_MIN_VAULT_USD = float(os.environ.get("WALLET_MIN_VAULT_USD", "10.0"))
 # PLG quota tracker (IP-based, in-memory)
 _quota_tracker_chat: dict = {}  # /api/chat quota per IP
 _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
+
+# ── Sprint 90: InMemoryRateLimiter ─────────────────────────────────────────
+_rate_limit_tracker: dict = {}  # user_id -> list of timestamps
+
+def _check_rate_limit(user_id: str, max_req: int = 10, window_sec: int = 3600) -> bool:
+    import time as _time
+    now = _time.time()
+    if user_id not in _rate_limit_tracker:
+        _rate_limit_tracker[user_id] = []
+    # Hreinsa gömul timestamp
+    _rate_limit_tracker[user_id] = [t for t in _rate_limit_tracker[user_id] if now - t < window_sec]
+    if len(_rate_limit_tracker[user_id]) >= max_req:
+        return False
+    _rate_limit_tracker[user_id].append(now)
+    return True
+# ── /Sprint 90 RateLimiter ─────────────────────────────────────────────────
+
 FREE_QUOTA = int(os.environ.get("ALVITUR_FREE_QUOTA", "5"))
 
 
@@ -3714,6 +3731,15 @@ async def add_to_waitlist(request: Request):
 
 async def chat_endpoint(request: Request):
     """Sprint 45: Production chat endpoint.
+    # Sprint 90: Rate limiting
+    _rl_user = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(_rl_user):
+        return JSONResponse(status_code=429, content={
+            "success": False,
+            "error": "Notkunarhámarki náð (10 beiðnir á klukkustund).",
+            "upgrade_required": True,
+            "upgrade_url": "/askrift"
+        })
     Sprint 46 Phase 1: Quota check + CF-Connecting-IP fix.
     """
     try:
@@ -3973,9 +3999,18 @@ a{color:#6366F1}</style></head><body><div class="c">
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/mock-checkout/{plan}/{amount}/{user_id}", response_class=HTMLResponse)
+@app.get("/mock-checkout/{plan}/{amount}/{user_id}")
 async def checkout(plan: str, amount: int, user_id: str):
-    return HTMLResponse(content="<h2 style='font-family:system-ui;color:#e5e5e5;background:#0a0a0a;padding:3rem;text-align:center'>Áskriftarlegar eru ekki opnar enn. Hafðu samband: info@alvitur.is</h2>", status_code=503)
+    """Sprint 90: JSON mock checkout — engin háð á build_checkout_page."""
+    plan_names = {"brons": "Brons", "silfur": "Silfur", "gull": "Gull", "platina": "Platína"}
+    return JSONResponse(content={
+        "status": "success",
+        "plan": plan,
+        "plan_display": plan_names.get(plan, plan),
+        "amount": amount,
+        "user_id": user_id,
+        "message": "Áskrift hefur verið virkjuð í prufufasa. Rate-limit hefur verið rýmkað."
+    })
 
 
 @app.post("/api/webhook/mock_success", response_class=HTMLResponse)
