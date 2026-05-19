@@ -1,9 +1,10 @@
 """
-Sprint 83 — VitansErindreki (SearchAgent)
+Sprint 90 — VitansErindreki (SearchAgent with Context Sanitization)
 Almennur leitaragent fyrir Vitann. Notar vLLM með ytri heimildum.
 Tier = "vitinn", requires_external = True.
+Enforces Lesson #112: Server-side Context Sanitization & Audit Extraction.
 """
-import sys, os, time
+import sys, os, time, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.agent_core_v5 import Agent, AgentResult, ComplexityScore
@@ -19,7 +20,7 @@ class VitansErindreki(Agent):
     
     @property
     def cost_per_call(self) -> float:
-        return 0.001  # Staðbundið vLLM, nánast ekkert kostnaður
+        return 0.001  # Staðbundið vLLM, nánast enginn kostnaður
     
     @property
     def tier(self) -> str:
@@ -41,16 +42,16 @@ class VitansErindreki(Agent):
         file_context = context.get("file_context", "")
         
         system_prompt = (
-            f"Þú ert Alvitur — íslenskur sérfræðingur.\\n\\n"
-            f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\\n{search_text}{file_context}\\n\\n"
-            f"REGLUR:\\n"
-            f"1. Heimildir hafa forgang.\\n"
-            f"2. Þú VERÐUR að byggja svarið á heimildum sem eru í context.\\n"
-            f"3. Ef Hagstofa-heimild er í context og á við spurninguna, ÞÁ VERÐUR þú að vísa í hana og nota hana sem aðalheimild.\\n"
-            f"4. ALDREI skálda, búa til eða nefna heimildir sem eru ekki í context. Ekki nefna uppspunnar heimildir eins og 'Íslandsbanki', 'Statistíðnaði' eða annað sem er ekki raunverulega í heimildalistanum.\\n"
-            f"5. Ef engin viðeigandi heimild er í context, segðu það beint og skýrt.\\n"
-            f"6. Ekki fullyrða meira en heimildirnar styðja.\\n"
-            f"7. Svaraðu á íslensku.\\n\\n"
+            f"Þú ert Alvitur — íslenskur sérfræðingur.\n\n"
+            f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n{search_text}{file_context}\n\n"
+            f"REGLUR:\n"
+            f"1. Heimildir þessar hafa forgang.\n"
+            f"2. Þú VERÐUR að byggja svarið á heimildum sem eru í context.\n"
+            f"3. Ef Hagstofa-heimild er í context og á við spurninguna, ÞÁ VERÐUR þú að vísa í hana og nota hana sem aðalheimild.\n"
+            f"4. ALDREI skálda, búa til eða nefna heimildir sem eru ekki í context. Ekki nefna uppspunnar heimildir eins og 'Íslandsbanki', 'Statistíðnaði' eða annað sem er ekki raunverulega í heimildalistanum.\n"
+            f"5. Ef engin viðeigandi heimild er í context, segðu það beint og skýrt.\n"
+            f"6. Ekki fullyrða meira en heimildirnar styðja.\n"
+            f"7. Svaraðu á íslensku.\n\n"
             f"SPURNING: {query}"
         )
         
@@ -76,14 +77,25 @@ class VitansErindreki(Agent):
                     )
                 
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"].strip()
+                raw_content = data["choices"][0]["message"]["content"].strip()
                 model = VAULT_LOCAL_MODEL.rsplit("/", 1)[-1]
                 
+                # Áfangi 0 (Lesson #112): Draga út innri rökfærslu / áform fyrir audit logga
+                think_match = re.search(r"<think>(.*?)</think>", raw_content, flags=re.DOTALL)
+                extracted_thinking = think_match.group(1).strip() if think_match else ""
+                
+                # Samhengis-hreinsun: Strippa <think> alveg út áður en Guard eða minni fá skjalið
+                clean_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+                
+                # Skilum hreinu svari en geymum rökfærsluna í metadata fylki fyrir Áfanga 2
                 result = AgentResult(
-                    response=content, citations=citations,
+                    response=clean_content, citations=citations,
                     confidence=0.85, cost_usd=self.cost_per_call,
                     agent_name=self.name, model_used=model, tier="vitinn"
                 )
+                
+                # Geymum tímabundið á formi sem audit logginn (Áfangi 2) mun lesa beint
+                result.metadata = {"actions_logged": extracted_thinking}
                 
                 self.log_result(result, (time.time() - start) * 1000)
                 return result
