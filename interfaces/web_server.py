@@ -3044,8 +3044,12 @@ MAGIC_BYTES = {
 def _detect_filetype(data: bytes, filename: str) -> str:
     """Return 'pdf', 'docx', 'xlsx', or raise HTTPException."""
     ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    if ext == 'txt':
+        return 'txt'
     header = data[:4]
     if header == b'%PDF':
+        if ext == 'txt':
+            return 'txt'
         if ext != 'pdf':
             raise HTTPException(status_code=415,
                 detail="Skráin er merkt sem PDF en innihald stemmir ekki.")
@@ -3384,7 +3388,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # — 1. Staðfesta skrártegund —
     _ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
-    if _ext not in ("pdf", "docx", "xlsx"):
+    if _ext not in ("pdf", "docx", "xlsx", "txt"):
         raise HTTPException(status_code=400, detail="Skráargerð ekki stuð. Sendu PDF, Word eða Excel.")
 
     # S2: Stream size check before full read
@@ -3480,6 +3484,10 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
         except Exception as e:
             heildartexti = f"Villa við lestur: {str(e)}"
             sidur = 0
+    elif _filetype == 'txt':
+        # TXT lestur (Sprint 87.5)
+        heildartexti = efni.decode('utf-8', errors='ignore')
+        sidur = 1
     else:
         # PDF Logic (Original)
         import concurrent.futures as _cf
@@ -3684,6 +3692,26 @@ SKJAL:
 
 
 @app.post("/api/chat")
+
+@app.post("/api/waitlist")
+async def add_to_waitlist(request: Request):
+    """Sprint 87.5: Skráir nafn og netfang á biðlista fyrir V2 Starfsmann."""
+    try:
+        import json as _json
+        data = await request.json()
+        name = data.get("name", "").strip()
+        email = data.get("email", "").strip()
+        if not name or not email:
+            return JSONResponse(status_code=400, content={"status": "error", "detail": "Nafn og netfang nauðsynleg."})
+        entry = {"name": name, "email": email, "timestamp": datetime.now(timezone.utc).isoformat()}
+        with open("/workspace/Sigvaldi-/waitlist.jsonl", "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Waitlist villa: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "detail": "Innri villa."})
+
+
 async def chat_endpoint(request: Request):
     """Sprint 45: Production chat endpoint.
     Sprint 46 Phase 1: Quota check + CF-Connecting-IP fix.

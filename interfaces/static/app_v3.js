@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════
    Alvitur.is — Production Interactive Behaviors
    Tengist /api/chat (texti) og /api/analyze-document (skrár)
+   Sprint 87.5: Vitinn + Hvelfingin + Starfsmaður
    ═══════════════════════════════════════════ */
 
 (function () {
@@ -8,6 +9,7 @@
 
   var tabGeneral = document.getElementById('tab-general');
   var tabConfidential = document.getElementById('tab-confidential');
+  var tabEmployee = document.getElementById('tab-employee');
   var trustStatement = document.getElementById('trust-statement');
   var intakeCard = document.getElementById('intake-card');
   var queryInput = document.getElementById('query-input');
@@ -29,16 +31,68 @@
   // ─── Tab toggle ───
   function setMode(mode) {
     currentMode = mode;
-    [tabGeneral, tabConfidential].forEach(function (tab) {
+    var allTabs = [tabGeneral, tabConfidential, tabEmployee];
+    allTabs.forEach(function (tab) {
+      if (!tab) return;
       var isActive = tab.getAttribute('data-mode') === mode;
       tab.classList.toggle('intake-tab--active', isActive);
       tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
-    trustStatement.hidden = (mode !== 'confidential');
+
+    // Ef Starfsmaður: fela spjallborð, birta biðlistaform
+    var employeePanel = document.getElementById('employee-panel');
+    if (mode === 'employee') {
+      if (intakeCard) intakeCard.style.display = 'none';
+      if (employeePanel) employeePanel.hidden = false;
+      if (trustStatement) trustStatement.hidden = true;
+    } else {
+      if (intakeCard) intakeCard.style.display = '';
+      if (employeePanel) employeePanel.hidden = true;
+      if (trustStatement) trustStatement.hidden = (mode !== 'confidential');
+    }
   }
 
   if (tabGeneral) tabGeneral.addEventListener('click', function () { setMode('general'); });
   if (tabConfidential) tabConfidential.addEventListener('click', function () { setMode('confidential'); });
+  if (tabEmployee) tabEmployee.addEventListener('click', function () { setMode('employee'); });
+
+  // ─── Biðlisti (Starfsmaður) ───
+  var employeeForm = document.getElementById('employee-form');
+  var employeeName = document.getElementById('employee-name');
+  var employeeEmail = document.getElementById('employee-email');
+  var employeeSubmit = document.getElementById('employee-submit');
+  var employeeSuccess = document.getElementById('employee-success');
+
+  if (employeeSubmit) {
+    employeeSubmit.addEventListener('click', function () {
+      if (busy) return;
+      busy = true;
+      var name = employeeName ? employeeName.value.trim() : '';
+      var email = employeeEmail ? employeeEmail.value.trim() : '';
+      if (!name || !email) {
+        employeeSuccess.textContent = 'Vinsamlegast fylltu út bæði nafn og netfang.';
+        busy = false;
+        return;
+      }
+      fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, email: email })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.status === 'success') {
+          employeeSuccess.textContent = 'Takk fyrir! Þú ert skráð(ur) á biðlistann.';
+        } else {
+          employeeSuccess.textContent = 'Villa kom upp. Vinsamlegast reyndu aftur síðar.';
+        }
+      })
+      .catch(function () {
+        employeeSuccess.textContent = 'Villa kom upp. Vinsamlegast reyndu aftur síðar.';
+      })
+      .finally(function () { busy = false; });
+    });
+  }
 
   // ─── File handling ───
   var MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -54,10 +108,10 @@
   function handleFile(file) {
     clearStatus();
     var name = file.name.toLowerCase();
-    var validTypes = ['.pdf', '.docx', '.xlsx', '.doc', '.xls'];
+    var validTypes = ['.pdf', '.docx', '.xlsx', '.doc', '.xls', '.txt'];
     var isValid = validTypes.some(function (ext) { return name.endsWith(ext); });
     if (!isValid) {
-      showStatus('error', 'Skráargerð ekki studd. Styður PDF, Word og Excel.');
+      showStatus('error', 'Skráargerð ekki studd. Styður PDF, DOCX, XLSX, TXT og skjáskot.');
       fileInput.value = '';
       return;
     }
@@ -98,89 +152,29 @@
         return;
       }
       busy = true;
-      submitBtn.disabled = true;
-      if (resultsArea) resultsArea.hidden = true;
       showStatus('loading', 'Greining í gangi…');
-
-      var isTextOnly = !currentFile;
-      var endpoint = isTextOnly ? '/api/chat' : '/api/analyze-document';
-      var tier = currentMode === 'confidential' ? 'vault' : 'general';
-
-      var fetchOptions = {
-        method: 'POST',
-        headers: { 'X-Alvitur-Tier': tier }
-      };
-
-      if (isTextOnly) {
-        fetchOptions.headers['Content-Type'] = 'application/json';
-        fetchOptions.body = JSON.stringify({ query: query });
-      } else {
-        var fd = new FormData();
-        fd.append('file', currentFile);
-        if (query) fd.append('query', query);
-        fetchOptions.body = fd;
-      }
-
-      var controller = new AbortController();
-      fetchOptions.signal = controller.signal;
-      var timeoutId = setTimeout(function () {
-        controller.abort();
-        busy = false;
-        submitBtn.disabled = false;
-        showStatus('error', 'Fyrirspurnin rann út á tíma. Reyndu aftur.');
-      }, 180000);
-
-      fetch(endpoint, fetchOptions)
-        .then(function (r) {
-          clearTimeout(timeoutId);
-          if (!r.ok) return r.json().catch(function () { return {}; }).then(function (d) { throw { status: r.status, data: d }; });
-          return r.json();
-        })
-        .then(function (d) {
-          busy = false;
-          submitBtn.disabled = false;
-          clearStatus();
-          showResults(d);
+      var formData = new FormData();
+      formData.append('tier', currentMode);
+      formData.append('query', query);
+      if (currentFile) formData.append('file', currentFile);
+      fetch('/api/analyze-document', { method: 'POST', body: formData })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          showResults(data);
+          clearFile();
         })
         .catch(function (err) {
-          clearTimeout(timeoutId);
-          busy = false;
-          submitBtn.disabled = false;
-          if (err && err.name === 'AbortError') return;
-          if (err && err.status) {
-            var d = err.data || {};
-            if (err.status === 422) {
-              var em = d.error_code === 'no_text_extracted'
-                ? 'Ekki tókst að lesa texta úr skjalinu. Reyndu annað skjal.'
-                : (d.error || 'Villa við úrvinnslu. Reyndu aftur.');
-              showStatus('error', em);
-              return;
-            }
-            if (err.status === 413) { showStatus('error', 'Skráin er of stór. Hámark 20 MB.'); return; }
-            if (err.status === 415) { showStatus('error', 'Ógild skráargerð.'); return; }
-            if (err.status === 429) { showStatus('error', 'Of margar beiðnir. Reyndu aftur eftir stund.'); return; }
-            showStatus('error', d.error || 'Villa í þjónustu. Reyndu aftur síðar.');
-            return;
-          }
-          showStatus('error', 'Tenging mistókst. Athugaðu nettengingu og reyndu aftur.');
-        });
+          showStatus('error', 'Villa kom upp: ' + (err.message || 'Netsamband rofið.'));
+        })
+        .finally(function () { busy = false; });
     });
   }
 
-  // ─── Enter key ───
-  if (queryInput) {
-    queryInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (submitBtn) submitBtn.click();
-      }
-    });
-  }
-
-  // ─── Status messages ───
   function showStatus(type, message) {
     if (!statusArea) return;
-    var icon = type === 'loading' ? '<span class="spinner" aria-hidden="true"></span>' : '';
+    var icon = '';
+    if (type === 'error') icon = '⚠️ ';
+    if (type === 'loading') icon = '⏳ ';
     statusArea.innerHTML = '<div class="status-message status-message--' + type + '">' + icon + '<span>' + message + '</span></div>';
   }
 
@@ -188,70 +182,42 @@
     if (statusArea) statusArea.innerHTML = '';
   }
 
-  // ─── Show results ───
-  var DOMAIN_LABELS = {
-    'legal':    '📋 Lögfræðigreining',
-    'finance':  '📊 Fjármálagreining',
-    'writing':  '✏️ Ritvinnsla',
-    'research': '🔍 Rannsókn',
-    'general':  '💬 Almennt'
-  };
-
   function showResults(data) {
+    if (!resultsArea || !resultsBody) return;
+    resultsArea.hidden = false;
+    var citations = data.citations || [];
     var html = '';
-    if (data.domain && DOMAIN_LABELS[data.domain]) {
-      html += '<div class="results-domain-tag">' + DOMAIN_LABELS[data.domain] + '</div>';
-    }
-    var txt = data.summary || data.response;
-    if (txt) {
-      html += '<div class="results-summary">' + formatSummary(txt) + '</div>';
-    }
-    if (data.citations && data.citations.length > 0) {
+    html += '<div class="results-response">' + escapeHtml(data.response || '') + '</div>';
+    if (citations.length > 0) {
       html += '<div class="results-citations"><h4>Heimildir</h4><ul>';
-      data.citations.forEach(function (c) {
-        var label = c.title || c.url || String(c);
-        var href = c.url || '#';
-        var snippet = c.snippet ? '<br><small>' + escapeHtml(c.snippet.substring(0,120)) + '…</small>' : '';
-        html += '<li><a href="' + escapeHtml(href) + '" target="_blank">' + escapeHtml(label) + '</a>' + snippet + '</li>';
+      citations.forEach(function (c) {
+        html += '<li><a href="' + escapeHtml(c.url || '#') + '" target="_blank" rel="noopener">' + escapeHtml(c.title || c.url || 'Heimild') + '</a></li>';
       });
       html += '</ul></div>';
     }
-    if (data.filename) {
-      html += '<p class="results-meta">Skjal: ' + escapeHtml(data.filename);
-      if (data.sidur) html += ' (' + data.sidur + ' bls.)';
-      html += '</p>';
-    }
-    if (!html) html = '<p>Engar niðurstöður fundust.</p>';
-    if (resultsBody) resultsBody.innerHTML = html;
-    if (resultsArea) resultsArea.hidden = false;
-    if (resultsArea) resultsArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    resultsBody.innerHTML = html;
   }
 
-  function formatSummary(text) {
-    return text.split('\n').filter(function (line) { return line.trim(); }).map(function (line) { return '<p>' + escapeHtml(line) + '</p>'; }).join('');
+  function clearFile() {
+    currentFile = null;
+    fileInput.value = '';
+    attachedFile.hidden = true;
+    attachedName.textContent = '';
+    attachedSize.textContent = '';
   }
 
-  function escapeHtml(str) {
+  function escapeHtml(text) {
     var div = document.createElement('div');
-    div.textContent = str;
+    div.textContent = text;
     return div.innerHTML;
   }
 
-  // ─── Drag and drop ───
-  var dragCounter = 0;
-  if (intakeCard) {
-    intakeCard.addEventListener('dragenter', function (e) { e.preventDefault(); dragCounter++; intakeCard.classList.add('intake-card--dragover'); });
-    intakeCard.addEventListener('dragleave', function (e) { e.preventDefault(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; intakeCard.classList.remove('intake-card--dragover'); } });
-    intakeCard.addEventListener('dragover', function (e) { e.preventDefault(); });
-    intakeCard.addEventListener('drop', function (e) { e.preventDefault(); dragCounter = 0; intakeCard.classList.remove('intake-card--dragover'); var files = e.dataTransfer.files; if (files.length > 0) handleFile(files[0]); });
+  // Set initial mode
+  if (tabGeneral && tabGeneral.classList.contains('intake-tab--active')) {
+    setMode('general');
+  } else if (tabConfidential && tabConfidential.classList.contains('intake-tab--active')) {
+    setMode('confidential');
+  } else {
+    setMode('general');
   }
-
-  // ─── Smooth scroll ───
-  document.querySelectorAll('a[href^="#"]').forEach(function (link) {
-    link.addEventListener('click', function (e) {
-      var target = document.querySelector(link.getAttribute('href'));
-      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-    });
-  });
-
 })();
