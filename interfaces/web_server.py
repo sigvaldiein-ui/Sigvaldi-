@@ -3117,11 +3117,20 @@ _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
 _rate_limit_tracker: dict = {}  # user_id -> list of timestamps
 
 def _check_rate_limit(user_id: str, max_req: int = 10, window_sec: int = 3600) -> bool:
+    """Skilar True ef notandi er undir hámarki. Inniheldur minnisvörn."""
     import time as _time
+    global _last_limiter_cleanup
     now = _time.time()
+    
+    # Reglubundin minnishreinsun (á 10 mínútna fresti)
+    if now - _last_limiter_cleanup > 600:
+        expired_keys = [k for k, v in _rate_limit_tracker.items() if not [t for t in v if now - t < window_sec]]
+        for k in expired_keys:
+            del _rate_limit_tracker[k]
+        _last_limiter_cleanup = now
+
     if user_id not in _rate_limit_tracker:
         _rate_limit_tracker[user_id] = []
-    # Hreinsa gömul timestamp
     _rate_limit_tracker[user_id] = [t for t in _rate_limit_tracker[user_id] if now - t < window_sec]
     if len(_rate_limit_tracker[user_id]) >= max_req:
         return False
