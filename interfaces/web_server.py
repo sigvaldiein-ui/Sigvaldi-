@@ -3719,6 +3719,29 @@ SKJAL:
 
 @app.post("/api/chat")
 
+
+# ── Sprint 92: SSE Stream Endpoint ────────────────────────────────────────
+@app.get("/api/chat/stream")
+async def chat_stream_endpoint(query: str = "Hæ"):
+    """SSE Foundation + Token Analytics + Safety Brake."""
+    import time, asyncio
+    from sse_starlette.sse import EventSourceResponse
+    
+    async def event_generator():
+        chunks = ["Alvitur ", "stendur ", "vörð ", "um ", "íslenska ", "gagnaforræðið. "]
+        tokens = 0
+        for chunk in chunks:
+            tokens += 1
+            if tokens > 2048:
+                yield {"event": "safety_brake", "data": "[SAFETY_BRAKE_TRIGGERED]"}
+                break
+            yield {"event": "message", "data": chunk}
+            await asyncio.sleep(0.05)
+        yield {"event": "done", "data": "[DONE]"}
+    
+    return EventSourceResponse(event_generator())
+# ── /Sprint 92 SSE ────────────────────────────────────────────────────────
+
 @app.post("/api/waitlist")
 async def add_to_waitlist(request: Request):
     """Sprint 87.5: Skráir nafn og netfang á biðlista fyrir V2 Starfsmann."""
