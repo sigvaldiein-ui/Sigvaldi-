@@ -15,31 +15,53 @@ from core.agent_core_v5 import AgentResult
 logger = logging.getLogger("alvitur.web")
 
 # Sprint 82: Audit trail logging
-def _audit_log(timestamp: str, tier: str, query: str, intent: str,
+def _audit_log(timestamp: str, tier: str, query: str, domain: str,
                search_context_len: int, citations_count: int,
-               pipeline_source: str, response_len: int, response_time_ms: float, user_id: str = "anonymous"):
-    import os
+               pipeline_source: str, response_len: int, response_time_ms: float,
+               user_id: str = "anonymous", result: any = None, context: dict = None):
+    """
+    SOP v4.2 / Lesson #112 Compliant Audit Logger.
+    Hnífskörp þrískipting gagna: actions_logged, observations_logged, final_response.
+    """
+    import os, json
     audit_dir = os.path.join(os.path.dirname(__file__), '..', 'audit')
     os.makedirs(audit_dir, exist_ok=True)
     log_file = os.path.join(audit_dir, f"{timestamp[:10]}.jsonl")
+    
+    # 1. ACTIONS LOGGED: Innri hugsanir (Inference Narrative)
+    actions_logged = ""
+    if result is not None:
+        metadata = getattr(result, "metadata", {}) if hasattr(result, "metadata") else {}
+        actions_logged = metadata.get("actions_logged", "")
+    
+    # 2. OBSERVATIONS LOGGED: Empirical gögn
+    observations_logged = {
+        "search_text": context.get("search_text", "") if context else "",
+        "file_context": context.get("file_context", "") if context else "",
+        "citations": getattr(result, "citations", []) if hasattr(result, "citations") else []
+    }
+    
+    # 3. FINAL RESPONSE: Hreint svar til notanda
+    final_response = getattr(result, "response", "") if hasattr(result, "response") else ""
+    
     entry = {
         "timestamp": timestamp,
         "user_id": user_id,
         "tier": tier,
-        "query": query[:100],
-        "intent": intent,
+        "query": query[:200],
+        "domain": domain,
+        "actions_logged": actions_logged,
+        "observations_logged": observations_logged,
+        "final_response": final_response[:500],
         "search_context_len": search_context_len,
         "citations_count": citations_count,
         "pipeline_source": pipeline_source,
         "response_len": response_len,
         "response_time_ms": round(response_time_ms, 2),
     }
-    import json
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
-import asyncio as _aio
-_VAULT_SEMAPHORE = _aio.Semaphore(1)
 
 async def _get_rag_context(query: str, domain: str) -> dict:
     """Sækir lagalegt samhengi úr Qdrant í gegnum SearchLawTool og skilar DICT."""
