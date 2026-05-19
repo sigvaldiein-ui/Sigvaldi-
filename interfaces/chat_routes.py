@@ -355,3 +355,54 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     if files:
         file_context = "\n[SKJÖL]:" + "".join([f"\n- {f.get('filename')}: {f.get('content','')[:1000]}" for f in files[:3]])
 
+
+
+# ==========================================
+# SPRINT 91 — SSE FOUNDATION & SAFETY BRAKE
+# ==========================================
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+
+@app.get("/api/chat/stream")
+async def chat_stream_endpoint(query: str = "Hæ"):
+    async def event_generator():
+        mock_response_chunks = [
+            "Alvitur ", "stendur ", "vörð ", "um ", "íslenska ", "gagnaforræðið. ",
+            "Þetta ", "er ", "rauntíma ", "streymi ", "í ", "Spretti ", "91 ", "til ",
+            "að ", "sannreyna ", "stöðugleika ", "gáttarinnar ", "á ", "porti ", "8000. "
+        ]
+        MAX_STREAM_TOKENS = 2048
+        tokens_sent = 0
+        try:
+            for chunk in mock_response_chunks:
+                tokens_sent += len(chunk.split())
+                if tokens_sent > MAX_STREAM_TOKENS:
+                    yield {"event": "safety_brake", "data": "[SAFETY_BRAKE_TRIGGERED]"}
+                    break
+                yield {"event": "message", "data": chunk}
+                await asyncio.sleep(0.05)
+            yield {"event": "done", "data": "[DONE]"}
+        except asyncio.CancelledError:
+            raise
+    return EventSourceResponse(event_generator())
+
+
+@app.get("/api/chat/stream")
+async def chat_stream_endpoint(query: str = "Hæ"):
+    """Sprint 91 — SSE Foundation + Safety Brake."""
+    import asyncio
+    from sse_starlette.sse import EventSourceResponse
+    
+    async def event_generator():
+        chunks = ["Alvitur ", "stendur ", "vörð ", "um ", "íslenska ", "gagnaforræðið. "]
+        tokens = 0
+        for chunk in chunks:
+            tokens += 1
+            if tokens > 2048:
+                yield {"event": "safety_brake", "data": "[SAFETY_BRAKE_TRIGGERED]"}
+                break
+            yield {"event": "message", "data": chunk}
+            await asyncio.sleep(0.05)
+        yield {"event": "done", "data": "[DONE]"}
+    
+    return EventSourceResponse(event_generator())
