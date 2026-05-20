@@ -4181,9 +4181,16 @@ async def chat_stream_endpoint(request: Request):
             headers={"Retry-After": "10"}
         )
 
+    body_data = await request.json()
+
+
+    query = body_data.get('query', '')
+
+
+
     async def sse_generator():
         try:
-            body = await request.json()
+            body = body_data
             query = body.get("query", "")
             
             allow_external_fallback = True if user_tier == "Vitinn" else False
