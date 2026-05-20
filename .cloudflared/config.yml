@@ -1,0 +1,11 @@
+tunnel: alvitur-sovereign-tunnel
+credentials-file: /root/.cloudflared/cert.json
+ingress:
+  - hostname: alvitur.is
+    path: /api/admin/*
+    service: http_status:403
+  - hostname: alvitur.is
+    service: https://localhost:8000
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404

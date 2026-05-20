@@ -1,0 +1,1 @@
+- **V1-RAG-001:** Partial hallucination accepted in Sprint 94. Citation filtering removes unused references but cannot strictly verify if the cited text accurately reflects the source document. Mitigation deferred to dedicated Eval sprint.

@@ -74,6 +74,13 @@ from typing import Optional
 
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Form
+
+def apply_tier_prompt(tier: str, base_prompt: str) -> str:
+    strict = "\n\nSvaraðu EINGÖNGU upp úr meðfylgjandi gögnum. Notaðu tölustafi í hornklofum (t.d. [1], [2]). Ef svarið finnst ekki, skilaðu NÁKVÆMLEGA: <<ALVITUR_NO_DATA>>"
+    soft = "\n\nNotaðu meðfylgjandi gögn sem grunn að svarinu og vísaðu í þau með [1], [2]. Þú mátt fylla í eyður með eigin þekkingu."
+    if tier in ["Hvelfingin", "Starfsmaður"]:
+        return base_prompt + strict
+    return base_prompt + soft
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -3343,7 +3350,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
                     "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
                 )
-                _system_prompt = _get_prompt(_domain_txt, _now_str) + _honesty
+                _system_prompt = apply_tier_prompt(user_tier, _get_prompt(_domain_txt, _now_str) + _honesty)
                 logger.info(f"[ALVITUR] Sprint61 text-only tier={_tier} domain={_domain_txt}")
                 _pipeline_source_txt = "unknown"
                 if _tier == "vault":
@@ -3668,7 +3675,7 @@ SKJAL:
                         "til að svara spurningunni, segjum notandanum það beint og bjóðum upp á "
                         "framhaldsspurningu. Búðu ALDREI til upplýsingar sem eru ekki í skjalinu."
                     )
-                    _system_prompt = _get_prompt(_domain_doc, _now_str) + _honesty_doc
+                    _system_prompt = apply_tier_prompt(user_tier, _get_prompt(_domain_doc, _now_str) + _honesty_doc)
                     logger.info(f"[ALVITUR] Sprint61 analyze_doc tier=general calling leid_a domain={_domain_doc}")
                     _summary, _model_used, _usage = await _call_leid_a(_system_prompt, _msg)
                     if _summary is None:
@@ -4221,7 +4228,7 @@ async def chat_stream_endpoint(request: Request):
             stream_semaphore.release()
 
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(sse_generator(), media_type="text/event-stream")
+    return StreamingResponse(filter_sse_stream(sse_generator(), []), media_type="text/event-stream")
 
 
 # Sprint 93 — Emergency Stream Termination Endpoint (JSON-RPC 2.0 & ADR-001)
@@ -4296,3 +4303,14 @@ async def emergency_stream_termination(request: Request):
         }
     except Exception as e:
         return {"jsonrpc": "2.0", "error": {"code": -32603, "message": f"Internal error: {str(e)}"}, "id": None}
+
+
+async def filter_sse_stream(core_stream_generator, original_citations: list):
+    full_text = ""
+    async for chunk in core_stream_generator:
+        full_text += str(chunk)
+        if "<<ALVITUR_NO_DATA>>" in full_text:
+            yield 'data: {"chunk": "Því miður fundust engar upplýsingar um þetta í ríkisgögnum okkar."}\n\n'
+            yield 'data: {"metadata": {"citations": []}}\n\n'
+            return
+        yield chunk
