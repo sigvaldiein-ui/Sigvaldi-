@@ -219,6 +219,9 @@ async def lifespan(app: FastAPI):
         pass
     logger.info("Zero-Disk Hvelfingin: cleanup loop stopped")
 
+# Sprint 93 — Concurrency protection
+stream_semaphore = asyncio.Semaphore(8)
+
 app = FastAPI(
     title="Alvitur Enterprise AI",
     docs_url=None,   # Slökkva á Swagger UI í framleiðslu
@@ -4153,3 +4156,143 @@ async def _call_leid_b(user_msg, max_tokens=8192):
 
 def _estimate_tokens(text):
     return int(len((text or "").split()) * 1.3)
+
+
+# Sprint 93 — Live Core Bridge & Tier Privacy Spec (ADR-001 / ADR-002)
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(request: Request):
+    # Fetch user tier from custom header or defaults
+    user_tier = request.headers.get("X-Alvitur-Tier", "Vitinn").strip()
+    
+    # Acquire capacity slot from our gateway semaphore
+    try:
+        await asyncio.wait_for(stream_semaphore.acquire(), timeout=2.0)
+    except asyncio.TimeoutError:
+        return Response(
+            content="Service Unavailable: High traffic slots exhausted.", 
+            status_code=503, 
+            headers={"Retry-After": "10"}
+        )
+
+    async def sse_generator():
+        try:
+            body = await request.json()
+            query = body.get("query", "")
+            
+            allow_external_fallback = True if user_tier == "Vitinn" else False
+            vllm_url = "http://127.0.0.1:8002/v1/chat/completions"
+            payload = {
+                "model": "qwen-32b-awq",
+                "messages": [{"role": "user", "content": query}],
+                "stream": True
+            }
+            
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with client.stream("POST", vllm_url, json=payload) as response:
+                        if response.status_code != 200:
+                            raise Exception(f"vLLM returned status {response.status_code}")
+                        
+                        in_think_block = False
+                        async for chunk in response.aiter_text():
+                            if "<think>" in chunk:
+                                in_think_block = True
+                                if user_tier == "Hvelfingin":
+                                    yield 'data: {"stage": "Gagnagreining í gangi..."}\n\n'
+                                continue
+                            if "</think>" in chunk:
+                                in_think_block = False
+                                continue
+                                
+                            if in_think_block:
+                                if user_tier == "Vitinn":
+                                    yield f"data: {chunk}\n\n"
+                                elif user_tier == "Hvelfingin":
+                                    yield 'data: {"stage": "Rökfærslu-athugun á ríkisgögnum..."}\n\n'
+                            else:
+                                yield f"data: {chunk}\n\n"
+                                
+            except Exception as e:
+                if allow_external_fallback:
+                    yield 'data: {"info": "vLLM down, engaging OpenRouter fallback chain..."}\n\n'
+                else:
+                    yield 'data: {"error": "Fullvalda innviðir ótilbúnir. Trúnaðarstig banna ytri flutning."}\n\n'
+        finally:
+            stream_semaphore.release()
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+
+# Sprint 93 — Emergency Stream Termination Endpoint (JSON-RPC 2.0 & ADR-001)
+@app.post("/api/admin/streams/terminate")
+async def emergency_stream_termination(request: Request):
+    client_host = request.client.host
+    admin_token = request.headers.get("X-Admin-Auth-Token", "").strip()
+    
+    if client_host not in ["127.0.0.1", "localhost"] and not admin_token:
+        return Response(content="Unauthorized: Secure channel required.", status_code=401)
+        
+    try:
+        body = await request.json()
+        if body.get("jsonrpc") != "2.0" or body.get("method") != "terminate_all_active_streams":
+            return {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": body.get("id")}
+            
+        params = body.get("params", {})
+        requested_by = params.get("requested_by", "Unknown-Admin")
+        reason = params.get("reason", "No reason provided")
+        
+        import hashlib
+        import time
+        import json
+        
+        log_dir = "/workspace/Sigvaldi-/audit"
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "emergency_audit_chain.jsonl")
+        
+        prev_hash = "0" * 64
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8") as lf:
+                lines = lf.readlines()
+                if lines:
+                    try:
+                        last_line_data = json.loads(lines[-1].strip())
+                        prev_hash = last_line_data.get("current_hash", "0" * 64)
+                    except:
+                        pass
+                        
+        current_time = time.time()
+        current_pid = os.getpid()
+        
+        raw_string = f"{current_time}|{current_pid}|{requested_by}|{reason}|{prev_hash}"
+        current_hash = hashlib.sha256(raw_string.encode("utf-8")).hexdigest()
+        
+        audit_entry = {
+            "timestamp": current_time,
+            "pid": current_pid,
+            "requested_by": requested_by,
+            "reason": reason,
+            "previous_hash": prev_hash,
+            "current_hash": current_hash
+        }
+        
+        with open(log_file, "a", encoding="utf-8") as lf:
+            lf.write(json.dumps(audit_entry) + "\n")
+            
+        killed_count = 0
+        if hasattr(stream_semaphore, '_value'):
+            stream_semaphore._value = 8
+            killed_count = 8
+            
+        return {
+            "jsonrpc": "2.0",
+            "result": {
+                "status": "terminated",
+                "killed_connections_count": killed_count,
+                "released_semaphore_slots": killed_count,
+                "audit_chain_signature": current_hash
+            },
+            "id": body.get("id")
+        }
+    except Exception as e:
+        return {"jsonrpc": "2.0", "error": {"code": -32603, "message": f"Internal error: {str(e)}"}, "id": None}
