@@ -4196,14 +4196,15 @@ async def chat_stream_endpoint(request: Request):
             allow_external_fallback = True if user_tier == "Vitinn" else False
             vllm_url = "http://127.0.0.1:8002/v1/chat/completions"
             payload = {
-                "model": "qwen-32b-awq",
+                "model": "/workspace/models/qwen3-32b-awq",
                 "messages": [{"role": "user", "content": query}],
                 "stream": True
             }
             
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    async with client.stream("POST", vllm_url, json=payload) as response:
+                import httpx
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    async with client.stream("POST", vllm_url, json=payload, headers={"Authorization": "Bearer token-abc123"}) as response:
                         if response.status_code != 200:
                             raise Exception(f"vLLM returned status {response.status_code}")
                         
@@ -4227,6 +4228,8 @@ async def chat_stream_endpoint(request: Request):
                                 yield f"data: {chunk}\n\n"
                                 
             except Exception as e:
+                import logging
+                logging.getLogger("alvitur.web").error(f"[S95] vLLM stream failed: {type(e).__name__}: {e}")
                 if allow_external_fallback:
                     yield 'data: {"info": "vLLM down, engaging OpenRouter fallback chain..."}\n\n'
                 else:
@@ -4235,7 +4238,7 @@ async def chat_stream_endpoint(request: Request):
             stream_semaphore.release()
 
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(filter_sse_stream(sse_generator(), []), media_type="text/event-stream")
+    return StreamingResponse(filter_sse_stream(sse_generator(), body_data.get("context", [])), media_type="text/event-stream")
 
 
 # Sprint 93 — Emergency Stream Termination Endpoint (JSON-RPC 2.0 & ADR-001)
@@ -4312,12 +4315,36 @@ async def emergency_stream_termination(request: Request):
         return {"jsonrpc": "2.0", "error": {"code": -32603, "message": f"Internal error: {str(e)}"}, "id": None}
 
 
-async def filter_sse_stream(core_stream_generator, original_citations: list):
-    full_text = ""
+async def filter_sse_stream(core_stream_generator, context_docs: list):
+    import json, re
+    content_buffer = ""
+    doc_lookup = {str(doc.get("id", doc.get("doc_id", ""))): doc for doc in context_docs}
+    citation_pattern = re.compile(r'\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]')
+    
     async for chunk in core_stream_generator:
-        full_text += str(chunk)
-        if "<<ALVITUR_NO_DATA>>" in full_text:
-            yield 'data: {"chunk": "Því miður fundust engar upplýsingar um þetta í ríkisgögnum okkar."}\n\n'
+        chunk_str = str(chunk)
+        if chunk_str.startswith("data: ") and "DONE" not in chunk_str:
+            try:
+                clean = chunk_str.replace("data: ", "", 1).strip()
+                obj = json.loads(clean)
+                delta = obj.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                if delta:
+                    content_buffer += delta
+            except:
+                pass
+        
+        if "<<ALVITUR_NO_DATA>>" in content_buffer:
+            yield 'data: {"chunk": "\u00dev\u00ed mi\u00f0ur fundust engar uppl\u00fdsingar um \u00feetta \u00ed r\u00edkisg\u00f6gnum okkar."}\n\n'
             yield 'data: {"metadata": {"citations": []}}\n\n'
             return
         yield chunk
+
+    found = citation_pattern.findall(content_buffer)
+    nums = []
+    for m in found:
+        nums.extend([n.strip() for n in m.split(",")])
+    unique = list(dict.fromkeys(nums))
+    valid = [doc_lookup[n] for n in unique if n in doc_lookup]
+    payload = {"metadata": {"citations": valid}}
+    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
