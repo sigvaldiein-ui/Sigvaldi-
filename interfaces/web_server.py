@@ -98,6 +98,7 @@ except Exception:
     _classify_intent = None
     _INTENT_AVAILABLE = False, validator
 from starlette.middleware.base import BaseHTTPMiddleware
+from interfaces.tools.audit_logger import SecureAuditLogger
 from starlette.middleware.sessions import SessionMiddleware
 from interfaces.routes.auth import router as auth_router
 import uvicorn
@@ -4448,5 +4449,6 @@ async def get_compliance_report(request: Request):
         "timestamp": time.time(),
         "active_queue_count": len(APPROVAL_QUEUE),
         "compliance_checked": True,
+        "chain_hash": audit_logger.last_hash,
         "report_hash": hashlib.sha256(str(time.time()).encode()).hexdigest()[:16]
     }
