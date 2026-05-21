@@ -4247,11 +4247,11 @@ async def chat_stream_endpoint(request: Request):
                                 
                             if in_think_block:
                                 if user_tier == "Vitinn":
-                                    yield f"data: {chunk}\n\n"
+                                    yield chunk  # vLLM streamar nú þegar með data: prefix
                                 elif user_tier == "Hvelfingin":
                                     yield 'data: {"stage": "Rökfærslu-athugun á ríkisgögnum..."}\n\n'
                             else:
-                                yield f"data: {chunk}\n\n"
+                                yield chunk  # vLLM streamar nú þegar með data: prefix
                                 
             except Exception as e:
                 import logging
