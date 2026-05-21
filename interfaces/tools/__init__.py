@@ -29,6 +29,8 @@ TIER_REQUIREMENTS = {
 }
 
 TIER_LEVELS = {"Vitinn": 0, "Hvelfingin": 1, "Starfsmaður": 2}
+CRITICAL_TOOLS = {"mail_send", "api_exec", "pdf_gen"}  # Krefjast HITL samþykktar
+
 
 def get_tool(name: str) -> BaseTool | None:
     """Pure registry lookup. NO tier check."""
