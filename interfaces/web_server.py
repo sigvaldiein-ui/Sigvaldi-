@@ -4410,3 +4410,24 @@ async def filter_sse_stream(core_stream_generator, context_docs: list):
     payload = {"metadata": {"citations": valid}}
     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+
+@app.post("/api/approve/{approval_id}")
+async def approve_task(approval_id: str, request: Request):
+    """Sprint 102: HITL Approval — samþykkir og keyrir biðverk."""
+    if not hasattr(request.state, "user_claims"):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+    
+    task = APPROVAL_QUEUE.get(approval_id)
+    if not task:
+        return JSONResponse(status_code=404, content={"error": "Approval task not found"})
+    
+    try:
+        tool_name = task["tool"]
+        from interfaces.tools import get_tool
+        user_tier = request.state.user_claims.get("tier", "Vitinn")
+        tool = get_tool(tool_name, user_tier)
+        result = await tool.run(**(task["params"]), confirmed=True)
+        del APPROVAL_QUEUE[approval_id]
+        return {"status": "approved_and_executed", "approval_id": approval_id, "result": result}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
