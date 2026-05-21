@@ -44,3 +44,11 @@ class BaseTool(ABC):
 
     def __repr__(self) -> str:
         return f"<Tool name={self.name}>"
+
+# ── Sprint 101: Output Filter ─────────────────────────────────────────────
+def sanitize_tool_output(output_data):
+    """Fjarlægir dulkóðaða lykla, kerfisslóðir og tæknileg innri ID."""
+    BANNED_KEYS = {"password", "secret", "token", "internal_id", "db_path", "api_key", "credential"}
+    if not isinstance(output_data, dict):
+        return output_data
+    return {k: v for k, v in output_data.items() if k.lower() not in BANNED_KEYS}
