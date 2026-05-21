@@ -16,6 +16,9 @@ from interfaces.tools.search_law import SearchLawTool
 from interfaces.tools.summarize_doc import SummarizeDocTool
 from interfaces.tools.classify_doc import ClassifyDocTool
 from interfaces.tools.translate_text import TranslateTextTool
+from interfaces.tools.pdf_gen import Pdf_genTool
+from interfaces.tools.api_exec import Api_execTool
+from interfaces.tools.mail_send import Mail_sendTool
 
 # Registry — tool name → tool instance
 REGISTRY: dict[str, BaseTool] = {
@@ -23,6 +26,9 @@ REGISTRY: dict[str, BaseTool] = {
     "summarize_doc": SummarizeDocTool(),
     "classify_doc": ClassifyDocTool(),
     "translate_text": TranslateTextTool(),
+    "pdf_gen": Pdf_genTool(),
+    "api_exec": Api_execTool(),
+    "mail_send": Mail_sendTool(),
 }
 
 
@@ -32,6 +38,9 @@ TIER_REQUIREMENTS = {
     "summarize_doc": "Vitinn",
     "classify_doc": "Vitinn",
     "translate_text": "Vitinn",
+    "pdf_gen": "Hvelfingin",
+    "api_exec": "Starfsmaður",
+    "mail_send": "Starfsmaður",
 }
 
 TIER_LEVELS = {"Vitinn": 0, "Hvelfingin": 1, "Starfsmaður": 2}
