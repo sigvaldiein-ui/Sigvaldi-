@@ -3107,7 +3107,9 @@ async def tools_call(tool_name: str, request: Request):
 
         from interfaces.mcp_server import mcp_call_tool
         result = await mcp_call_tool(tool_name, body)
-        audit_logger.log_action("SYSTEM", "CORE", tool_name, "TOOL_EXECUTED")
+        user_sub = request.state.user_claims.get("sub", "anonymous") if hasattr(request.state, "user_claims") else "anonymous"
+        jti = request.state.user_claims.get("jti", "unknown") if hasattr(request.state, "user_claims") else "unknown"
+        await audit_logger.log_action(jti=jti, user_sub=user_sub, tool_name=tool_name, action="TOOL_EXECUTED")
     except Exception as e:
         return JSONResponse(status_code=403, content={"error": str(e)})
     from interfaces.tools.base import sanitize_tool_output
