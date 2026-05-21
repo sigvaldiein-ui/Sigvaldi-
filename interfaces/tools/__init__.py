@@ -26,9 +26,27 @@ REGISTRY: dict[str, BaseTool] = {
 }
 
 
-def get_tool(name: str) -> BaseTool | None:
-    """Skilar tool fyrir gefið nafn. None ef ekki til."""
-    return REGISTRY.get(name)
+# ── ADR-008: Capability Registry ──────────────────────────────────────────
+TIER_REQUIREMENTS = {
+    "search_law": "Vitinn",
+    "summarize_doc": "Vitinn",
+    "classify_doc": "Vitinn",
+    "translate_text": "Vitinn",
+}
+
+TIER_LEVELS = {"Vitinn": 0, "Hvelfingin": 1, "Starfsmaður": 2}
+
+
+def get_tool(name: str, user_tier: str = "Vitinn") -> BaseTool | None:
+    """ADR-008: Skilar tool ef user_tier uppfyllir kröfur. None annars."""
+    tool = REGISTRY.get(name)
+    if not tool:
+        return None
+    required = TIER_REQUIREMENTS.get(name, "Vitinn")
+    if TIER_LEVELS.get(user_tier, 0) < TIER_LEVELS.get(required, 0):
+        from fastapi.exceptions import HTTPException
+        raise HTTPException(status_code=403, detail=f"Tool '{name}' requires tier {required}")
+    return tool
 
 
 def list_tools() -> list[dict]:
