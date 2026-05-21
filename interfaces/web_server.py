@@ -3090,8 +3090,24 @@ async def tools_call(tool_name: str, request: Request):
     try:
         check_tier_for_tool(tool_name, user_tier)
         tool = get_tool(tool_name)
+
+        # Sprint 97.8: CRITICAL_TOOLS fara í biðröð
+        from interfaces.tools import CRITICAL_TOOLS
+        if tool_name in CRITICAL_TOOLS and not body.get("confirmed", False):
+            import uuid, aiosqlite
+            task_id = str(uuid.uuid4())[:8]
+            user_sub = request.state.user_claims.get("sub", "anonymous") if hasattr(request.state, "user_claims") else "anonymous"
+            async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+                await db.execute(
+                    "INSERT INTO pending_tasks (task_id, jti, tool_name, payload, status, requester_sub, created_at) VALUES (?, ?, ?, ?, 'PENDING', ?, ?)",
+                    (task_id, "N/A", tool_name, __import__("json").dumps(body), user_sub, __import__("time").time())
+                )
+                await db.commit()
+            return JSONResponse(status_code=202, content={"status": "pending_approval", "approval_id": task_id, "message": "Task requires HITL approval"})
+
         from interfaces.mcp_server import mcp_call_tool
         result = await mcp_call_tool(tool_name, body)
+        audit_logger.log_action("SYSTEM", "CORE", tool_name, "TOOL_EXECUTED")
     except Exception as e:
         return JSONResponse(status_code=403, content={"error": str(e)})
     from interfaces.tools.base import sanitize_tool_output
