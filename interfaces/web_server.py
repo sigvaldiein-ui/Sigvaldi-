@@ -4223,7 +4223,7 @@ async def auth_and_search(identity_token: str, query: str) -> list:
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: Request):
     # Fetch user tier from custom header or defaults
-    user_tier = request.headers.get("X-Alvitur-Tier", "Vitinn").strip()
+    user_tier = request.state.user_claims.get("tier", "Vitinn") if hasattr(request.state, "user_claims") else request.headers.get("X-Alvitur-Tier", "Vitinn").strip()
     
     # Acquire capacity slot from our gateway semaphore
     try:
