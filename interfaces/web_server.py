@@ -261,6 +261,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
 
 @app.on_event("startup")
 async def setup_db():
+    await audit_logger.load_last_hash()
     import aiosqlite
     async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
         await db.execute("""
@@ -270,6 +271,7 @@ async def setup_db():
                 tool_name TEXT,
                 payload TEXT,
                 status TEXT,
+                requester_sub TEXT,
                 created_at REAL
             )
         """)
@@ -3086,7 +3088,8 @@ async def tools_call(tool_name: str, request: Request):
     except Exception:
         body = {}
     try:
-        tool = get_tool(tool_name, user_tier)
+        check_tier_for_tool(tool_name, user_tier)
+        tool = get_tool(tool_name)
         from interfaces.mcp_server import mcp_call_tool
         result = await mcp_call_tool(tool_name, body)
     except Exception as e:
@@ -3331,7 +3334,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # ── Sprint 43c: text-only fallback ──────────────────────────────
     _tier_hdr = request.headers.get("X-Alvitur-Tier", "general").lower().strip() if request else "general"
-    _llm_model = _MODEL_LEIDA_B if _tier_hdr == "vault" else _MODEL_LEIDA_A
+    _llm_model = _MODEL_LEIDA_B if _tier in ("Hvelfingin", "Starfsmaður") else _MODEL_LEIDA_A
     if file is None or file.filename == "":
         if not query or not query.strip():
             return JSONResponse(status_code=422, content={
@@ -3408,7 +3411,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                 _system_prompt = apply_tier_prompt(user_tier, _get_prompt(_domain_txt, _now_str) + _honesty)
                 logger.info(f"[ALVITUR] Sprint61 text-only tier={_tier} domain={_domain_txt}")
                 _pipeline_source_txt = "unknown"
-                if _tier == "vault":
+                if _tier in ("Hvelfingin", "Starfsmaður"):
                     from interfaces.config import VAULT_MAX_INPUT_TOKENS as _vmax
                     if _estimate_tokens(query or "") > _vmax:
                         return JSONResponse(status_code=413, content={
@@ -3500,7 +3503,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
     # S4: Wallet circuit breaker
     _tier = request.headers.get("X-Alvitur-Tier", "general").lower().strip() if request else "general"
-    _is_vault = (_tier == "vault")
+    _is_vault = (_tier in ("Hvelfingin", "Starfsmaður"))
     _wallet_preflight(is_vault=_is_vault)
 
     # PLG quota check — master key bypass
@@ -3676,7 +3679,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                         "pipeline_source": _pipeline_source_doc,
                     })
             _key = _os.environ.get("OPENROUTER_API_KEY", "")
-            _context_limit = 60000 if _tier == "vault" else 30000
+            _context_limit = 60000 if _tier in ("Hvelfingin", "Starfsmaður") else 30000
             _full = heildartexti[:_context_limit]
             if _full:
                 if query and query.strip():
@@ -3698,7 +3701,7 @@ SKJAL{truncation_note}:
 SKJAL:
 {_full[:3000]}"""
                 # Sprint 61: Leid A/B sovereign separation
-                if _tier == "vault":
+                if _tier in ("Hvelfingin", "Starfsmaður"):
                     from interfaces.config import VAULT_MAX_INPUT_TOKENS as _vmax
                     if _estimate_tokens(_msg) > _vmax:
                         return JSONResponse(status_code=413, content={
@@ -4433,25 +4436,38 @@ async def filter_sse_stream(core_stream_generator, context_docs: list):
 
 @app.post("/api/approve/{approval_id}")
 async def approve_task(approval_id: str, request: Request):
-    """Sprint 102: HITL Approval — samþykkir og keyrir biðverk."""
+    """Sprint 97.8: HITL Approval með two-person rule."""
     if not hasattr(request.state, "user_claims"):
         return JSONResponse(status_code=401, content={"error": "Authentication required"})
     
+    approver_sub = request.state.user_claims.get("sub", "")
+    
     import aiosqlite
-    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
-        cursor = await db.execute("SELECT * FROM pending_tasks WHERE task_id = ? AND status = 'PENDING'", (approval_id,))
-        row = await cursor.fetchone()
-        if not row:
-            return JSONResponse(status_code=404, content={"error": "Approval task not found"})
-        await db.execute("UPDATE pending_tasks SET status = 'APPROVED' WHERE task_id = ?", (approval_id,))
-        await db.commit()
-    task = {"tool": row[2], "params": __import__("json").loads(row[3])}
+    db_path = "/workspace/Sigvaldi-/state_store.db"
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM pending_tasks WHERE task_id = ? AND status = 'PENDING'", (approval_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"error": "Approval task not found"})
+            
+            task = dict(row)
+            
+            # Two-person rule
+            if task.get("requester_sub") == approver_sub:
+                return JSONResponse(status_code=403, content={"error": "Two-person rule: cannot approve your own task"})
+            
+            await db.execute("UPDATE pending_tasks SET status = 'APPROVED' WHERE task_id = ?", (approval_id,))
+            await db.commit()
+    
+    task_data = {"tool": task["tool_name"], "params": __import__("json").loads(task["payload"])}
     
     try:
         tool_name = task["tool"]
         from interfaces.tools import get_tool
         user_tier = request.state.user_claims.get("tier", "Vitinn")
-        tool = get_tool(tool_name, user_tier)
+        check_tier_for_tool(tool_name, user_tier)
+        tool = get_tool(tool_name)
         result = await tool.run(**(task["params"]), confirmed=True)
         return {"status": "approved_and_executed", "approval_id": approval_id, "result": result}
     except Exception as e:
