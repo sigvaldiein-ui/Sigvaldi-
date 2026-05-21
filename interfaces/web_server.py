@@ -230,6 +230,32 @@ async def lifespan(app: FastAPI):
 # Sprint 93 — Concurrency protection
 stream_semaphore = asyncio.Semaphore(8)
 
+
+class IdentityMiddleware(BaseHTTPMiddleware):
+    """ADR-007b: OIDC Auðkenni — fail-CLOSED, RS256 only."""
+    async def dispatch(self, request, call_next):
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if request.url.path == "/api/health":
+            return await call_next(request)
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Missing Bearer token"})
+        token = auth_header[7:]
+        try:
+            import jwt, os, logging
+            logger = logging.getLogger("alvitur.web")
+            payload = jwt.decode(token, key=os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+            request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn")}
+            logger.info(f"[ADR-007b] Auth OK: sub={request.state.user_claims['sub']}")
+        except jwt.ExpiredSignatureError:
+            return JSONResponse(status_code=401, content={"error": "Token expired"})
+        except jwt.InvalidTokenError as e:
+            return JSONResponse(status_code=401, content={"error": f"Invalid token: {e}"})
+        except Exception as e:
+            return JSONResponse(status_code=401, content={"error": "Authentication failed"})
+        return await call_next(request)
+
 app = FastAPI(
     title="Alvitur Enterprise AI",
     docs_url=None,   # Slökkva á Swagger UI í framleiðslu
@@ -257,6 +283,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # Gzip þjöppun (sparar bandbreidd)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(IdentityMiddleware)
 
 # D) Öryggishausar á allar beiðnir
 app.add_middleware(SecurityHeadersMiddleware)
