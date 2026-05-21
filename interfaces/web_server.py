@@ -3072,7 +3072,7 @@ async def tools_call(tool_name: str, request: Request):
     except Exception as e:
         return JSONResponse(status_code=403, content={"error": str(e)})
     from interfaces.tools.base import sanitize_tool_output
-    result = sanitize_tool_output(result)
+    result = sanitize_tool_output(tool_name, result)
     status = 200 if result.get("success") else 404 if "ekki til" in result.get("error", "") else 502
     return JSONResponse(content=result, status_code=status)
 

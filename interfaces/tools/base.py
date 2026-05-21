@@ -46,9 +46,22 @@ class BaseTool(ABC):
         return f"<Tool name={self.name}>"
 
 # ── Sprint 101: Output Filter ─────────────────────────────────────────────
-def sanitize_tool_output(output_data):
-    """Fjarlægir dulkóðaða lykla, kerfisslóðir og tæknileg innri ID."""
-    BANNED_KEYS = {"password", "secret", "token", "internal_id", "db_path", "api_key", "credential"}
+ALLOWED_OUTPUT_SCHEMAS = {
+    "api_exec": ["status", "service", "url"],
+    "mail_send": ["status", "to", "subject"],
+    "search_law": ["documents", "count"],
+    "pdf_gen": ["status", "filename"],
+    "classify_doc": ["domain", "confidence"],
+    "summarize_doc": ["summary", "length"],
+    "translate_text": ["translated", "source_lang"],
+}
+
+def sanitize_tool_output(tool_name: str, output_data):
+    """ADR-010: Pro-Mode Output Filter. Strict Whitelist — algjört minnisleysi."""
     if not isinstance(output_data, dict):
-        return output_data
-    return {k: v for k, v in output_data.items() if k.lower() not in BANNED_KEYS}
+        return {"error": "Invalid output format — dropped for safety"}
+    allowed_keys = ALLOWED_OUTPUT_SCHEMAS.get(tool_name, [])
+    sanitized = {k: v for k, v in output_data.items() if k in allowed_keys}
+    if not sanitized and output_data:
+        return {"status": "filtered_by_policy", "message": "All data stripped due to zero-trust compliance."}
+    return sanitized
