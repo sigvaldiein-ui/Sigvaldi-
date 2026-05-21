@@ -39,6 +39,7 @@ Sprint 20 — V5.1 B2B Evidence Engine (Aðal áætlun, innleiðsla Per):
 
 import asyncio
 import httpx
+import aiosqlite
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -256,6 +257,24 @@ class IdentityMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             return JSONResponse(status_code=401, content={"error": "Authentication failed"})
         return await call_next(request)
+
+
+@app.on_event("startup")
+async def setup_db():
+    import aiosqlite
+    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_tasks (
+                task_id TEXT PRIMARY KEY,
+                jti TEXT,
+                tool_name TEXT,
+                payload TEXT,
+                status TEXT,
+                created_at REAL
+            )
+        """)
+        await db.commit()
+
 
 app = FastAPI(
     title="Alvitur Enterprise AI",
@@ -4418,9 +4437,15 @@ async def approve_task(approval_id: str, request: Request):
     if not hasattr(request.state, "user_claims"):
         return JSONResponse(status_code=401, content={"error": "Authentication required"})
     
-    task = APPROVAL_QUEUE.get(approval_id)
-    if not task:
-        return JSONResponse(status_code=404, content={"error": "Approval task not found"})
+    import aiosqlite
+    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+        cursor = await db.execute("SELECT * FROM pending_tasks WHERE task_id = ? AND status = 'PENDING'", (approval_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": "Approval task not found"})
+        await db.execute("UPDATE pending_tasks SET status = 'APPROVED' WHERE task_id = ?", (approval_id,))
+        await db.commit()
+    task = {"tool": row[2], "params": __import__("json").loads(row[3])}
     
     try:
         tool_name = task["tool"]
@@ -4428,7 +4453,6 @@ async def approve_task(approval_id: str, request: Request):
         user_tier = request.state.user_claims.get("tier", "Vitinn")
         tool = get_tool(tool_name, user_tier)
         result = await tool.run(**(task["params"]), confirmed=True)
-        del APPROVAL_QUEUE[approval_id]
         return {"status": "approved_and_executed", "approval_id": approval_id, "result": result}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
