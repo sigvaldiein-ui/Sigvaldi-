@@ -38,6 +38,7 @@ Sprint 20 — V5.1 B2B Evidence Engine (Aðal áætlun, innleiðsla Per):
 """
 
 import asyncio
+import httpx
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -3311,7 +3312,6 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
 
         # Text-only path: send query directly to LLM (async — Sprint 46 Phase 1b)
         import os as _os
-        import httpx as _httpx
         from datetime import datetime as _dt, timezone as _tz
         _key = _os.environ.get("OPENROUTER_API_KEY", "")
         _tier = _tier_hdr
@@ -4091,7 +4091,6 @@ async def serve_demo():
 async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
     """OpenRouter chain: Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage)."""
     from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY
-    import httpx as _hx
     _key = os.environ.get("OPENROUTER_API_KEY", "")
     if not _key:
         logger.error("[ALVITUR] leid_a: OPENROUTER_API_KEY missing")
@@ -4100,7 +4099,7 @@ async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
         logger.warning("[ALVITUR] leid_a: ZDR_CONFIRMED=false - refusing call")
         return (None, None, None)
     chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
-    async with _hx.AsyncClient() as c:
+    async with httpx.AsyncClient() as c:
         for idx, model in enumerate(chain):
             try:
                 r = await c.post("https://openrouter.ai/api/v1/chat/completions",
@@ -4138,9 +4137,8 @@ def _vault_system_prompt():
 async def _call_leid_b(user_msg, max_tokens=8192):
     """Local sovereign vLLM. NO cloud fallback. Returns (content, model, usage) or (None,None,None)."""
     from interfaces.config import VAULT_LOCAL_URL, VAULT_LOCAL_MODEL, VAULT_LOCAL_TIMEOUT
-    import httpx as _hx
     try:
-        async with _hx.AsyncClient() as c:
+        async with httpx.AsyncClient() as c:
             r = await c.post(VAULT_LOCAL_URL,
                 headers={"Content-Type": "application/json"},
                 json={"model": VAULT_LOCAL_MODEL,
@@ -4166,6 +4164,35 @@ def _estimate_tokens(text):
 
 
 # Sprint 93 — Live Core Bridge & Tier Privacy Spec (ADR-001 / ADR-002)
+
+async def auth_and_search(identity_token: str, query: str) -> list:
+    """ADR-007a: Server-side RAG — sækir context úr Qdrant, aldrei frá client."""
+    import logging
+    logger = logging.getLogger("alvitur.web")
+    
+    # Sækjum user_id úr token (í DEV: "anonymous")
+    user_id = "anonymous"
+    if identity_token and identity_token != "anonymous":
+        try:
+            import jwt
+            payload = jwt.decode(identity_token, options={"verify_signature": False})
+            user_id = payload.get("sub", "anonymous")
+        except Exception:
+            user_id = "anonymous"
+    
+    # Leitum í Qdrant
+    try:
+        from interfaces.tools.search_law import SearchLawTool
+        tool = SearchLawTool()
+        results = await tool.run(query)
+        if results:
+            logger.info(f"[ADR-007a] Qdrant returned {len(results)} docs for user={user_id}")
+            return results
+    except Exception as e:
+        logger.warning(f"[ADR-007a] Qdrant search skipped: {e}")
+    
+    return []
+
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: Request):
     # Fetch user tier from custom header or defaults
@@ -4202,7 +4229,6 @@ async def chat_stream_endpoint(request: Request):
             }
             
             try:
-                import httpx
                 async with httpx.AsyncClient(timeout=90.0) as client:
                     async with client.stream("POST", vllm_url, json=payload, headers={"Authorization": "Bearer token-abc123"}) as response:
                         if response.status_code != 200:
@@ -4238,7 +4264,8 @@ async def chat_stream_endpoint(request: Request):
             stream_semaphore.release()
 
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(filter_sse_stream(sse_generator(), body_data.get("context", [])), media_type="text/event-stream")
+    context_docs = await auth_and_search(body_data.get("identity_token", ""), query)
+    return StreamingResponse(filter_sse_stream(sse_generator(), context_docs), media_type="text/event-stream")
 
 
 # Sprint 93 — Emergency Stream Termination Endpoint (JSON-RPC 2.0 & ADR-001)
