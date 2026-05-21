@@ -3059,12 +3059,18 @@ async def tools_call(tool_name: str, request: Request):
     Body: JSON með arguments fyrir tool.
     Skilar niðurstöðu frá tool.
     """
-    from interfaces.mcp_server import mcp_call_tool
+    from interfaces.tools import get_tool
+    user_tier = request.state.user_claims.get("tier", "Vitinn") if hasattr(request.state, "user_claims") else "Vitinn"
     try:
         body = await request.json()
     except Exception:
         body = {}
-    result = await mcp_call_tool(tool_name, body)
+    try:
+        tool = get_tool(tool_name, user_tier)
+        from interfaces.mcp_server import mcp_call_tool
+        result = await mcp_call_tool(tool_name, body)
+    except Exception as e:
+        return JSONResponse(status_code=403, content={"error": str(e)})
     status = 200 if result.get("success") else 404 if "ekki til" in result.get("error", "") else 502
     return JSONResponse(content=result, status_code=status)
 
