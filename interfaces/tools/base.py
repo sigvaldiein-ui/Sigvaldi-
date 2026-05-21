@@ -63,5 +63,12 @@ def sanitize_tool_output(tool_name: str, output_data):
     allowed_keys = ALLOWED_OUTPUT_SCHEMAS.get(tool_name, [])
     sanitized = {k: v for k, v in output_data.items() if k in allowed_keys}
     if not sanitized and output_data:
-        return {"status": "filtered_by_policy", "message": "All data stripped due to zero-trust compliance."}
+        from interfaces.tools.audit_logger import SecureAuditLogger
+        logger = SecureAuditLogger()
+        logger.last_hash = "0" * 64  # Nota instance ef til, annars nýjan
+        logger.log_action("SYSTEM", "CORE", tool_name, "CRITICAL_SCHEMA_DRIFT")
+        return {
+            "status": "circuit_breaker_triggered",
+            "error": "Kerfisvilla: Ytri gagnaþjónusta svaraði ekki á stöðluðu formi. Beiðni skráð hjá kerfisstjórn."
+        }
     return sanitized
