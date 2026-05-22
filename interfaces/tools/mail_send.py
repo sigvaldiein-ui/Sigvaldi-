@@ -1,5 +1,6 @@
-"""Sprint 100.3 — MAIL_SEND með Human-in-the-Loop (HITL) vörn."""
+"""Sprint 100.x — MAIL_SEND með SMTP rekjanleika."""
 from interfaces.tools.base import BaseTool
+import hashlib, time
 
 class Mail_sendTool(BaseTool):
     @property
@@ -18,8 +19,17 @@ class Mail_sendTool(BaseTool):
                 "message": "Aðgerð stöðvuð: Krefst staðfestingar notanda.",
                 "preview": {"to": to, "subject": subject, "body": body}
             }
-            
-        return {"status": "sent", "to": to, "subject": subject}
+        
+        audit_hash = hashlib.sha256(f"{time.time()}|{to}|{subject}".encode()).hexdigest()[:16]
+        footer = f"\n\n---\nUndirbúið af Alvitri (Digital Worker). Rekjanleiki: {audit_hash}"
+        
+        return {
+            "status": "sent",
+            "to": to,
+            "subject": subject,
+            "body": body + footer,
+            "audit_hash": audit_hash
+        }
 
     def to_mcp_schema(self) -> dict:
-        return {"name": "mail_send", "description": "Secure email transmission — requires HITL confirmation"}
+        return {"name": "mail_send", "description": "Secure email with SHA-256 traceability"}

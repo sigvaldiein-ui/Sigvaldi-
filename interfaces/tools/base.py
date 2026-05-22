@@ -46,15 +46,25 @@ class BaseTool(ABC):
         return f"<Tool name={self.name}>"
 
 # ── Sprint 101: Output Filter ─────────────────────────────────────────────
-ALLOWED_OUTPUT_SCHEMAS = {
-    "api_exec": ["status", "service", "url"],
-    "mail_send": ["status", "to", "subject"],
-    "search_law": ["documents", "count"],
-    "pdf_gen": ["status", "filename"],
-    "classify_doc": ["domain", "confidence"],
-    "summarize_doc": ["summary", "length"],
-    "translate_text": ["translated", "source_lang"],
+PER_TIER_SCHEMAS = {
+    "api_exec": {"Vitinn": ["status"], "Hvelfingin": ["status", "url"], "Starfsmaður": ["status", "url", "domain"]},
+    "mail_send": {"Vitinn": ["status"], "Hvelfingin": ["status", "to"], "Starfsmaður": ["status", "to", "subject", "audit_hash"]},
+    "search_law": {"Vitinn": ["documents"], "Hvelfingin": ["documents", "count"], "Starfsmaður": ["documents", "count"]},
+    "pdf_gen": {"Vitinn": ["status"], "Hvelfingin": ["status", "filename"], "Starfsmaður": ["status", "filename"]},
+    "classify_doc": {"Vitinn": ["domain"], "Hvelfingin": ["domain", "confidence"], "Starfsmaður": ["domain", "confidence"]},
+    "summarize_doc": {"Vitinn": ["summary"], "Hvelfingin": ["summary", "length"], "Starfsmaður": ["summary", "length"]},
+    "translate_text": {"Vitinn": ["translated"], "Hvelfingin": ["translated", "source_lang"], "Starfsmaður": ["translated", "source_lang"]},
 }
+
+def sanitize_tool_output(tool_name: str, output_data, user_tier: str = "Vitinn"):
+    """ADR-012: Per-tier per-tool output filter."""
+    if not isinstance(output_data, dict):
+        return {"error": "Invalid output format"}
+    allowed_keys = PER_TIER_SCHEMAS.get(tool_name, {}).get(user_tier, [])
+    sanitized = {k: v for k, v in output_data.items() if k in allowed_keys}
+    if not sanitized and output_data:
+        return {"status": "filtered_by_policy", "message": "Data stripped per tier compliance"}
+    return sanitized
 
 def sanitize_tool_output(tool_name: str, output_data):
     """ADR-010: Pro-Mode Output Filter. Strict Whitelist — algjört minnisleysi."""
