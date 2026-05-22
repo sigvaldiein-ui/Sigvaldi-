@@ -291,6 +291,15 @@ async def setup_db():
         await db.commit()
 
 
+# CSP Middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
 app = FastAPI(
     title="Alvitur Enterprise AI",
     docs_url=None,   # Slökkva á Swagger UI í framleiðslu
