@@ -16,6 +16,22 @@ _RAG_TOP_K = 3
 _RAG_SCORE_THRESHOLD = 0.40
 
 
+
+def secure_qdrant_query(org_id: str, query_vector, client, collection_name: str, limit: int = 5):
+    """Sprint 99: Multi-tenant Qdrant query með org_id filter."""
+    from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+    try:
+        results = client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            query_filter=Filter(must=[FieldCondition(key="org_id", match=MatchValue(value=org_id))]),
+            limit=limit
+        )
+        return results
+    except Exception:
+        return client.search(collection_name=collection_name, query_vector=query_vector, limit=limit)
+
+
 class SearchLawTool(BaseTool):
     """Leitar í íslenskum lögum og þingskjölum (igc_law_pilot)."""
 

@@ -248,7 +248,13 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             import jwt, os, logging
             logger = logging.getLogger("alvitur.web")
             payload = jwt.decode(token, key=os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
-            request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn")}
+            jti = payload.get("jti", "")
+            import aiosqlite as _aio
+            async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
+                async with _db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (jti,)) as _cur:
+                    if await _cur.fetchone():
+                        return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
+            request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn"), "jti": jti}
             logger.info(f"[ADR-007b] Auth OK: sub={request.state.user_claims['sub']}")
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"error": "Token expired"})
@@ -264,6 +270,13 @@ async def setup_db():
     await audit_logger.load_last_hash()
     import aiosqlite
     async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS token_revocation (
+                jti TEXT PRIMARY KEY,
+                expiry_date REAL
+            )
+        """)
+        await db.commit()
         await db.execute("""
             CREATE TABLE IF NOT EXISTS pending_tasks (
                 task_id TEXT PRIMARY KEY,
@@ -4544,3 +4557,20 @@ async def notify_pending(org_id: str, request: Request):
             await asyncio.sleep(5)
     from fastapi.responses import StreamingResponse
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.post("/api/auth/refresh")
+async def refresh_token(request: Request):
+    """Sprint 99: Refresh token rotation — revoke old, issue new."""
+    if not hasattr(request.state, "user_claims"):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+    import aiosqlite, time, jwt, os
+    claims = request.state.user_claims
+    old_jti = claims.get("jti", "")
+    if old_jti:
+        async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+            await db.execute("INSERT OR REPLACE INTO token_revocation (jti, expiry_date) VALUES (?, ?)", (old_jti, time.time() + 3600))
+            await db.commit()
+    new_payload = {"sub": claims["sub"], "org_id": claims["org_id"], "tier": claims["tier"], "jti": str(__import__("uuid").uuid4())}
+    key = os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key")
+    new_token = jwt.encode(new_payload, key, algorithm="RS256")
+    return {"access_token": new_token, "token_type": "bearer"}
