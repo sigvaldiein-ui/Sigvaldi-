@@ -43,3 +43,21 @@ data/qdrant_laws_v2/
 data/qdrant_laws_v2/
 data/qdrant_laws_v2/
 waitlist.jsonl
+# Innri vinnuskrár og tímabundin gögn frá þróunarfasa
+backup_audit/
+core/.archive/
+v96-trust-boundary-server-rc1*
+patch*.py
+__pycache__/
+*.pyc
+
+# Öryggisgögn og lyklar
+.env
+jwt_private.pem
+
+# Gagnagrunnar og staðbundin afrit (fara ALDREI á GitHub)
+state_store.db
+backups/
+
+# Qdrant vektorar og þung gögn
+data/qdrant_laws_v2/
