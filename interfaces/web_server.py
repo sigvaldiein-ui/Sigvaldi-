@@ -4510,3 +4510,37 @@ async def get_compliance_report(request: Request):
         "chain_hash": audit_logger.last_hash,
         "report_hash": hashlib.sha256(str(time.time()).encode()).hexdigest()[:16]
     }
+
+@app.get("/api/pending_tasks")
+async def list_pending_tasks(request: Request):
+    """Sprint 98: Skilar pending tasks fyrir org_id."""
+    if not hasattr(request.state, "user_claims"):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+    org_id = request.state.user_claims.get("org_id", "default")
+    import aiosqlite
+    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM pending_tasks WHERE status = 'PENDING' ORDER BY created_at DESC") as cursor:
+            rows = await cursor.fetchall()
+            tasks = [dict(r) for r in rows]
+        return {"org_id": org_id, "pending_tasks": tasks}
+
+@app.get("/api/notifications/{org_id}")
+async def notify_pending(org_id: str, request: Request):
+    """Sprint 98: SSE stream fyrir ný pending tasks."""
+    if not hasattr(request.state, "user_claims"):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+    import asyncio, aiosqlite
+    async def event_generator():
+        last_count = 0
+        while True:
+            async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+                async with db.execute("SELECT COUNT(*) FROM pending_tasks WHERE status = 'PENDING'") as cursor:
+                    row = await cursor.fetchone()
+                    count = row[0] if row else 0
+            if count > last_count:
+                yield f"data: {{\"event\": \"new_pending_task\", \"count\": {count}}}\n\n"
+                last_count = count
+            await asyncio.sleep(5)
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

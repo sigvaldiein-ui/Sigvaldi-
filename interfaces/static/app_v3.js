@@ -164,7 +164,13 @@
           clearFile();
         })
         .catch(function (err) {
-          showStatus('error', 'Villa kom upp: ' + (err.message || 'Netsamband rofið.'));
+          if (r.status === 202) {
+                    r.json().then(function(d) {
+                        showStatus('info', '⭐ Beiðni send í samþykktarferli. Tilvísun: ' + (d.approval_id || ''));
+                    });
+                } else {
+                    showStatus('error', 'Villa kom upp: ' + (err.message || 'Netsamband rofið.'));
+                }
         })
         .finally(function () { busy = false; });
     });
