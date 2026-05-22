@@ -265,40 +265,8 @@ class IdentityMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-@app.on_event("startup")
-async def setup_db():
-    await audit_logger.load_last_hash()
-    import aiosqlite
-    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS token_revocation (
-                jti TEXT PRIMARY KEY,
-                expiry_date REAL
-            )
-        """)
-        await db.commit()
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS pending_tasks (
-                task_id TEXT PRIMARY KEY,
-                jti TEXT,
-                tool_name TEXT,
-                payload TEXT,
-                status TEXT,
-                requester_sub TEXT,
-                created_at REAL
-            )
-        """)
-        await db.commit()
-
 
 # CSP Middleware
-@app.middleware("http")
-async def add_security_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    return response
 
 app = FastAPI(
     title="Alvitur Enterprise AI",
