@@ -257,7 +257,6 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             # Sprint 99: Token blacklist enforcement
             import aiosqlite as _aio
             async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
-                async with _db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (jti,)) as _cur:
                     if await _cur.fetchone():
                         return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
             request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn"), "jti": jti}
@@ -4256,7 +4255,7 @@ async def auth_and_search(identity_token: str, query: str) -> list:
     try:
         from interfaces.tools.search_law import SearchLawTool
         tool = SearchLawTool()
-        results = await tool.run(query)
+        results = await tool.run(query, org_id=user_id)
         if results:
             logger.info(f"[ADR-007a] Qdrant returned {len(results)} docs for user={user_id}")
             return results
@@ -4551,6 +4550,10 @@ async def refresh_token(request: Request):
     old_jti = claims.get("jti", "")
     if old_jti:
         async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+            # Reuse detection: ef token er þegar revoked → session hijack
+            async with db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (old_jti,)) as cur:
+                if await cur.fetchone():
+                    return JSONResponse(status_code=401, content={"error": "Token reuse detected — session terminated"})
             await db.execute("INSERT OR REPLACE INTO token_revocation (jti, expiry_date) VALUES (?, ?)", (old_jti, time.time() + 3600))
             await db.commit()
     new_payload = {"sub": claims["sub"], "org_id": claims["org_id"], "tier": claims["tier"], "jti": str(__import__("uuid").uuid4())}
