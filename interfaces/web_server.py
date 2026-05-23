@@ -4319,6 +4319,31 @@ async def chat_stream_endpoint(request: Request):
 
     body_data = await request.json()
 
+    # Sprint 99.7: Audit chain hook — log every authenticated chat (sync sqlite3, non-blocking, GDPR-friendly hash)
+    try:
+        import sqlite3 as _audit_sqlite3
+        import hashlib as _audit_hashlib
+        import time as _audit_time
+        _audit_claims = getattr(request.state, "user_claims", {})
+        _audit_query = body_data.get("query", "") if isinstance(body_data, dict) else ""
+        _audit_q_hash = _audit_hashlib.sha256(_audit_query.encode("utf-8")).hexdigest()[:16]
+        with _audit_sqlite3.connect("/workspace/Sigvaldi-/state_store.db") as _audit_db:
+            _audit_db.execute(
+                "INSERT INTO audit_chain (timestamp, jti, user_sub, tool_name, action, prev_hash, this_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (_audit_time.time(),
+                 _audit_claims.get("jti", "unknown"),
+                 _audit_claims.get("sub", "anonymous"),
+                 "chat_stream",
+                 f"query[{_audit_claims.get('tier', 'Vitinn')}]:{_audit_q_hash}",
+                 "",
+                 _audit_q_hash)
+            )
+            _audit_db.commit()
+    except Exception as _audit_err:
+        import logging as _audit_log
+        _audit_log.getLogger("alvitur.web").warning(f"Audit log failed (non-blocking): {_audit_err}")
+    # /Sprint 99.7
+
 
     query = body_data.get('query', '')
 

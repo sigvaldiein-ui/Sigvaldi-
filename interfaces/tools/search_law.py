@@ -47,11 +47,17 @@ class SearchLawTool(BaseTool):
             "Nota þegar notandi spyr um íslensk lög, reglugerðir eða þingmál."
         )
 
-    async def run(self, query: str = "") -> list[dict]:
+    async def run(self, query: str = "", org_id: str = "default", **kwargs) -> list[dict]:
         """
-        Leitar í igc_law_pilot.
-        kwargs:
+        Leitar í alvitur_laws_v2 (íslenskur opinber Lagasafn corpus).
+        
+        Args:
           query: leitarstrengur
+          org_id: notandi org context (skráð til audit, EKKI notuð til filtering 
+                  á public Lagasafn — multi-tenant isolation á við um user-uploads 
+                  í aðskildum collections, ekki opinberan corpus)
+          **kwargs: any future params, ignored (defensive)
+        
         Skilar: listi af dicts [{text, title, source, date, score}]
         """
         if not query:
@@ -86,7 +92,7 @@ class SearchLawTool(BaseTool):
                     "domain": h.payload.get("domain", ""),
                     "score": round(h.score, 4),
                 })
-            logger.info("[ALVITUR] search_law hits=%d query=%r", len(hits), query[:60])
+            logger.info("[ALVITUR] search_law hits=%d query=%r org_id=%s", len(hits), query[:60], org_id)
             return hits
         except Exception as e:
             logger.warning("[ALVITUR] search_law villa (graceful degradation): %s", e)
