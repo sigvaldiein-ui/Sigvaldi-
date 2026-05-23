@@ -218,6 +218,21 @@ async def lifespan(app: FastAPI):
     from core.zero_disk import setup_zero_disk, idle_cleanup_loop
     setup_zero_disk()
     cleanup_task = asyncio.create_task(idle_cleanup_loop())
+    
+    # Sprint 101.2: DB schema init + automated hourly backup
+    import aiosqlite
+    async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+        await db.execute("CREATE TABLE IF NOT EXISTS token_revocation (jti TEXT PRIMARY KEY, expiry_date REAL)")
+        await db.execute("CREATE TABLE IF NOT EXISTS pending_tasks (task_id TEXT PRIMARY KEY, jti TEXT, tool_name TEXT, payload TEXT, status TEXT, requester_sub TEXT, created_at REAL)")
+        await db.execute("CREATE TABLE IF NOT EXISTS org_token_usage (org_id TEXT, timestamp REAL, tokens_used INTEGER, stream_type TEXT)")
+        await db.commit()
+    
+    async def _backup_loop():
+        while True:
+            await asyncio.sleep(3600)
+            await asyncio.create_subprocess_shell("/workspace/Sigvaldi-/scripts/backup_db.sh")
+    asyncio.create_task(_backup_loop())
+    
     logger = logging.getLogger("alvitur.web")
     logger.info("Zero-Disk Hvelfingin: /dev/shm mounted, swap asserted, cleanup loop started")
     yield
