@@ -18,6 +18,12 @@ class Api_execTool(BaseTool):
         domain = urlparse(url).netloc
         if domain not in ALLOWED_DOMAINS:
             raise HTTPException(status_code=400, detail=f"Domain '{domain}' not whitelisted")
-        return {"status": "sandboxed_ok", "url": url, "domain": domain}
+        import asyncio, httpx
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                return {"status": "sandboxed_ok", "url": url, "domain": domain, "response_code": resp.status_code}
+        except asyncio.TimeoutError:
+            return {"status": "timeout", "url": url, "message": "Request timed out after 10s"}
     def to_mcp_schema(self) -> dict:
         return {"name": "api_exec", "description": "Whitelisted API execution"}
