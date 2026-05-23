@@ -166,7 +166,7 @@
         .catch(function (err) {
           if (r.status === 202) {
                     r.json().then(function(d) {
-                        showStatus('info', '⭐ Beiðni send í samþykktarferli. Tilvísun: ' + (d.approval_id || ''));
+                        showHITLWidget(d);
                     });
                 } else {
                     showStatus('error', 'Villa kom upp: ' + (err.message || 'Netsamband rofið.'));
@@ -174,6 +174,41 @@
         })
         .finally(function () { busy = false; });
     });
+  }
+
+
+  function showHITLWidget(data) {
+    var approvalId = data.approval_id || '';
+    var preview = data.preview || {};
+    var html = '<div class="hitl-widget" style="background:#1a1a2e;border:1px solid #e94560;border-radius:8px;padding:1rem;margin:1rem 0;">';
+    html += '<h4 style="color:#e94560;margin:0 0 0.5rem 0;">🔒 Bíður samþykktar</h4>';
+    html += '<p style="color:#ccc;font-size:0.9rem;margin:0 0 1rem 0;">Þessi aðgerð krefst staðfestingar.</p>';
+    if (preview.to) html += '<div style="color:#aaa;font-size:0.85rem;margin-bottom:0.5rem;"><strong>Til:</strong> ' + escapeHtml(preview.to) + '</div>';
+    if (preview.subject) html += '<div style="color:#aaa;font-size:0.85rem;margin-bottom:0.5rem;"><strong>Efni:</strong> ' + escapeHtml(preview.subject) + '</div>';
+    if (preview.body) html += '<div style="color:#aaa;font-size:0.85rem;margin-bottom:1rem;padding:0.5rem;background:#0f0f23;border-radius:4px;">' + escapeHtml(preview.body) + '</div>';
+    html += '<div style="display:flex;gap:0.5rem;">';
+    html += '<button onclick="approveTask(\'' + approvalId + '\')" style="flex:1;padding:0.6rem;background:#0f3460;color:#e2e8f0;border:none;border-radius:4px;cursor:pointer;font-size:0.9rem;">✅ Samþykkja</button>';
+    html += '<button onclick="rejectTask(\'' + approvalId + '\')" style="flex:1;padding:0.6rem;background:#1a1a2e;color:#e94560;border:1px solid #e94560;border-radius:4px;cursor:pointer;font-size:0.9rem;">❌ Hafna</button>';
+    html += '</div>';
+    html += '<div style="color:#666;font-size:0.75rem;margin-top:0.5rem;">Tilvísun: ' + escapeHtml(approvalId) + '</div>';
+    html += '</div>';
+    resultsBody.innerHTML = html;
+    resultsArea.hidden = false;
+  }
+
+  function approveTask(approvalId) {
+    fetch('/api/approve/' + approvalId, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('alvitur_token') || '') } })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        showStatus('success', '✅ Aðgerð samþykkt og framkvæmd.');
+      })
+      .catch(function() {
+        showStatus('error', '❌ Villa við samþykki.');
+      });
+  }
+
+  function rejectTask(approvalId) {
+    resultsBody.innerHTML = '<div style="color:#e94560;padding:1rem;">❌ Aðgerð hafnað.</div>';
   }
 
   function showStatus(type, message) {
@@ -227,3 +262,45 @@
     setMode('general');
   }
 })();
+
+  // ─── Sprint 98: SSE + Polling fyrir Inbox ───
+  function connectInboxSSE() {
+    var token = localStorage.getItem('alvitur_token') || '';
+    if (!token) return;
+    
+    try {
+      var sse = new EventSource('/api/notifications/default');
+      sse.onmessage = function(e) {
+        try {
+          var data = JSON.parse(e.data);
+          if (data.event === 'new_pending_task') {
+            var inboxTab = document.getElementById('tab-inbox');
+            if (inboxTab) inboxTab.textContent = '📥 Samþykktir (' + data.count + ')';
+          }
+        } catch(ex) {}
+      };
+      sse.onerror = function() {
+        sse.close();
+        setTimeout(pollInbox, 5000);
+      };
+    } catch(e) {
+      setTimeout(pollInbox, 5000);
+    }
+  }
+
+  function pollInbox() {
+    var token = localStorage.getItem('alvitur_token') || '';
+    if (!token) return;
+    
+    fetch('/api/pending_tasks', { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var count = (d.pending_tasks || []).length;
+        var inboxTab = document.getElementById('tab-inbox');
+        if (inboxTab) inboxTab.textContent = '📥 Samþykktir' + (count > 0 ? ' (' + count + ')' : '');
+      })
+      .catch(function() {});
+  }
+
+  // Ræsa SSE tengingu við start
+  connectInboxSSE();
