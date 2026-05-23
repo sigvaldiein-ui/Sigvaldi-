@@ -75,6 +75,28 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from pathlib import Path
+
+import asyncio as _bg_asyncio
+import aiosqlite as _bg_aiosqlite
+import time as _bg_time
+import logging as _bg_logging
+
+_BLACKLIST: set = set()
+_BLACKLIST_LOCK = _bg_asyncio.Lock()
+
+async def _refresh_blacklist():
+    global _BLACKLIST
+    while True:
+        try:
+            async with _bg_aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
+                async with db.execute("SELECT jti FROM token_revocation WHERE expiry_date > ?", (_bg_time.time(),)) as cur:
+                    rows = await cur.fetchall()
+            async with _BLACKLIST_LOCK:
+                _BLACKLIST = {row[0] for row in rows}
+        except Exception as e:
+            _bg_logging.getLogger("alvitur.web").warning(f"Blacklist refresh failed: {e}")
+        await _bg_asyncio.sleep(5)
+
 from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File, Form
 
 def apply_tier_prompt(tier: str, base_prompt: str) -> str:
@@ -264,16 +286,10 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             logger = logging.getLogger("alvitur.web")
             payload = jwt.decode(token, key=os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
             jti = payload.get("jti", "")
-            import aiosqlite as _aio
-            async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
-                async with _db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (jti,)) as _cur:
-                    if await _cur.fetchone():
-                        return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
-            # Sprint 99: Token blacklist enforcement
-            import aiosqlite as _aio
-            async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
-                    if await _cur.fetchone():
-                        return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
+            # Sprint 99.6: In-Memory blacklist check
+            if jti and jti in _BLACKLIST:
+                return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
+            # /Sprint 99.6 blacklist
             request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn"), "jti": jti}
             logger.info(f"[ADR-007b] Auth OK: sub={request.state.user_claims['sub']}")
         except jwt.ExpiredSignatureError:
