@@ -1,5 +1,5 @@
 from interfaces.tools.base import BaseTool
-import hashlib, time, os, smtplib
+import hashlib, time, os, smtplib, asyncio
 from email.mime.text import MIMEText
 
 class Mail_sendTool(BaseTool):
@@ -21,7 +21,7 @@ class Mail_sendTool(BaseTool):
         h = hashlib.sha256(f"{time.time()}|{to}|{subject}".encode()).hexdigest()[:16]
         footer = f"\n\n---\nAlvitur Digital Worker | Rekjanleiki: {h}"
         
-        try:
+        def _send_sync():
             msg = MIMEText(body + footer)
             msg["Subject"] = subject
             msg["From"] = os.environ.get("SMTP_USER", "alvitur@alvitur.is")
@@ -30,6 +30,9 @@ class Mail_sendTool(BaseTool):
                 s.starttls()
                 s.login(os.environ.get("SMTP_USER", ""), os.environ.get("SMTP_PASSWORD", ""))
                 s.send_message(msg)
+        
+        try:
+            await asyncio.to_thread(_send_sync)
             return {"status": "sent", "to": to, "subject": subject, "audit_hash": h}
         except Exception as e:
             return {"status": "error", "message": f"SMTP failed: {str(e)}", "audit_hash": h}

@@ -180,7 +180,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Í Fasa 2 færum við CSS í utanaðkomandi skrá og fjarlægjum unsafe-inline.
         svar.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; "
             "font-src 'self' https://fonts.gstatic.com https://api.fontshare.com data:; "
             "img-src 'self' data:; "
@@ -3102,6 +3102,13 @@ async def tools_call(tool_name: str, request: Request):
 
         from interfaces.mcp_server import mcp_call_tool
         result = await mcp_call_tool(tool_name, body)
+        # Token usage tracking
+        tokens_used = len(str(result).split())  # rough estimate
+        import time, aiosqlite as _aio
+        org = request.state.user_claims.get("org_id", "default") if hasattr(request.state, "user_claims") else "default"
+        async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
+            await _db.execute("INSERT INTO org_token_usage (org_id, timestamp, tokens_used, stream_type) VALUES (?, ?, ?, ?)", (org, time.time(), tokens_used, "tool_call"))
+            await _db.commit()
         user_sub = request.state.user_claims.get("sub", "anonymous") if hasattr(request.state, "user_claims") else "anonymous"
         jti = request.state.user_claims.get("jti", "unknown") if hasattr(request.state, "user_claims") else "unknown"
         await audit_logger.log_action(jti=jti, user_sub=user_sub, tool_name=tool_name, action="TOOL_EXECUTED")

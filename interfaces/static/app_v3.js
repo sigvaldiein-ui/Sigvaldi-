@@ -194,6 +194,12 @@
     html += '</div>';
     resultsBody.innerHTML = html;
     resultsArea.hidden = false;
+    setTimeout(function() {
+      var approveBtn = document.getElementById('btn-approve-' + approvalId);
+      var rejectBtn = document.getElementById('btn-reject-' + approvalId);
+      if (approveBtn) approveBtn.addEventListener('click', function() { approveTask(approvalId); });
+      if (rejectBtn) rejectBtn.addEventListener('click', function() { rejectTask(approvalId); });
+    }, 100);
   }
 
   function approveTask(approvalId) {
