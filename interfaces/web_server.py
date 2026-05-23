@@ -254,6 +254,12 @@ class IdentityMiddleware(BaseHTTPMiddleware):
                 async with _db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (jti,)) as _cur:
                     if await _cur.fetchone():
                         return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
+            # Sprint 99: Token blacklist enforcement
+            import aiosqlite as _aio
+            async with _aio.connect("/workspace/Sigvaldi-/state_store.db") as _db:
+                async with _db.execute("SELECT 1 FROM token_revocation WHERE jti = ?", (jti,)) as _cur:
+                    if await _cur.fetchone():
+                        return JSONResponse(status_code=401, content={"error": "Token has been revoked"})
             request.state.user_claims = {"sub": payload.get("sub", "anonymous"), "org_id": payload.get("org_id", "default"), "tier": payload.get("tier", "Vitinn"), "jti": jti}
             logger.info(f"[ADR-007b] Auth OK: sub={request.state.user_claims['sub']}")
         except jwt.ExpiredSignatureError:
