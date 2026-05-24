@@ -42,8 +42,9 @@
     // Ef Starfsmaður: fela spjallborð, birta biðlistaform
     var employeePanel = document.getElementById('employee-panel');
     if (mode === 'employee') {
-      if (intakeCard) intakeCard.style.display = 'none';
-      if (employeePanel) employeePanel.hidden = false;
+      // Sprint 99.9: Starfsmaður notar sama spjallviðmót og Vitinn/Hvelfingin
+      if (intakeCard) intakeCard.style.display = '';
+      if (employeePanel) employeePanel.hidden = true;
       if (trustStatement) trustStatement.hidden = true;
     } else {
       if (intakeCard) intakeCard.style.display = '';
@@ -157,7 +158,11 @@
       formData.append('tier', currentMode);
       formData.append('query', query);
       if (currentFile) formData.append('file', currentFile);
-      fetch('/api/analyze-document', { method: 'POST', body: formData })
+      fetch('/api/analyze-document', { 
+      method: 'POST', 
+      body: formData,
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('alvitur_token') || '') }
+    })
         .then(function (r) { return r.json(); })
         .then(function (data) {
           showResults(data);
@@ -166,8 +171,11 @@
         .catch(function (err) {
           if (r.status === 202) {
                     r.json().then(function(d) {
+                        // Sprint 99.9: HITL samþykktarferli fyrir Starfsmann
                         showHITLWidget(d);
                     });
+                } else if (r.status === 401) {
+                    showStatus('error', 'Aðgangur óheimill. Vinsamlegast skráðu þig inn.');
                 } else {
                     showStatus('error', 'Villa kom upp: ' + (err.message || 'Netsamband rofið.'));
                 }
