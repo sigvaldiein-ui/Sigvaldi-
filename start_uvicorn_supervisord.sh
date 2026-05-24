@@ -1,0 +1,7 @@
+#!/bin/bash
+# Wrapper sem loadar JWT keys áður en uvicorn starter
+# Notað eingöngu af supervisord (alvitur-uvicorn program)
+cd /workspace/Sigvaldi-
+export JWT_PRIVATE_KEY=$(cat jwt_private.pem)
+export JWT_PUBLIC_KEY=$(cat jwt_public.pem)
+exec /usr/bin/python3 -m uvicorn interfaces.web_server:app --host 0.0.0.0 --port 8000 --log-level info
