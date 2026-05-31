@@ -386,21 +386,6 @@ async def serve_appjs_fixed():
     _path = _os.path.join(_os.path.dirname(__file__), "static", "app.js")
     return FileResponse(_path, media_type="text/javascript; charset=utf-8")
 
-
-# Sprint 102.5: Innskráningarsíða fyrir beta notendur (Android-samhæfð)
-@app.get("/login")
-async def login_page():
-    from fastapi.responses import FileResponse
-    import os as _os
-    _login_path = _os.path.join(_os.path.dirname(__file__), "login.html")
-    return FileResponse(_login_path, media_type="text/html; charset=utf-8")
-
-@app.get("/login")
-async def login_page():
-    from fastapi.responses import FileResponse
-    import os
-    return FileResponse(os.path.join(os.path.dirname(__file__), "login.html"), media_type="text/html; charset=utf-8")
-
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
@@ -4317,164 +4302,6 @@ async def auth_and_search(identity_token: str, query: str) -> list:
     
     return []
 
-# ============================================================================
-# Sprint 99.9: Starfsmaður tier — Tool calling + HITL enforcement
-# ============================================================================
-
-STARFSMADUR_SYSTEM_PROMPT = """Þú ert sjálfvirkur stjórnsýsluaðili (Starfsmaður Alviturs).
-
-ÞÚ HEFUR AÐGANG AÐ ÞESSUM TÆKJUM:
-- search_law: leita í íslenskum lögum (engin HITL þörf)
-- mail_send: senda póst (KREFST HITL samþykkis frá stjórnanda)
-- pdf_gen: búa til PDF (KREFST HITL samþykkis)
-- api_exec: keyra API-köll á íslensk stjórnsýslulén (KREFST HITL samþykkis)
-
-REGLUR:
-1. Þegar notandi biður um aðgerð (póstur, PDF, API), KALLAÐU TÓL — ekki svara með texta.
-2. Þegar notandi spyr um lög, kallaðu search_law.
-3. Þú mátt EKKI svara með almennum texta ef beiðnin er um aðgerð.
-4. Notaðu kurteislegt en formlegt íslenskt mál í tool arguments.
-
-Svaraðu alltaf á íslensku."""
-
-STARFSMADUR_TOOLS = [
-    {"type": "function", "function": {
-        "name": "mail_send",
-        "description": "Send email til viðtakanda. CRITICAL — requires HITL approval.",
-        "parameters": {"type": "object", "properties": {
-            "to": {"type": "string", "description": "Netfang viðtakanda"},
-            "subject": {"type": "string", "description": "Efni póstsins"},
-            "body": {"type": "string", "description": "Innihald póstsins á íslensku"}
-        }, "required": ["to", "subject", "body"]}
-    }},
-    {"type": "function", "function": {
-        "name": "search_law",
-        "description": "Leita í íslenskum lögum og þingskjölum. Engin HITL þörf.",
-        "parameters": {"type": "object", "properties": {
-            "query": {"type": "string", "description": "Leitarstrengur á íslensku"}
-        }, "required": ["query"]}
-    }},
-    {"type": "function", "function": {
-        "name": "pdf_gen",
-        "description": "Búa til PDF skjal. CRITICAL — requires HITL approval.",
-        "parameters": {"type": "object", "properties": {
-            "title": {"type": "string"},
-            "content": {"type": "string"}
-        }, "required": ["title", "content"]}
-    }},
-    {"type": "function", "function": {
-        "name": "api_exec",
-        "description": "Keyra API-kall á íslenskt stjórnsýslulén. CRITICAL — requires HITL approval.",
-        "parameters": {"type": "object", "properties": {
-            "url": {"type": "string", "description": "URL á whitelist (api.skra.is, island.is, api.logbirting.is)"}
-        }, "required": ["url"]}
-    }}
-]
-
-CRITICAL_HITL_TOOLS = {"mail_send", "pdf_gen", "api_exec"}
-
-
-async def _handle_starfsmadur_request(request, body_data, query):
-    """Sprint 99.9: Starfsmaður tier — non-streaming vLLM call with tools, HITL for critical actions."""
-    import httpx, json as _json, time as _time, uuid as _uuid, hashlib as _hashlib, sqlite3 as _sqlite3
-    from fastapi.responses import JSONResponse
-    import logging as _logging
-    _log = _logging.getLogger("alvitur.web")
-    
-    user_claims = getattr(request.state, "user_claims", {})
-    
-    payload = {
-        "model": "/workspace/models/qwen3-32b-awq",
-        "messages": [
-            {"role": "system", "content": STARFSMADUR_SYSTEM_PROMPT},
-            {"role": "user", "content": query}
-        ],
-        "tools": STARFSMADUR_TOOLS,
-        "tool_choice": "auto",
-        "stream": False,
-        "max_tokens": 1500,
-        "temperature": 0.3
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=90.0) as c:
-            r = await c.post("http://127.0.0.1:8002/v1/chat/completions",
-                             json=payload,
-                             headers={"Authorization": "Bearer token-abc123"})
-            if r.status_code != 200:
-                return JSONResponse(status_code=502, content={"error": "vLLM unavailable", "detail": r.text[:200]})
-            data = r.json()
-    except Exception as e:
-        _log.error(f"[Sprint 99.9] vLLM call failed: {e}")
-        return JSONResponse(status_code=502, content={"error": "vLLM call failed", "detail": str(e)})
-    
-    choice = data.get("choices", [{}])[0]
-    message = choice.get("message", {})
-    tool_calls = message.get("tool_calls", [])
-    
-    if not tool_calls:
-        # Pure text response (LLM chose not to call tool)
-        return JSONResponse(content={
-            "response": message.get("content", ""),
-            "tier": "Starfsmaður",
-            "tool_call": None,
-            "finish_reason": choice.get("finish_reason", "stop")
-        })
-    
-    # Tool call detected — handle first call
-    tc = tool_calls[0]
-    tool_name = tc.get("function", {}).get("name", "")
-    try:
-        tool_args = _json.loads(tc.get("function", {}).get("arguments", "{}"))
-    except (_json.JSONDecodeError, TypeError):
-        tool_args = {}
-    
-    _log.info(f"[Sprint 99.9] Starfsmaður tool_call: {tool_name} args={list(tool_args.keys())}")
-    
-    if tool_name in CRITICAL_HITL_TOOLS:
-        # HITL queue: insert into pending_tasks, return 202
-        task_id = str(_uuid.uuid4())
-        action_hash = _hashlib.sha256(f"{tool_name}|{_json.dumps(tool_args, sort_keys=True)}".encode()).hexdigest()[:16]
-        try:
-            with _sqlite3.connect("/workspace/Sigvaldi-/state_store.db") as db:
-                db.execute(
-                    "INSERT INTO pending_tasks (task_id, jti, tool_name, payload, status, requester_sub, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (task_id, user_claims.get("jti", "unknown"), tool_name, _json.dumps(tool_args), "pending", user_claims.get("sub", "anonymous"), _time.time())
-                )
-                db.execute(
-                    "INSERT INTO audit_chain (timestamp, jti, user_sub, tool_name, action, prev_hash, this_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (_time.time(), user_claims.get("jti", "unknown"), user_claims.get("sub", "anonymous"), tool_name, f"hitl_pending:{action_hash}", "", action_hash)
-                )
-                db.commit()
-        except Exception as e:
-            _log.error(f"[Sprint 99.9] HITL queue INSERT failed: {e}")
-            return JSONResponse(status_code=500, content={"error": "Failed to queue HITL task", "detail": str(e)})
-        
-        return JSONResponse(status_code=202, content={
-            "approval_id": task_id,
-            "tool_name": tool_name,
-            "preview": tool_args,
-            "status": "pending_approval",
-            "message": f"Beiðni um {tool_name} bíður samþykkis hjá stjórnanda."
-        })
-    
-    # Non-critical tool (e.g. search_law) — execute immediately
-    try:
-        from interfaces.tools import get_tool
-        tool = get_tool(tool_name)
-        if tool is None:
-            return JSONResponse(status_code=400, content={"error": f"Unknown tool: {tool_name}"})
-        result = await tool.run(org_id=user_claims.get("org_id", "default"), **tool_args)
-        return JSONResponse(content={
-            "response": message.get("content", ""),
-            "tier": "Starfsmaður",
-            "tool_call": {"name": tool_name, "args": tool_args, "result": result}
-        })
-    except Exception as e:
-        _log.error(f"[Sprint 99.9] Tool execution failed: {tool_name}: {e}")
-        return JSONResponse(status_code=500, content={"error": "Tool execution failed", "detail": str(e)})
-
-
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: Request):
     # Fetch user tier from custom header or defaults
@@ -4520,10 +4347,6 @@ async def chat_stream_endpoint(request: Request):
 
     query = body_data.get('query', '')
 
-    # Sprint 99.9: Starfsmaður tier — tool calling + HITL routing (non-streaming)
-    if user_tier == "Starfsmaður":
-        return await _handle_starfsmadur_request(request, body_data, query)
-
 
 
     async def sse_generator():
@@ -4531,13 +4354,12 @@ async def chat_stream_endpoint(request: Request):
             body = body_data
             query = body.get("query", "")
             
-            allow_external_fallback = True if user_tier.lower() == "vitinn" else False
+            allow_external_fallback = True if user_tier == "Vitinn" else False
             vllm_url = "http://127.0.0.1:8002/v1/chat/completions"
             payload = {
                 "model": "/workspace/models/qwen3-32b-awq",
-                "messages": [{"role": "system", "content": "Thu ert Vitinn. MIKILVAEGT: Thu matt EKKI skalda upplysingar. Ef thu veit ekki svarið, segðu EINGONGU: Eg hef ekki naegar heimildir til að svara þessu. Ekki baeta neinu við."}, {"role": "user", "content": query}],
-                "stream": True,
-                "chat_template_kwargs": {"enable_thinking": False}
+                "messages": [{"role": "user", "content": query}],
+                "stream": True
             }
             
             try:
@@ -4558,7 +4380,7 @@ async def chat_stream_endpoint(request: Request):
                                 continue
                                 
                             if in_think_block:
-                                if user_tier.lower() == "vitinn":
+                                if user_tier == "Vitinn":
                                     yield chunk  # vLLM streamar nú þegar með data: prefix
                                 elif user_tier == "Hvelfingin":
                                     yield 'data: {"stage": "Rökfærslu-athugun á ríkisgögnum..."}\n\n'

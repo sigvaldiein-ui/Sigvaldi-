@@ -24,6 +24,16 @@
 </head>
 <body>
 
+<div id=loginbox style="display:none;'max-width:500px;margin:50px auto;padding:20px;background:#1a1a2e;border-radius:12px;text-align:center'>
+<h2 style=color:#7ec8e3>Alvitur — Beta</h2>
+<p style=color:#ccc;font-size:1.1em;margin:16px 0>Íslensk sovereign gervigreindarlausn fyrir stjórnsýslu og atvinnulífið.</p><p style=color:#888;margin:16px 0>Aðgangur er með boði á meðan beta stendur.</p>
+<textarea id=logintok style='width:100%;height:80px;background:#0d0d1f;border:1px solid #333;border-radius:8px;color:#e0e0e0;padding:10px;font-size:.85em;font-family:monospace;resize:vertical' placeholder=eyJ0eXAiOiJKV1Q...></textarea>
+<button onclick="var t=document.getElementById('logintok').value.trim();if(t){localStorage.setItem('alvitur_token',t);location.reload()}else{alert('Limdu token fyrst')}" style='width:100%;padding:14px;background:#7ec8e3;color:#0a0a1a;border:none;border-radius:8px;font-size:1em;font-weight:700;cursor:pointer;margin-top:12px'>Skrá inn</button>
+</div>
+<script>if(localStorage.getItem("alvitur_token")){var x=document.getElementById("main-intake");if(x)x.style.display="";var l=document.getElementById("loginbox");if(l)l.style.display="none"}</script>
+<script>document.addEventListener("DOMContentLoaded",function(){var b=document.getElementById("loginbtn");if(b){b.addEventListener("click",function(){var t=document.getElementById("logintok").value.trim();if(t){localStorage.setItem("alvitur_token",t);location.reload()}else{alert("Limdu token fyrst")}})}})</script>
+
+
   <!-- Skip link -->
   <a href="#intake" class="skip-link">Fara í greiningu</a>
 
@@ -66,7 +76,9 @@
             <svg class="intake-tab__lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>Hvelfingin
           </button>
           <button role="tab" id="tab-employee" class="intake-tab" aria-selected="false" aria-controls="panel-employee" data-mode="employee">Starfsmaður</button>
-          <button role="tab" id="tab-inbox" class="intake-tab" aria-selected="false" aria-controls="panel-inbox" data-mode="inbox">📥 Samþykktir</button>
+    <div id="employee-panel" hidden><div id="inbox-content"></div></div>
+    
+          <button role="tab" id="tab-inbox" class="intake-tab" aria-selected="false" aria-controls="employee-panel" data-mode="inbox">📥 Samþykktir</button>
           <span class="intake-tabs__indicator" aria-hidden="true"></span>
         </div>
 
@@ -180,7 +192,7 @@
     </div>
   </footer>
 
-  <script src="/static/app_v3.js" defer></script>
+  <script src="/static/app_v3.js?v=114" defer></script>
 
   <!-- EEA Confined Badge -->
   <div style="text-align: center; padding: 1.5rem 0; color: var(--text-muted, #6b7280); font-size: 0.8125rem; border-top: 1px solid var(--border-subtle, #e5e7eb); margin-top: 2rem;">
@@ -191,5 +203,6 @@
     Öll gagnavinnsla fer fram innan Evrópska efnahagssvæðisins (EES)
   </div>
 
+<script>if(localStorage.getItem("alvitur_token")){document.getElementById("loginbox").style.display="none";document.getElementById("main-intake").style.display=""}else{document.getElementById("loginbox").style.display=""}</script>
 </body>
 </html>
