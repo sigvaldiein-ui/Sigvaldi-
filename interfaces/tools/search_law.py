@@ -32,6 +32,16 @@ def secure_qdrant_query(org_id: str, query_vector, client, collection_name: str,
         return client.search(collection_name=collection_name, query_vector=query_vector, limit=limit)
 
 
+# Sprint 103 latency fix: embeddari er geymdur milli kalla
+_EMBEDDING_MODEL = None
+
+def _get_embedding_model():
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        _EMBEDDING_MODEL = SentenceTransformer('intfloat/multilingual-e5-large', device='cpu')
+    return _EMBEDDING_MODEL
+
 class SearchLawTool(BaseTool):
     """Leitar í íslenskum lögum og þingskjölum (igc_law_pilot)."""
 
@@ -66,10 +76,10 @@ class SearchLawTool(BaseTool):
             from qdrant_client import QdrantClient
             from sentence_transformers import SentenceTransformer
 
-            model = SentenceTransformer("intfloat/multilingual-e5-large", device="cpu")
+            model = _get_embedding_model()
             vector = model.encode([query], convert_to_numpy=True)[0]
 
-            client = QdrantClient(path=_QDRANT_PATH)
+            client = QdrantClient(host="127.0.0.1", port=6333)
             cols = [c.name for c in client.get_collections().collections]
             if _RAG_COLLECTION not in cols:
                 logger.warning("[ALVITUR] SearchLawTool: collection %s ekki til", _RAG_COLLECTION)
