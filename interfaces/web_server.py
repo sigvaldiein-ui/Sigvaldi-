@@ -3251,7 +3251,7 @@ _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
 # ── Sprint 90: InMemoryRateLimiter ─────────────────────────────────────────
 _rate_limit_tracker: dict = {}  # user_id -> list of timestamps
 
-def _check_rate_limit(user_id: str, max_req: int = 10, window_sec: int = 3600) -> bool:
+def _check_rate_limit(user_id: str, max_req: int = 100, window_sec: int = 3600) -> bool:
     """Skilar True ef notandi er undir hámarki. Inniheldur minnisvörn."""
     import time as _time
     global _last_limiter_cleanup
@@ -3851,9 +3851,6 @@ SKJAL:
     return JSONResponse(content=response)
 
 
-@app.post("/api/chat")
-
-
 # ── Sprint 92: SSE Stream Endpoint ────────────────────────────────────────
 @app.get("/api/chat/stream")
 async def chat_stream_endpoint(query: str = "Hæ"):
@@ -3895,6 +3892,7 @@ async def add_to_waitlist(request: Request):
         return JSONResponse(status_code=500, content={"status": "error", "detail": "Innri villa."})
 
 
+@app.post("/api/chat")
 async def chat_endpoint(request: Request):
     """Sprint 45: Production chat endpoint.
     # Sprint 90: Rate limiting
