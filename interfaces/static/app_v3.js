@@ -187,3 +187,20 @@
   else if (tabConfidential && tabConfidential.classList.contains('intake-tab--active')) setMode('confidential');
   else setMode('general');
 })();
+
+document.addEventListener('DOMContentLoaded',function(){
+var token=localStorage.getItem('alvitur_token')||'';
+var box=document.getElementById('loginbox');
+var intake=document.getElementById('main-intake');
+if(token){if(box)box.style.display='none';if(intake)intake.style.display='';}
+else{if(box)box.style.display='flex';}
+var sBtn=document.getElementById('sidebar-login-btn');
+if(sBtn){sBtn.addEventListener('click',function(){if(box)box.style.display='flex';});}
+var lBtn=document.getElementById('loginbtn');
+if(lBtn){lBtn.addEventListener('click',function(){
+var tok=document.getElementById('logintok');
+if(tok){var val=tok.value.trim();
+if(val){localStorage.setItem('alvitur_token',val);location.reload();}
+else{alert('Limdu token fyrst');}}
+});}
+});
