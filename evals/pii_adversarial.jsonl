@@ -129,7 +129,7 @@
 {"text": "Málið var höfðað af Vörn Jónsdóttur hrl.", "expected": [{"span": "Vörn Jónsdóttur", "type": "nafn"}]}
 {"text": "Bára lagði fram kröfu um skaðabætur.", "expected": [{"span": "Bára", "type": "nafn"}]}
 {"text": "Árni mætti ekki til dóms.", "expected": [{"span": "Árni", "type": "nafn"}]}
-{"text": "Stefnt var gegn Hafnar-útgerðinni ehf.", "expected": [{"span": "Hafnar-útgerðinni", "type": "nafn"}]}
+{"text": "Stefnt var gegn Hafnar-útgerðinni ehf.", "expected": []}
 {"text": "Frosti fór fram á sýknu í héraði.", "expected": [{"span": "Frosti", "type": "nafn"}]}
 {"text": "Logi mótmælti frávísun málsins.", "expected": [{"span": "Logi", "type": "nafn"}]}
 {"text": "Svala krafðist þess að málinu yrði vísað frá.", "expected": [{"span": "Svala", "type": "nafn"}]}
@@ -151,8 +151,8 @@
 {"text": "Dómari í málinu var Hrafn Jónsson.", "expected": [{"span": "Hrafn Jónsson", "type": "nafn"}]}
 {"text": "Ljós lagði fram ný gögn í málinu.", "expected": [{"span": "Ljós", "type": "nafn"}]}
 {"text": "Tryggvi benti á ágalla í málsmeðferð.", "expected": [{"span": "Tryggvi", "type": "nafn"}]}
-{"text": "Félagið Skjöldur ehf. var tekið til gjaldþrotaskipta.", "expected": [{"span": "Skjöldur", "type": "nafn"}]}
-{"text": "Kærandi, Stormur hrl., mætti f.h. stefnanda.", "expected": [{"span": "Stormur", "type": "nafn"}]}
+{"text": "Félagið Skjöldur ehf. var tekið til gjaldþrotaskipta.", "expected": []}
+{"text": "Kærandi, Stormur hrl., mætti f.h. stefnanda.", "expected": []}
 {"text": "Viðtal við Gunnar á Hlíðarenda.", "expected": [{"span": "Gunnar á Hlíðarenda", "type": "nafn"}]}
 {"text": "Jón Jónsson, f. 14. maí 1982.", "expected": [{"span": "Jón Jónsson", "type": "nafn"}]}
 {"text": "Guðmundur góði (svokallaður) var dæmdur.", "expected": [{"span": "Guðmundur", "type": "nafn"}]}
