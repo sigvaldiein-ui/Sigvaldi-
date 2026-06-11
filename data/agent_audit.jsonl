@@ -1,0 +1,5 @@
+{"timestamp": "2026-06-11T14:59:49.835039+00:00", "event_type": "TASK_START", "task_id": "task-009", "details": {"description": "Greina samning og senda póst"}}
+{"timestamp": "2026-06-11T14:59:49.837658+00:00", "event_type": "TOOL_CALL", "task_id": "task-009", "details": {"tool": "analyze_text", "params": {"text": "Samningur..."}}}
+{"timestamp": "2026-06-11T14:59:49.840310+00:00", "event_type": "KILL_SWITCH", "task_id": "task-009", "details": {"reason": "Agent halted by kill-switch"}}
+{"timestamp": "2026-06-11T14:59:49.840372+00:00", "event_type": "TOOL_CALL", "task_id": "task-009", "details": {"tool": "draft_document", "params": {"topic": "Greining"}}}
+{"timestamp": "2026-06-11T14:59:49.842948+00:00", "event_type": "TASK_COMPLETE", "task_id": "task-009", "details": {"steps_completed": 2}}
