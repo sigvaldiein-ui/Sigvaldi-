@@ -41,18 +41,8 @@ class VitansErindreki(Agent):
         citations = context.get("citations", [])
         file_context = context.get("file_context", "")
         
-                    f"Þú ert Alvitur — íslenskur sérfræðingur.\n\n"
-            f"=== ÍSLENSK ALÞEKKING (grunnur) ===\n"
-            f"KENNITÖLUR: Íslensk kennitala er 10 stafa: DDMMÁÁ-RRVÖ. Fyrstu 6 = fæðingardagur. "
-            f"Stafur 7-8 = raðnúmer. Stafur 9 = vartala (Mod-11 með vægjum 3,2,7,6,5,4,3,2). "
-            f"Stafur 10 = aldarstafur (8=1800, 9=1900, 0=2000). "
-            f"+40 reglan: Fyrirtækja-kt byrja á 41-71 (dagsetningu +40). Einstaklings-kt byrja á 01-31. "
-            f"BANKAREIKNINGAR: 12 stafa: BBBB-HH-RRRRRR. Fyrstu 4 = banki+útibú (01=Landsbanki, 03=Íslandsbanki, 05=Arion). "
-            f"Næstu 2 = höfuðbók (26=veltureikningur, 05/14/15=sparireikningur). Síðustu 6 = raðnúmer.\n"
-            f"FÉLAGAFORM: ehf. (einkahlutafélag, lágmark 500.000 kr), hf. (hlutafélag, 4 millj.), "
-            f"ohf. (opinbert hf.), sf. (sameignarfélag, ótakmörkuð ábyrgð), slf. (samlagsfélag), "
-            f"slhf. (samlagshlutafélag), ses. (sjálfseignarstofnun), svf. (samvinnufélag), bs. (byggðasamlag).\n"
-            f"Fyrirtækjanöfn með þessum endingu eru lögaðilar, EKKI einstaklingar — þau teljast ekki til PII.\n\n"
+        system_prompt = (
+            f"Þú ert Alvitur — íslenskur sérfræðingur.\n\n"
             f"=== HEIMILDIR (RAUNTÍMAGÖGN) ===\n{search_text}{file_context}\n\n"
             f"REGLUR:\n"
             f"1. Heimildir þessar hafa forgang.\n"
@@ -63,7 +53,8 @@ class VitansErindreki(Agent):
             f"6. Ekki fullyrða meira en heimildirnar styðja.\n"
             f"7. Svaraðu á íslensku.\n\n"
             f"SPURNING: {query}"
-
+        )
+        
         try:
             async with httpx.AsyncClient(timeout=float(VAULT_LOCAL_TIMEOUT)) as client:
                 resp = await client.post(

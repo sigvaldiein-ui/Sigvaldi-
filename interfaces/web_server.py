@@ -3892,6 +3892,130 @@ async def add_to_waitlist(request: Request):
         return JSONResponse(status_code=500, content={"status": "error", "detail": "Innri villa."})
 
 
+
+
+# ── Sprint F1-V2: Vitinn þriggja leiða ──────────────────────────────────
+@app.post("/api/vitinn")
+async def vitinn_endpoint(request: Request):
+    """Vitinn með tveimur óháðum hökum.
+    
+    Body:
+        query: str
+        web_search: bool = False
+        stormeistari: bool = False
+        attachments: list = []
+    
+    Hökin stýra því hve langt fyrirspurnin fer út:
+    - Bæði óhökuð = sovereign (aðeins Qdrant + Qwen)
+    - web_search = sovereign + vefleit (Staan/Mojeek)
+    - stormeistari = sovereign + frontier líkan (OpenRouter ZDR)
+    - Bæði = sovereign + vefur + frontier
+    """
+    import time as _time
+    from interfaces.chat_routes import _get_rag_context, _validate_response
+    from core.safety.pii_sentry import scrub as pii_scrub
+    
+    try:
+        body = await request.json()
+    except:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+    
+    query = body.get("query", "").strip()
+    web_search = body.get("web_search", False)
+    stormeistari = body.get("stormeistari", False)
+    attachments = body.get("attachments", [])
+    
+    if not query:
+        return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
+    
+    t_start = _time.time()
+    tier = "vitinn"
+    
+    # 1. Sovereign — alltaf Qdrant + Qwen
+    rag_result = await _get_rag_context(query, "legal")
+    search_text = rag_result.get("text", "")
+    citations = rag_result.get("citations", [])
+    
+    # 2. Vefleit — PII Sentry → Staan/Mojeek
+    if web_search:
+        safe_result = pii_scrub(query); safe_query = safe_result.scrubbed  # Aðeins hreinsa leitarstrenginn
+        # V4: Tengja við Staan/Mojeek
+        try:
+            from tools.search_web_multi import search_web_multi
+            web_result = await search_web_multi(safe_query, max_results=5)
+            web_citations = web_result.get("citations", [])
+            if web_citations:
+                search_text += "\n[VEFFLET — Staan/Mojeek]\n"
+                for c in web_citations:
+                    search_text += f"* {c.get('title', '')}: {c.get('url', '')}\n  {c.get('snippet', '')[:300]}\n"
+                citations.extend(web_citations)
+        except Exception as e:
+            search_text += "\n[VEFFLET — ekki tiltæk í augnablikinu]"
+    
+    # 3. Stórmeistari — PII Sentry + OpenRouter ZDR
+    if stormeistari:
+        safe_result = pii_scrub(query); safe_query2 = safe_result.scrubbed
+        safe_result = pii_scrub(search_text); safe_context2 = safe_result.scrubbed
+        # V5: Tengja við OpenRouter ZDR
+        try:
+            system_prompt = (
+                "Þú ert Alvitur — íslensk gervigreindarlausn. "
+                "Svaraðu eftirfarandi spurningu byggt á meðfylgjandi heimildum. "
+                "Tilgreindu alltaf heimildir.\n\n"
+                f"HEIMILDIR:\n{safe_context2}\n\n"
+                "Svaraðu á íslensku."
+            )
+            content, model, usage = await _call_leid_a(system_prompt, safe_query2, max_tokens=1500)
+            if content:
+                cleaned = __import__("re").sub(r"<think>.*?</think>", "", content, flags=__import__("re").DOTALL).strip()
+                return JSONResponse(content={
+                    "success": True,
+                    "response": cleaned,
+                    "citations": citations,
+                    "sources": {
+                        "sovereign": True,
+                        "web_search": web_search,
+                        "stormeistari": True,
+                    },
+                    "pipeline": f"openrouter_{model.split('/')[-1] if model else 'stormeistari'}",
+                    "tier": "vitinn",
+                    "confidence": 0.9,
+                    "latency_ms": (t_start - t_start) * 1000,
+                })
+        except Exception as e:
+            import logging; logging.getLogger("alvitur.web").warning(f"Stórmeistari fellur til baka: {e}")
+            # Fellur í gegn í sovereign svarið
+    # Sovereign svar (Qwen)
+    from core.agents.yfir_erindreki import yfir_erindreki
+    
+    orchestrator_context = {
+        "search_text": search_text,
+        "citations": citations,
+        "file_context": "",
+        "domain": "legal",
+    }
+    
+    result = await yfir_erindreki.handle(query, tier, attachments, orchestrator_context)
+    
+    cleaned = __import__("re").sub(r"<think>.*?</think>", "", result.response or "", flags=__import__("re").DOTALL).strip()
+    is_valid, guarded_response = _validate_response(cleaned, citations)
+    
+    return JSONResponse(content={
+        "success": True,
+        "response": guarded_response,
+        "citations": citations,
+        "sources": {
+            "sovereign": True,
+            "web_search": web_search,
+            "stormeistari": stormeistari,
+        },
+        "pipeline": f"{result.agent_name}_{result.model_used if hasattr(result, 'model_used') else 'qwen'}",
+        "tier": result.tier,
+        "confidence": result.confidence,
+        "latency_ms": (_time.time() - t_start) * 1000,
+    })
+
+# ── /Sprint F1-V2 ──────────────────────────────────────────────────────
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
     """Sprint 45: Production chat endpoint.

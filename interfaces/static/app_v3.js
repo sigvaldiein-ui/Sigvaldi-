@@ -204,3 +204,110 @@ if(val){localStorage.setItem('alvitur_token',val);location.reload();}
 else{alert('Limdu token fyrst');}}
 });}
 });
+// === V5: Vitinn tvö-hök + /api/vitinn ===
+document.addEventListener('DOMContentLoaded', function() {
+    var wsToggle = document.getElementById('web-search-toggle');
+    var smToggle = document.getElementById('stormeistari-toggle');
+    var approvalPanel = document.getElementById('approval-panel');
+    var approvalQuery = document.getElementById('approval-query');
+    var approvalConfirm = document.getElementById('approval-confirm');
+    var approvalCancel = document.getElementById('approval-cancel');
+    var statusArea = document.getElementById('status-area');
+    var resultsArea = document.getElementById('results-area');
+    var resultsBody = document.getElementById('results-body');
+    var submitBtn = document.getElementById('submit-btn');
+
+    submitBtn.addEventListener('click', function(e) {
+        var query = (document.getElementById('query-input') || {}).value || '';
+        if (smToggle.checked) {
+            approvalQuery.textContent = '"' + query.substring(0,80) + '"';
+            approvalPanel.removeAttribute('hidden');
+        } else if (wsToggle.checked) {
+            sendVitinn(query, true, false);
+        }
+    });
+
+    if (approvalConfirm) approvalConfirm.addEventListener('click', function() {
+        approvalPanel.setAttribute('hidden','');
+        var query = (document.getElementById('query-input') || {}).value || '';
+        sendVitinn(query, wsToggle.checked, true);
+    });
+
+    if (approvalCancel) approvalCancel.addEventListener('click', function() {
+        approvalPanel.setAttribute('hidden','');
+        smToggle.checked = false;
+    });
+
+    function sendVitinn(query, webSearch, stormeistari) {
+        var token = localStorage.getItem('alvitur_token') || '';
+        if (statusArea) statusArea.textContent = 'Greini...';
+        if (resultsArea) resultsArea.hidden = true;
+        wsToggle.checked = false;
+        smToggle.checked = false;
+        approvalPanel.setAttribute('hidden','');
+        fetch('/api/vitinn', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body: JSON.stringify({query:query, web_search:webSearch, stormeistari:stormeistari})
+        }).then(function(r){return r.json();}).then(function(data){
+            if (statusArea) statusArea.textContent = '';
+            if (data.success) {
+                var s = data.sources || {};
+                var badge = s.stormeistari ? '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>'
+                    : s.web_search ? '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>'
+                    : '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
+                var cits = (data.citations||[]).map(function(c){
+                    return '<li style="font-size:.75rem;color:var(--color-text-muted);margin:.2rem 0">'+(c.citation_full||c.title||'')+'</li>';
+                }).join('');
+                resultsBody.innerHTML = '<div style="margin-bottom:.5rem">'+badge+'</div><p style="font-size:.875rem">'+data.response+'</p>'+(cits?'<ul style="padding-left:1rem;margin-top:.5rem">'+cits+'</ul>':'');
+                resultsArea.hidden = false;
+            } else {
+                if (statusArea) statusArea.textContent = 'Villa: '+(data.error||'Óþekkt');
+            }
+        }).catch(function(e){
+            if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
+        });
+    }
+});
+// Fela hok a Hvelfingin/confidential flipa
+document.addEventListener('DOMContentLoaded', function() {
+    var tabs = document.querySelectorAll('[data-mode]');
+    var toggles = document.getElementById('intake-toggles');
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            var mode = tab.getAttribute('data-mode');
+            if (mode === 'confidential' || mode === 'employee' || mode === 'inbox') {
+                toggles.style.display = 'none';
+                var ap = document.getElementById('approval-panel');
+                if (ap) ap.setAttribute('hidden','');
+                var ws = document.getElementById('web-search-toggle');
+                var sm = document.getElementById('stormeistari-toggle');
+                if (ws) ws.checked = false;
+                if (sm) sm.checked = false;
+            } else {
+                toggles.style.display = '';
+            }
+        });
+    });
+});
+document.addEventListener('DOMContentLoaded', function() {
+    var tabs = document.querySelectorAll('[data-mode]');
+    var toggles = document.getElementById('intake-toggles');
+    if (!toggles) return;
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            var mode = tab.getAttribute('data-mode');
+            if (mode === 'confidential' || mode === 'employee' || mode === 'inbox') {
+                toggles.style.display = 'none';
+                var ap = document.getElementById('approval-panel');
+                if (ap) ap.setAttribute('hidden','');
+                var ws = document.getElementById('web-search-toggle');
+                var sm = document.getElementById('stormeistari-toggle');
+                if (ws) ws.checked = false;
+                if (sm) sm.checked = false;
+            } else {
+                toggles.style.display = '';
+            }
+        });
+    });
+});

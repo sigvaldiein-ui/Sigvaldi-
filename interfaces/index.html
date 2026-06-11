@@ -82,7 +82,7 @@ Skrá inn</button>
 <div id="employee-panel" hidden><div id="inbox-content"></div></div>
 <div class="intake-body">
 <label for="query-input" class="sr-only">Fyrirspurn</label>
-<textarea id="query-input" class="intake-textarea" placeholder="Lystu thvi sem thu leitar ad..." rows="5"></textarea>
+<textarea id="query-input" class="intake-textarea" placeholder="Lýstu því sem þú leitar að..." rows="5"></textarea>
 </div>
 <div class="intake-file-row">
 <div class="intake-file-left">
@@ -102,6 +102,23 @@ Hengja við skjal</button>
 <button type="button" class="intake-attached__remove" id="remove-file" aria-label="Fjarlsegja skjal">
 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
 </button>
+</div>
+<div id="intake-toggles" style="border-top:1px solid var(--color-border);padding-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
+<p style="font-size:.75rem;color:var(--color-text-faint);margin:0">Viðbótarleiðir — sjálfgefið slökkt</p>
+<label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer"><input type="checkbox" id="web-search-toggle" style="margin-top:3px"><span><strong style="font-size:.875rem">Leita líka á vefnum</strong><small style="display:block;font-size:.75rem;color:var(--color-text-muted)">Fyrirspurn fer út eftir PII-hreinsun</small></span></label>
+<label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer"><input type="checkbox" id="stormeistari-toggle" style="margin-top:3px"><span><strong style="font-size:.875rem">Virkja Stórmeistara</strong><small style="display:block;font-size:.75rem;color:var(--color-text-muted)">Sendir fyrirspurn (PII-hreinsað) til frontier-líkans um ZDR</small></span></label>
+</div>
+<div id="approval-panel" hidden style="background:var(--color-accent-light);border:1px solid var(--color-accent-border);border-radius:var(--radius-md);padding:.75rem;flex-direction:column;gap:.5rem;display:none">
+<strong style="font-size:.8rem;color:var(--color-accent)">Gögn fara úr húsi — samþykki þarf</strong>
+<div style="font-size:.75rem;color:var(--color-text-muted);display:flex;flex-direction:column;gap:3px">
+<span>Fyrirspurn: <span id="approval-query" style="color:var(--color-text)"></span></span>
+<span>Þjónusta: OpenRouter ZDR (engin geymsla)</span>
+<span>Áætlaður kostnaður: ~0.002 USD</span>
+</div>
+<div style="display:flex;gap:.5rem">
+<button id="approval-confirm" type="button" style="flex:1;font-size:.8rem;padding:.4rem">Samþykkja og senda</button>
+<button id="approval-cancel" type="button" style="flex:1;font-size:.8rem;padding:.4rem">Hætta við</button>
+</div>
 </div>
 <button type="button" class="intake-submit" id="submit-btn">Greina
 <svg class="intake-submit__arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10h12m-4-4l4 4-4 4"/></svg>

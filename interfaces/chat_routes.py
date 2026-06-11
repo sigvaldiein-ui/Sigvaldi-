@@ -259,7 +259,17 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
             if (c.get("title") or "").strip()
         ]
         if source_titles:
-            mentions_any_source = any(title.lower() in lowered for title in source_titles[:5])
+            # Athuga bæði title, citation_full, og section
+            source_strings = []
+            for c in citations[:5]:
+                source_strings.append((c.get("title") or "").strip())
+                source_strings.append((c.get("citation_full") or "").strip())
+                source_strings.append((c.get("section") or "").strip())
+            mentions_any_source = any(
+                s.lower() in lowered
+                for s in source_strings
+                if len(s) > 3  # Sleppa tómum/of stuttum
+            )
             has_generic_grounding = any(
                 marker in lowered for marker in [
                     "samkvæmt heimild",
