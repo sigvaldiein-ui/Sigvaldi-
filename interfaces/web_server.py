@@ -4000,9 +4000,12 @@ async def vitinn_endpoint(request: Request):
     cleaned = __import__("re").sub(r"<think>.*?</think>", "", result.response or "", flags=__import__("re").DOTALL).strip()
     is_valid, guarded_response = _validate_response(cleaned, citations)
     
+    # Ef vörðurinn samþykkir, nota UPPRUNALEGA svarið (cleaned), ekki fallback
+    final_response = cleaned if is_valid else guarded_response
+    
     return JSONResponse(content={
         "success": True,
-        "response": guarded_response,
+        "response": final_response,
         "citations": citations,
         "sources": {
             "sovereign": True,
