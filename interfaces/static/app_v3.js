@@ -193,9 +193,9 @@ var token=localStorage.getItem('alvitur_token')||'';
 var box=document.getElementById('loginbox');
 var intake=document.getElementById('main-intake');
 if(token){if(box)box.style.display='none';if(intake)intake.style.display='';}
-else{if(box)box.style.display='flex';}
+else{window.location.href='/login';}
 var sBtn=document.getElementById('sidebar-login-btn');
-if(sBtn){sBtn.addEventListener('click',function(){if(box)box.style.display='flex';});}
+if(sBtn){sBtn.addEventListener('click',function(){window.location.href='/login';});}
 var lBtn=document.getElementById('loginbtn');
 if(lBtn){lBtn.addEventListener('click',function(){
 var tok=document.getElementById('logintok');
@@ -224,6 +224,8 @@ document.addEventListener('DOMContentLoaded', function() {
             approvalPanel.removeAttribute('hidden');
         } else if (wsToggle.checked) {
             sendVitinn(query, true, false);
+        } else {
+            sendVitinn(query, false, false);
         }
     });
 
@@ -238,32 +240,67 @@ document.addEventListener('DOMContentLoaded', function() {
         smToggle.checked = false;
     });
 
+    function esc(t){var d=document.createElement('div');d.textContent=(t==null?'':String(t));return d.innerHTML;}
+    function badgeHtml(s){
+        if (s.stormeistari) return '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>';
+        if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
+        return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
+    }
     function sendVitinn(query, webSearch, stormeistari) {
         var token = localStorage.getItem('alvitur_token') || '';
         if (statusArea) statusArea.textContent = 'Greini...';
-        if (resultsArea) resultsArea.hidden = true;
         wsToggle.checked = false;
         smToggle.checked = false;
         approvalPanel.setAttribute('hidden','');
-        fetch('/api/vitinn', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
-            body: JSON.stringify({query:query, web_search:webSearch, stormeistari:stormeistari})
-        }).then(function(r){return r.json();}).then(function(data){
-            if (statusArea) statusArea.textContent = '';
-            if (data.success) {
-                var s = data.sources || {};
-                var badge = s.stormeistari ? '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>'
-                    : s.web_search ? '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>'
-                    : '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
-                var cits = (data.citations||[]).map(function(c){
-                    return '<li style="font-size:.75rem;color:var(--color-text-muted);margin:.2rem 0">'+(c.citation_full||c.title||'')+'</li>';
-                }).join('');
-                resultsBody.innerHTML = '<div style="margin-bottom:.5rem">'+badge+'</div><p style="font-size:.875rem">'+data.response+'</p>'+(cits?'<ul style="padding-left:1rem;margin-top:.5rem">'+cits+'</ul>':'');
-                resultsArea.hidden = false;
-            } else {
-                if (statusArea) statusArea.textContent = 'Villa: '+(data.error||'Óþekkt');
+        // Undirbua nidurstodu-svaedi fyrir streymi
+        if (resultsBody) resultsBody.innerHTML = '<p id="vitinn-stream" style="font-size:.875rem;white-space:pre-wrap"></p>';
+        if (resultsArea) resultsArea.hidden = false;
+        var streamP = document.getElementById('vitinn-stream');
+        var acc = '';
+        var hvToggle = document.getElementById('hvelfingin-search-toggle');
+        var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
+        var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
+                + '&web_search=' + (webSearch?'true':'false')
+                + '&stormeistari=' + (stormeistari?'true':'false')
+                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false');
+        fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
+            if (!resp.ok) throw new Error('HTTP '+resp.status);
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+            function pump(){
+                return reader.read().then(function(res){
+                    if (res.done) return;
+                    buffer += decoder.decode(res.value, {stream:true});
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    lines.forEach(function(line){
+                        line = line.trim();
+                        if (!line || line.indexOf('data:')!==0) return;
+                        var payload = line.slice(5).trim();
+                        if (payload === '[DONE]') return;
+                        try {
+                            var obj = JSON.parse(payload);
+                            if (obj.chunk != null) {
+                                acc += obj.chunk;
+                                if (streamP) streamP.textContent = acc;
+                                if (statusArea) statusArea.textContent = '';
+                            } else if (obj.metadata) {
+                                var s = obj.metadata.sources || {};
+                                var cits = (obj.metadata.citations||[]).map(function(c){
+                                    return '<li style="font-size:.75rem;color:var(--color-text-muted);margin:.2rem 0">'+esc(c.title||c.citation_full||'')+'</li>';
+                                }).join('');
+                                if (resultsBody) resultsBody.innerHTML =
+                                    '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
+                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+esc(acc)+'</p>'
+                                    +(cits?'<ul style="padding-left:1rem;margin-top:.5rem">'+cits+'</ul>':'');
+                            }
+                        } catch(e) {}
+                    });
+                    return pump();
+                });
             }
+            return pump();
         }).catch(function(e){
             if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
         });
@@ -308,6 +345,39 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 toggles.style.display = '';
             }
+        });
+    });
+});
+
+// Styrkja-spjald
+document.addEventListener('DOMContentLoaded', function() {
+    var trigger = document.getElementById('support-trigger');
+    var overlay = document.getElementById('support-overlay');
+    var closeBtn = document.getElementById('support-close');
+    if (!trigger || !overlay) return;
+    trigger.addEventListener('click', function() { overlay.removeAttribute('hidden'); });
+    if (closeBtn) closeBtn.addEventListener('click', function() { overlay.setAttribute('hidden',''); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.setAttribute('hidden',''); });
+});
+
+// H5: Hvelfingin-leitarrofi — default-AF, synileiki, endurstilling per fyrirspurn
+document.addEventListener('DOMContentLoaded', function() {
+    var toggle = document.getElementById('hvelfingin-search-toggle');
+    var vis = document.getElementById('hvelfingin-search-visibility');
+    if (!toggle || !vis) return;
+    // Default-AF tryggt
+    toggle.checked = false;
+    vis.setAttribute('hidden','');
+    toggle.addEventListener('change', function() {
+        if (toggle.checked) { vis.removeAttribute('hidden'); }
+        else { vis.setAttribute('hidden',''); }
+    });
+    // Endurstilla i AF thegar skipt er um flipa (privacy-by-default)
+    var tabs = document.querySelectorAll('[data-mode]');
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            toggle.checked = false;
+            vis.setAttribute('hidden','');
         });
     });
 });

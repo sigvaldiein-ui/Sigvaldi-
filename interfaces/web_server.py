@@ -392,6 +392,8 @@ import os
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "dev-secret"))
 # Sprint 84: Auðkenni.is OIDC routes
 app.include_router(auth_router)
+from interfaces.routes.magic import router as magic_router
+app.include_router(magic_router)
 
 # Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
 from fastapi.staticfiles import StaticFiles
@@ -3909,6 +3911,114 @@ async def add_to_waitlist(request: Request):
 
 
 # ── Sprint F1-V2: Vitinn þriggja leiða ──────────────────────────────────
+# Kóði sem bætist við í web_server.py — nýr endapunktur /api/vitinn/stream
+# Sett rétt fyrir ofan @app.post("/api/vitinn") við línu ~3914
+
+@app.get("/api/vitinn/stream")
+async def vitinn_stream_endpoint(request: Request):
+    """Vitinn SSE stream — allar 4 leiðir, sources+citations í metadata eftir [DONE]."""
+    import time as _time, json, asyncio
+    from interfaces.chat_routes import _get_rag_context, _validate_response
+    from core.safety.pii_sentry import scrub as pii_scrub
+    from fastapi.responses import StreamingResponse
+    
+    query = request.query_params.get("query", "").strip()
+    web_search = request.query_params.get("web_search", "false").lower() == "true"
+    stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
+    hvelfingin_search = request.query_params.get("hvelfingin_search", "false").lower() == "true"
+    # Default-AF: bakendi treystir ekki framenda einum — þvingar PII-scrub ef Hvelfingin-leit er virk
+    if hvelfingin_search:
+        web_search = True
+        query = pii_scrub(query).scrubbed
+    
+    if not query:
+        return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
+    if len(query) > 4000:
+        return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
+    
+    async def sse_generator():
+        t_start = _time.time()
+        citations = []
+        search_text = ""
+        
+        # 1. Sovereign — Qdrant + Qwen
+        try:
+            rag_result = await _get_rag_context(query, "legal")
+            search_text = rag_result.get("text", "")
+            citations = rag_result.get("citations", [])
+        except Exception:
+            pass
+        
+        # 2. Vefleit ef hakað
+        if web_search:
+            try:
+                safe = pii_scrub(query)
+                from tools.search_web_multi import search_web_multi
+                web_result = await search_web_multi(safe.scrubbed, max_results=5)
+                wc = web_result.get("citations", [])
+                if wc:
+                    search_text += "\n[VEFFLET]\n"
+                    for c in wc:
+                        search_text += f"* {c.get('title','')}: {c.get('url','')}\n  {c.get('snippet','')[:300]}\n"
+                    citations.extend(wc)
+            except Exception:
+                pass
+        
+        # 3. Stórmeistari ef hakað
+        storm_response = None
+        if stormeistari:
+            try:
+                safe_q = pii_scrub(query).scrubbed
+                safe_c = pii_scrub(search_text).scrubbed
+                system_prompt = (
+                    "Þú ert Alvitur — íslensk gervigreindarlausn. "
+                    "Svaraðu eftirfarandi spurningu byggt á meðfylgjandi heimildum. "
+                    "Tilgreindu alltaf heimildir.\n\n"
+                    f"HEIMILDIR:\n{safe_c}\n\nSvaraðu á íslensku."
+                )
+                content, model, usage = await _call_leid_a(system_prompt, safe_q, max_tokens=1500)
+                if content:
+                    import re
+                    storm_response = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                    yield f'data: {{"chunk": {json.dumps(storm_response)}}}\n\n'
+            except Exception:
+                pass
+        
+        # 4. Sovereign svar (Qwen) ef Stórmeistari gaf ekkert
+        if not storm_response:
+            from core.agents.yfir_erindreki import yfir_erindreki
+            orchestrator_context = {
+                "search_text": search_text,
+                "citations": citations,
+                "file_context": "",
+                "domain": "legal",
+            }
+            result = await yfir_erindreki.handle(query, "vitinn", [], orchestrator_context)
+            import re
+            cleaned = re.sub(r"<think>.*?</think>", "", result.response or "", flags=re.DOTALL).strip()
+            is_valid, guarded = _validate_response(cleaned, citations)
+            final = cleaned if is_valid else guarded
+            yield f'data: {{"chunk": {json.dumps(final)}}}\n\n'
+        
+        # Metadata með sources + citations
+        yield "data: [DONE]\n\n"
+        meta = {
+            "metadata": {
+                "sources": {
+                    "sovereign": True,
+                    "web_search": web_search,
+                    "stormeistari": stormeistari and storm_response is not None,
+                    "hvelfingin_search": hvelfingin_search
+                },
+                "pii_scrubbed": hvelfingin_search,
+                "citations": citations,
+                "latency_ms": (_time.time() - t_start) * 1000
+            }
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
 @app.post("/api/vitinn")
 async def vitinn_endpoint(request: Request):
     """Vitinn með tveimur óháðum hökum.
@@ -4128,6 +4238,85 @@ async def zero_disk_status(request: Request):
         "sessions": {k: {"bytes": v, "mb": round(v/1024/1024, 2)} for k, v in sessions.items()},
     }
 
+
+@app.get("/um", response_class=HTMLResponse)
+async def um_page():
+    """Um Alvitur — saga og sýn verkefnisins."""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="is">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Um Alvitur</title>
+<style>
+:root{--accent:#0A6B6E;--text:#1a1a2e;--muted:#555;--faint:#888;--bg:#fafafa;--surface:#fff;--border:#e5e7eb}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);margin:0;line-height:1.7}
+.um-main{max-width:720px;margin:0 auto;padding:3rem 1.5rem 5rem}
+.um-back{display:inline-flex;align-items:center;gap:.4rem;color:var(--accent);text-decoration:none;font-size:.9rem;margin-bottom:2rem}
+.um-back svg{width:18px;height:18px}
+.um-card{background:var(--surface);border:1px solid var(--border);border-radius:1rem;padding:2.5rem}
+.um-title{font-size:1.75rem;font-weight:600;margin:0 0 .25rem;letter-spacing:-.02em}
+.um-subtitle{font-size:1rem;color:var(--muted);margin:0 0 2rem;font-style:italic}
+.um-section{margin-bottom:2rem}
+.um-section h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 .75rem;font-weight:600}
+.um-section p{margin:0 0 1rem;color:var(--text)}
+.um-section strong{color:var(--accent)}
+.um-tiers{display:flex;flex-direction:column;gap:.5rem;margin:1rem 0}
+.um-tier{display:flex;gap:.6rem;align-items:baseline;font-size:.95rem}
+.um-tier strong{color:var(--accent);min-width:90px}
+.um-cta{margin-top:2.5rem;padding-top:2rem;border-top:1px solid var(--border);text-align:center}
+.um-cta a{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:.75rem 1.75rem;border-radius:.625rem;font-weight:600;font-size:.95rem}
+.um-footer-note{text-align:center;color:var(--faint);font-size:.85rem;margin-top:1.5rem}
+</style>
+</head>
+<body>
+<div class="um-main">
+<a href="/" class="um-back"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>Til baka</a>
+<article class="um-card">
+<h1 class="um-title">Um Alvitur</h1>
+<p class="um-subtitle">Hvað þetta er og hvers vegna</p>
+
+<div class="um-section">
+<p>Ég er á sjötugsaldri og kann ekki að forrita. Samt smíðaði ég Alvitur — heilt verkfæri með gervigreind — á rúmlega hundrað dögum og um þúsund vinnustundum. Það sem ég vil sýna er einfalt: ef ég get þetta, þá geta allir þetta. Ungir sem aldnir.</p>
+<p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú byggt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
+</div>
+
+<div class="um-section">
+<h2>Markmiðið</h2>
+<p>Meginmarkmið mitt var að smíða verkfæri sem byggi á Íslandi (það er í Frankfurt sem stendur) og gæti þrennt:</p>
+<div class="um-tiers">
+<div class="um-tier"><strong>Vitinn</strong><span>Leitað og rannsakað á netinu með heimildum.</span></div>
+<div class="um-tier"><strong>Hvelfingin</strong><span>Unnið með trúnaðargögn og skjöl í harðlæstu umhverfi þar sem ekkert fer úr húsi.</span></div>
+<div class="um-tier"><strong>Starfsmaður</strong><span>Stafrænn starfsmaður sem getur framkvæmt verk sjálfur, undir stöðugri umsjón notandans — allt sem hægt er að gera í tölvu með lyklaborði og mús.</span></div>
+</div>
+</div>
+
+<div class="um-section">
+<h2>Af hverju lítið, íslenskt mállíkan</h2>
+<p>Við vildum sanna að lítil þjóð geti smíðað sitt eigið staðbundna mállíkan — og með því nýtt það besta sem gervigreindin býður upp á í dag, en dregið úr stærstu göllum tækninnar: sjónhverfingum og uppspuna. Markmiðið er að svör byggi alltaf á raunverulegum heimildum, ekki ágiskunum.</p>
+<p>Alvitur er ekki spjallforrit. Það er stærra en svo — verkfæri sem hugsar á íslensku, svarar með heimildum, og heldur gögnunum þínum heima.</p>
+</div>
+
+<div class="um-section">
+<h2>Prófaðu sjálf</h2>
+<p>Þú getur prófað Alvitur með fimm fyrirspurnum, með takmörkunum á stærð skjala og umfangi verkefna — það er til að tryggja að kerfið haldi. Eins og stendur ræður Alvitur við um þrjátíu notendur samtímis, en það fer alfarið eftir viðtökum ykkar hversu stórt Alvitur verður. Til að stækka þarf aðeins öflugri vélbúnað — hönnunin og arkitektúrinn er þegar klár.</p>
+</div>
+
+<div class="um-section">
+<h2>Styðja verkefnið</h2>
+<p>Þeim sem vilja styðja þetta framtak er bent á að nota „Styðja verkefnið" hnappinn í valstikunni. Hver króna hjálpar til við að halda Alvitri sjálfstæðum og íslenskum.</p>
+</div>
+
+<div class="um-cta">
+<a href="/">Prófa Alvitur</a>
+</div>
+<p class="um-footer-note">Orkuskipti ehf. &middot; sigvaldi@alvitur.is</p>
+</article>
+</div>
+</body>
+</html>""")
+
 @app.get("/oryggi", response_class=HTMLResponse)
 async def oryggi_page():
     """Sprint 29 T1 — Trust Center"""
@@ -4139,7 +4328,7 @@ async def oryggi_page():
   <title>Öryggi | Alvitur</title>
   <meta name="description" content="Hvernig Alvitur meðhöndlar gögn, trúnað og skjalasendingar.">
   <meta property="og:title" content="Öryggi | Alvitur">
-  <meta property="og:description" content="Ekkert vistast í trúnaðarham. Sjálfvirk gagnaeyðing. GDPR-samræmt.">
+  <meta property="og:description" content="Ekkert vistast í trúnaðarham. Sjálfvirk gagnaeyðing. Byggt á evrópskum persónuverndarlögum.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4242,24 +4431,24 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
     <section class="oryggi-section">
       <h2>Engin þjálfun á þínum gögnum</h2>
       <p>Hjá Alvitri teljum við að stofnanir og fyrirtæki eigi ekki að þurfa að velja á milli þess að nýta kraft öflugustu gervigreindar heims og þess að vernda viðkvæm gögn. Við höfum smíðað íslenskt vinnsluumhverfi og arkitektúr sem tryggir fullt gagnaforræði í hverju skrefi.</p>
-      <p>Við nýtum eingöngu lokuð fyrirtækjaskil (Enterprise APIs) við stærstu mállíkön heims, þar sem gilda ströng skilyrði um gagnavernd. Við ábyrgjumst lagalega og tæknilega að hvorki skjöl né fyrirspurnir sem fara í gegnum Alvitur verði nokkurn tímann nýtt til að þjálfa, fínstilla eða bæta gervigreindarlíkön birgja okkar. Hugverkið þitt er varið.</p>
+      <p>Við notum eingöngu lokaðar, samningsbundnar tengingar við stærstu mállíkön heims, þar sem gilda ströng skilyrði um gagnavernd. Skjöl og fyrirspurnir sem fara í gegnum Alvitur eru ekki nýtt til að þjálfa eða bæta mállíkön þriðja aðila. Eigið mállíkan Alviturs er einungis þjálfað innan leyfilegra marka og með samþykki. Hugverkið þitt er varið.</p>
     </section>
 
     <section class="oryggi-section">
       <h2>Sjálfvirk gagnaeyðing í trúnaðarham</h2>
-      <p>Fyrir viðkvæmustu upplýsingarnar krefst kerfið þess að notandi velji Trúnaðarvinnslu (Leið B). Undir þessu vinnslulagi eru skjöl lesin beint inn í vinnsluminni (RAM) á netþjónum okkar &mdash; þau snerta aldrei varanlegan harðan disk.</p>
+      <p>Fyrir viðkvæmustu upplýsingarnar krefst kerfið þess að notandi velji Trúnaðarvinnslu (Hvelfingin). Undir þessu vinnslulagi eru skjöl lesin beint inn í vinnsluminni (RAM) á netþjónum okkar &mdash; þau snerta aldrei varanlegan harðan disk.</p>
       <p>Að greiningu lokinni er minnið hreinsað og gögnin eyðast sjálfkrafa. Engin varanleg afrit verða til. Það er ekki hægt að ná í gögn sem eru ekki lengur til.</p>
     </section>
 
     <section class="oryggi-section">
       <h2>Lögsaga og evrópskir innviðir</h2>
-      <p>Allur vélbúnaður sem knýr gagnagátt Alviturs er hýstur í vottuðum gagnaverum innan Evrópska efnahagssvæðisins (EES). Kerfið lútur persónuverndarlögum (GDPR) að fullu.</p>
-      <p>Með innbyggðri gagnaflokkun styður Alvitur við kröfur ISO 42001 og komandi löggjöf Evrópusambandsins (EU AI Act) um ábyrga og rekjanlega notkun gervigreindar.</p>
+      <p>Allur vélbúnaður sem knýr gagnagátt Alviturs er hýstur í gagnaverum innan Evrópska efnahagssvæðisins. Kerfið er byggt á evrópskum persónuverndarlögum.</p>
+      <p>Með innbyggðri gagnaflokkun er Alvitur byggt með kröfur ISO 42001 (ekki enn vottað) og komandi löggjöf Evrópusambandsins um gervigreind.</p>
     </section>
 
     <section class="oryggi-section">
       <h2>Sannanlegur rekjanleiki</h2>
-      <p>Til að styðja við örugga skjalavörslu og innri endurskoðun heldur kerfið utan um dulkóðaða atvikaskrá (Audit Trail). Við skráum að vinnsla á ákveðnu öryggisstigi fór fram, ásamt metadata og tímasetningu, en innihald gagnanna eða skjalsins sjálfs er aldrei varðveitt á Trúnaðarleiðinni.</p>
+      <p>Til að styðja við örugga skjalavörslu og innri endurskoðun heldur kerfið utan um dulkóðaða atvikaskrá. Við skráum að vinnsla á ákveðnu öryggisstigi fór fram, ásamt metadata og tímasetningu, en innihald gagnanna eða skjalsins sjálfs er aldrei varðveitt á Trúnaðarleiðinni.</p>
     </section>
 
     <div style="text-align: center; padding: var(--space-8) 0;">
@@ -4269,7 +4458,7 @@ button { cursor: pointer; background: none; border: none; font: inherit; color: 
       </a>
       <div class="oryggi-trust">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1L2 3.25v4C2 10.2 4.2 12.75 7 13.5c2.8-.75 5-3.3 5-6.25v-4L7 1z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>
-        Styður við kröfur ISO 42001 og GDPR
+        Byggt með kröfur ISO 42001 (ekki enn vottað) og evrópsk persónuverndarlög
       </div>
     </div>
   </main>
@@ -4943,6 +5132,6 @@ async def refresh_token(request: Request):
             await db.execute("INSERT OR REPLACE INTO token_revocation (jti, expiry_date) VALUES (?, ?)", (old_jti, time.time() + 3600))
             await db.commit()
     new_payload = {"sub": claims["sub"], "org_id": claims["org_id"], "tier": claims["tier"], "jti": str(__import__("uuid").uuid4())}
-    key = os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key")
+    key = os.environ.get("JWT_PRIVATE_KEY", "dummy-dev-key")
     new_token = jwt.encode(new_payload, key, algorithm="RS256")
     return {"access_token": new_token, "token_type": "bearer"}

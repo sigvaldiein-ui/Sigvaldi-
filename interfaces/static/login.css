@@ -1,0 +1,18 @@
+body { font-family: sans-serif; background:#0a0a1a; color:#e0e0e0; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:20px; margin:0; }
+.card { background:#1a1a2e; border-radius:12px; padding:30px; max-width:420px; width:100%; }
+h1 { color:#7ec8e3; text-align:center; margin-bottom:4px; }
+.sub { text-align:center; color:#888; margin-top:0; margin-bottom:20px; font-size:.9em; }
+.tabs { display:flex; gap:4px; margin-bottom:20px; background:#0d0d1f; border-radius:8px; padding:4px; }
+.tab { flex:1; padding:10px; text-align:center; border-radius:6px; cursor:pointer; font-size:.85em; color:#888; border:none; background:none; font-family:inherit; transition:all .15s; }
+.tab--active { background:#7ec8e3; color:#0a0a1a; font-weight:600; }
+.panel { display:none; }
+.panel--active { display:block; }
+label { display:block; font-size:.8em; color:#aaa; margin-bottom:6px; }
+input[type=email] { width:100%; box-sizing:border-box; padding:12px; background:#0d0d1f; border:1px solid #333; border-radius:8px; color:#e0e0e0; font-size:.9em; }
+textarea { width:100%; box-sizing:border-box; height:100px; background:#0d0d1f; border:1px solid #333; border-radius:8px; color:#e0e0e0; padding:12px; font-size:.85em; font-family:monospace; resize:vertical; }
+button.submit { width:100%; padding:14px; background:#7ec8e3; color:#0a0a1a; border:none; border-radius:8px; font-size:1em; font-weight:700; cursor:pointer; margin-top:16px; }
+button.submit:disabled { opacity:.5; cursor:default; }
+.msg { margin-top:16px; text-align:center; min-height:24px; font-size:.9em; }
+.ok { color:#4caf50; }
+.err { color:#f44336; }
+.info { color:#7ec8e3; }
