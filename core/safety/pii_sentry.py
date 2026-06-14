@@ -129,6 +129,10 @@ def _regex_layer(text: str) -> List[Finding]:
         findings.append(Finding((start, end), match, "bilnumer", "regex", 1.0))
     for start, end, match in find_heimilisfong(text):
         findings.append(Finding((start, end), match, "heimilisfang", "regex", 1.0))
+    # PII-fix: finna kennitölur með bandstriki/bili — DDMMYY[- ]?NNNN
+    kt_regex = re.compile(r"\b(\d{6})[- ]?(\d{4})\b")
+    for m in kt_regex.finditer(text):
+        findings.append(Finding((m.start(), m.end()), m.group(), "kt", "regex", 0.95))
     return findings
 
 def _gazetteer_layer(text: str) -> List[Finding]:

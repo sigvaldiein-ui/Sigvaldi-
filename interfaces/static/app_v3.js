@@ -381,3 +381,71 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+
+// === V6: TIER-GATING — Verk 2 (laestir flipar) + Verk 4 (Stormeistari) ===
+document.addEventListener('DOMContentLoaded', function() {
+    function getTier() {
+        var tok = localStorage.getItem('alvitur_token') || '';
+        if (!tok) return null;
+        try {
+            var p = tok.split('.');
+            if (p.length < 2) return null;
+            var pl = JSON.parse(atob(p[1].replace(/-/g,'+').replace(/_/g,'/')));
+            return (pl.tier || '').toLowerCase();
+        } catch(e) { return null; }
+    }
+    var tier = getTier();
+    var fullAccess = tier && tier !== 'vitinn';
+
+    // Verk 2: Laesa Hvelfingin + Starfsmaður
+    if (!fullAccess) {
+        ['confidential','employee'].forEach(function(mode) {
+            var tab = document.querySelector('[data-mode="' + mode + '"]');
+            if (!tab) return;
+            tab.style.opacity = '0.4';
+            tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled','true');
+            tab.addEventListener('click', function(e) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                showGateTip(tab, 'Þssi hluti krefst innskráningar eða boðsaðgangs.');
+            }, true);
+        });
+    }
+
+    // Verk 4: Stormeistari toggle
+    var smCb = document.getElementById('stormeistari-toggle');
+    var smLabel = smCb ? (smCb.closest('label') || smCb.parentElement) : null;
+    if (smLabel) {
+        if (!tier) {
+            smLabel.style.display = 'none';
+        } else if (tier === 'vitinn') {
+            smCb.disabled = true;
+            smLabel.style.opacity = '0.4';
+            smLabel.style.cursor = 'not-allowed';
+            smLabel.addEventListener('click', function(e) {
+                e.preventDefault();
+                showGateTip(smLabel, 'Stórmeistari krefst Hvelfingin-aðgangs.');
+            });
+        }
+    }
+
+    function showGateTip(anchor, msg) {
+        var old = document.getElementById('gate-tip');
+        if (old) old.remove();
+        var tip = document.createElement('div');
+        tip.id = 'gate-tip';
+        tip.style.cssText = 'position:fixed;background:#1a2a1a;color:#fff;font-size:.75rem;padding:6px 10px;border-radius:6px;max-width:240px;line-height:1.5;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.25)';
+        tip.textContent = msg;
+        document.body.appendChild(tip);
+        var r = anchor.getBoundingClientRect();
+        tip.style.top = Math.min(r.bottom + 6, window.innerHeight - 60) + 'px';
+        tip.style.left = Math.max(8, r.left) + 'px';
+        setTimeout(function() { if (tip.parentNode) tip.remove(); }, 2500);
+        document.addEventListener('click', function rm() {
+            if (tip.parentNode) tip.remove();
+            document.removeEventListener('click', rm);
+        });
+    }
+});

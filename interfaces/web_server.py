@@ -277,6 +277,25 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.url.path.startswith(("/api/health", "/api/auth")):
             return await call_next(request)
+        # CTO-leikplan: Leyfa óinnskráðum að nota Vitann
+        if request.url.path.startswith("/api/vitinn"):
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                try:
+                    import jwt, os
+                    payload = jwt.decode(token, os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+                    sub = payload.get("sub", "")
+                    if sub:
+                        import sqlite3
+                        with sqlite3.connect("/workspace/Sigvaldi-/state_store.db") as _db:
+                            _db.row_factory = sqlite3.Row
+                            _user = _db.execute("SELECT org_id, tier, role, active FROM users WHERE sub = ?", (sub,)).fetchone()
+                            if _user and _user["active"]:
+                                request.state.user_claims = {"sub": sub, "org_id": _user["org_id"], "tier": _user["tier"], "jti": payload.get("jti", "")}
+                except Exception:
+                    pass
+            return await call_next(request)
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return JSONResponse(status_code=401, content={"error": "Missing Bearer token"})
@@ -3936,6 +3955,12 @@ async def vitinn_stream_endpoint(request: Request):
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
     
+    # CTO: 403 fyrir Hvelfingin-leit og Stórmeistara án réttinda
+    user = getattr(request.state, "user_claims", None)
+    tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
+    if (stormeistari or hvelfingin_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
+        return JSONResponse(status_code=403, content={"error": "Protected tier required"})
+    
     async def sse_generator():
         t_start = _time.time()
         citations = []
@@ -4053,6 +4078,12 @@ async def vitinn_endpoint(request: Request):
         return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
+    
+    # CTO: 403 fyrir Hvelfingin-leit og Stórmeistara án réttinda
+    user = getattr(request.state, "user_claims", None)
+    tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
+    if (stormeistari or web_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
+        return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
     t_start = _time.time()
     tier = "vitinn"
