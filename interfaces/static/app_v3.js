@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded',function(){
 var token=localStorage.getItem('alvitur_token')||'';
 var box=document.getElementById('loginbox');
 var intake=document.getElementById('main-intake');
-if(token){if(box)box.style.display='none';if(intake)intake.style.display='';}
+if(box)box.style.display='none';if(intake)intake.style.display='';
 else{window.location.href='/login';}
 var sBtn=document.getElementById('sidebar-login-btn');
 if(sBtn){sBtn.addEventListener('click',function(){window.location.href='/login';});}

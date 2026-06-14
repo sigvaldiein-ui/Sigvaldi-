@@ -4174,10 +4174,10 @@ async def vitinn_endpoint(request: Request):
                     "pipeline": f"openrouter_{model.split('/')[-1] if model else 'stormeistari'}",
                     "tier": "vitinn",
                     "confidence": 0.9,
-                    "latency_ms": (t_start - t_start) * 1000,
+                    "latency_ms": (_time.time() - t_start) * 1000,
                 })
         except Exception as e:
-            import logging; logging.getLogger("alvitur.web").warning(f"Stórmeistari fellur til baka: {e}")
+            import logging, traceback; logging.getLogger("alvitur.web").warning(f"Stórmeistari fellur til baka: {e}\n{traceback.format_exc()}")
             # Fellur í gegn í sovereign svarið
     # Sovereign svar (Qwen)
     from core.agents.yfir_erindreki import yfir_erindreki
