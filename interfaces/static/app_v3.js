@@ -383,7 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
-// === V6: TIER-GATING — Verk 2 (laestir flipar) + Verk 4 (Stormeistari) ===
+// === V6: TIER-GATING (v2) - Verk 2+3+4 ===
 document.addEventListener('DOMContentLoaded', function() {
     function getTier() {
         var tok = localStorage.getItem('alvitur_token') || '';
@@ -395,42 +395,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return (pl.tier || '').toLowerCase();
         } catch(e) { return null; }
     }
-    var tier = getTier();
-    var fullAccess = tier && tier !== 'vitinn';
-
-    // Verk 2: Laesa Hvelfingin + Starfsmaður
-    if (!fullAccess) {
-        ['confidential','employee'].forEach(function(mode) {
-            var tab = document.querySelector('[data-mode="' + mode + '"]');
-            if (!tab) return;
-            tab.style.opacity = '0.4';
-            tab.style.cursor = 'not-allowed';
-            tab.setAttribute('aria-disabled','true');
-            tab.addEventListener('click', function(e) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-                showGateTip(tab, 'Þssi hluti krefst innskráningar eða boðsaðgangs.');
-            }, true);
-        });
-    }
-
-    // Verk 4: Stormeistari toggle
-    var smCb = document.getElementById('stormeistari-toggle');
-    var smLabel = smCb ? (smCb.closest('label') || smCb.parentElement) : null;
-    if (smLabel) {
-        if (!tier) {
-            smLabel.style.display = 'none';
-        } else if (tier === 'vitinn') {
-            smCb.disabled = true;
-            smLabel.style.opacity = '0.4';
-            smLabel.style.cursor = 'not-allowed';
-            smLabel.addEventListener('click', function(e) {
-                e.preventDefault();
-                showGateTip(smLabel, 'Stórmeistari krefst Hvelfingin-aðgangs.');
-            });
-        }
-    }
-
     function showGateTip(anchor, msg) {
         var old = document.getElementById('gate-tip');
         if (old) old.remove();
@@ -443,9 +407,72 @@ document.addEventListener('DOMContentLoaded', function() {
         tip.style.top = Math.min(r.bottom + 6, window.innerHeight - 60) + 'px';
         tip.style.left = Math.max(8, r.left) + 'px';
         setTimeout(function() { if (tip.parentNode) tip.remove(); }, 2500);
-        document.addEventListener('click', function rm() {
-            if (tip.parentNode) tip.remove();
-            document.removeEventListener('click', rm);
+        document.addEventListener('click', function rm() { if (tip.parentNode) tip.remove(); document.removeEventListener('click', rm); });
+    }
+    function makeStep(icon, tool, result) {
+        return '<div style="display:flex;gap:.5rem;align-items:flex-start;padding:.5rem .625rem;background:var(--color-bg,#f5f7f5);border-radius:.375rem">' +
+               '<span style="font-size:.95rem;flex-shrink:0;margin-top:1px">' + icon + '</span>' +
+               '<div style="flex:1;min-width:0"><div style="font-size:.8rem;font-weight:500;color:var(--color-text,#111)">' + tool + '</div>' +
+               '<div style="font-size:.72rem;color:var(--color-text-muted,#666);margin-top:1px;line-height:1.4">' + result + '</div></div>' +
+               '<span style="color:#1a7a3c;font-size:.85rem;flex-shrink:0">&#x2713;</span></div>';
+    }
+    function showAgentShowcase() {
+        var old = document.getElementById('agt-ov');
+        if (old) { old.remove(); return; }
+        var ov = document.createElement('div');
+        ov.id = 'agt-ov';
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+        ov.innerHTML =
+            '<div style="background:var(--color-surface,#fff);border-radius:.875rem;padding:1.5rem;max-width:400px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.15);position:relative;box-sizing:border-box">' +
+            '<button id="agt-cl" style="position:absolute;top:.75rem;right:.75rem;background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--color-text-muted,#999)">&#xd7;</button>' +
+            '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-muted,#999);margin-bottom:.25rem">Sýnidæmi</div>' +
+            '<div style="font-size:1rem;font-weight:600;color:var(--color-text,#111);margin-bottom:.25rem">Erindrekinn leysir lögfræðiverkefni</div>' +
+            '<div style="font-size:.78rem;color:var(--color-text-muted,#666);margin-bottom:.875rem;line-height:1.5">Lögfræðingur bað um aðstoð við að greina og semja greinargerð.</div>' +
+            '<div style="display:flex;flex-direction:column;gap:.375rem;margin-bottom:.75rem">' +
+            makeStep('&#x1F50D;','Lagarannsókn','Fann 3 lög: Stjórnarskrá 1944 nr. 33, Þingsköp Alþingis 1991 nr. 55, Persónuvernd 2018 nr. 90') +
+            makeStep('&#x1F4DD;','Skjalasmiður','Drög tilbúin — 3 blaðsíður, 12 tilvísanir í lagaheimildir') +
+            makeStep('&#x1F52C;','Textagreining','2 ábendingar: bæta við tilvísun í 36. gr. stjórnarskrár, laga málfar í 3. mgr.') +
+            makeStep('&#x1F4E8;','Póstsending (HITL)','Samþykkt af stjórnanda. Greinargerð send til viðtakanda.') +
+            '</div>' +
+            '<div style="font-size:.72rem;color:var(--color-text-muted,#888);margin-bottom:.75rem">&#x23F1; 2 mín 34 sek • 4 skref lokið</div>' +
+            '<div style="border:0.5px solid var(--color-border,#e0e0e0);border-radius:.5rem;padding:.875rem;text-align:center">' +
+            '<div style="font-size:.78rem;color:var(--color-text-muted,#666);margin-bottom:.5rem">&#x1F512; Þessi virkni krefst Starfsmaður-aðgangs eða áskriftar</div>' +
+            '<button onclick="window.location.href=&#39;/um&#39;" style="background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.5rem;padding:.5rem 1.25rem;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit">Stuðja verkefnið</button>' +
+            '</div></div>';
+        document.body.appendChild(ov);
+        ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+        var cl = document.getElementById('agt-cl');
+        if (cl) cl.addEventListener('click', function() { ov.remove(); });
+    }
+    var tier = getTier();
+    var fullAccess = tier && tier !== 'vitinn';
+    if (!fullAccess) {
+        ['confidential','employee'].forEach(function(mode) {
+            var tab = document.querySelector('[data-mode="' + mode + '"]');
+            if (!tab) return;
+            tab.style.opacity = '0.4';
+            tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled','true');
+            tab.addEventListener('click', function(e) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                if (mode === 'employee') { showAgentShowcase(); }
+                else { showGateTip(tab, 'Þessi hluti krefst innskráningar eða boðsaðgangs.'); }
+            }, true);
         });
+    }
+    var smCb = document.getElementById('stormeistari-toggle');
+    var smLabel = smCb ? (smCb.closest('label') || smCb.parentElement) : null;
+    if (smLabel) {
+        if (!tier) { smLabel.style.display = 'none'; }
+        else if (tier === 'vitinn') {
+            smCb.disabled = true;
+            smLabel.style.opacity = '0.4';
+            smLabel.style.cursor = 'not-allowed';
+            smLabel.addEventListener('click', function(e) {
+                e.preventDefault();
+                showGateTip(smLabel, 'Stórmeistari krefst Hvelfingin-aðgangs.');
+            });
+        }
     }
 });

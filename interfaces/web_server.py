@@ -107,6 +107,7 @@ def apply_tier_prompt(tier: str, base_prompt: str) -> str:
     return base_prompt + soft
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
+from services.quota_service import check_ip_quota, use_ip_quota, check_email_quota, use_email_quota
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, validator
 # Sprint 64 B2-V2: Intent Gateway observability (lazy import, never raises)
@@ -3961,6 +3962,24 @@ async def vitinn_stream_endpoint(request: Request):
     if (stormeistari or hvelfingin_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
         return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
+    # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
+    queries_remaining = None
+    mb_remaining = None
+    if not user:
+        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown").split(",")[0].strip()
+        email = request.query_params.get("email", "").strip()
+        if email:
+            eq = check_email_quota(email)
+            if not eq["allowed"]:
+                return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
+            queries_remaining = eq["remaining"]
+            mb_remaining = eq["mb_remaining"]
+        else:
+            iq = check_ip_quota(client_ip)
+            if not iq["allowed"]:
+                return JSONResponse(status_code=429, content={"error": "EMAIL_REQUIRED", "message": "Sláðu inn netfang til að fá 20 fríar fyrirspurnir í dag."})
+            queries_remaining = iq["remaining"]
+    
     async def sse_generator():
         t_start = _time.time()
         citations = []
@@ -4084,6 +4103,24 @@ async def vitinn_endpoint(request: Request):
     tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
     if (stormeistari or web_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
         return JSONResponse(status_code=403, content={"error": "Protected tier required"})
+    
+    # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
+    queries_remaining = None
+    mb_remaining = None
+    if not user:
+        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown").split(",")[0].strip()
+        email = body.get("email", "").strip()
+        if email:
+            eq = check_email_quota(email)
+            if not eq["allowed"]:
+                return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
+            queries_remaining = eq["remaining"]
+            mb_remaining = eq["mb_remaining"]
+        else:
+            iq = check_ip_quota(client_ip)
+            if not iq["allowed"]:
+                return JSONResponse(status_code=429, content={"error": "EMAIL_REQUIRED", "message": "Sláðu inn netfang til að fá 20 fríar fyrirspurnir í dag."})
+            queries_remaining = iq["remaining"]
     
     t_start = _time.time()
     tier = "vitinn"
