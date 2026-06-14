@@ -192,8 +192,8 @@ document.addEventListener('DOMContentLoaded',function(){
 var token=localStorage.getItem('alvitur_token')||'';
 var box=document.getElementById('loginbox');
 var intake=document.getElementById('main-intake');
-if(box)box.style.display='none';if(intake)intake.style.display='';
-else{window.location.href='/login';}
+ if(box)box.style.display='none';
+ if(intake)intake.style.display='';
 var sBtn=document.getElementById('sidebar-login-btn');
 if(sBtn){sBtn.addEventListener('click',function(){window.location.href='/login';});}
 var lBtn=document.getElementById('loginbtn');
@@ -436,8 +436,8 @@ document.addEventListener('DOMContentLoaded', function() {
             '</div>' +
             '<div style="font-size:.72rem;color:var(--color-text-muted,#888);margin-bottom:.75rem">&#x23F1; 2 mín 34 sek • 4 skref lokið</div>' +
             '<div style="border:0.5px solid var(--color-border,#e0e0e0);border-radius:.5rem;padding:.875rem;text-align:center">' +
-            '<div style="font-size:.78rem;color:var(--color-text-muted,#666);margin-bottom:.5rem">&#x1F512; Þessi virkni krefst Starfsmaður-aðgangs eða áskriftar</div>' +
-            '<button onclick="window.location.href=&#39;/um&#39;" style="background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.5rem;padding:.5rem 1.25rem;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit">Stuðja verkefnið</button>' +
+            '<div style="font-size:.78rem;color:var(--color-text-muted,#666);margin-bottom:.5rem">&#x1F512; Þessi virkni krefst Erindreka-aðgangs eða áskriftar</div>' +
+            '<button onclick="window.location.href=&#39;/um&#39;" style="background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.5rem;padding:.5rem 1.25rem;font-size:.875rem;font-weight:500;cursor:pointer;font-family:inherit">Styðja verkefnið</button>' +
             '</div></div>';
         document.body.appendChild(ov);
         ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });

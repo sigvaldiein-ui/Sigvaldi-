@@ -15,6 +15,7 @@ from tools.sources.bin_wrapper import get_nominative
 from tools.stjornarradid_source import fetch_stjornarradid
 from tools.stjornartidindi_source import fetch_stjornartidindi
 from tools.sources.wayback_source import fetch_wayback_snapshots
+from tools.sources.staan_source import fetch_staan
 from tools.sources.visindavefur_source import fetch_visindavefur
 from tools.sources.althingi_source import fetch_althingi
 from tools.sources.hagstofa_source import fetch_hagstofa
@@ -83,7 +84,8 @@ async def lemmatize_query_terms(query: str, max_bin_calls: int = 5) -> str:
 SOURCE_WEIGHTS = {
     "stjornarradid": 2.0,
     "stjornartidindi": 2.0,
-    "mojeek": 1.0,
+    "staan": 2.5,
+    "mojeek": 0.7,
     "wayback": 0.8,
     "visindavefur": 1.2,
     "althingi": 1.5,
@@ -214,7 +216,8 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     normalized_query = await lemmatize_query_terms(query)
 
     # Keyra allar heimildir samtímis
-    stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa = await asyncio.gather(
+    staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa = await asyncio.gather(
+        fetch_staan(normalized_query, max_results),
         fetch_stjornarradid(normalized_query, 30),
         fetch_stjornartidindi(normalized_query, max_results),
         _fetch_mojeek(normalized_query, max_results),
@@ -225,7 +228,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     )
 
     # Sameina með RRF
-    merged = rrf_merge([stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa], query)
+    merged = rrf_merge([staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa], query)
     merged = deduplicate(merged)
     merged = source_cap(merged, max_per_source=2)
     merged = merged[:max_results]
@@ -234,7 +237,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     return {
         "citations": merged,
         "markdown": md,
-        "raw_count": sum(g.get("raw_count", 0) for g in [stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa]),
+        "raw_count": sum(g.get("raw_count", 0) for g in [staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa]),
         "source": "multi",
     }
 
