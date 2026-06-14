@@ -242,6 +242,27 @@ def _build_deterministic_fallback(citations: list) -> str:
         return "Ég get ekki staðfest svarið nægilega vel út frá tiltækum heimildum. Hér eru áreiðanlegustu heimildirnar sem fundust:\n" + "\n".join(bullets)
     return "Ég get ekki staðfest svarið nægilega vel út frá tiltækum heimildum."
 
+
+def _extract_legal_tokens(citations: list) -> list:
+    """Dragur laganumer og artal ur raunverulegum citations — Opus P4."""
+    import re
+    tokens = set()
+    for cit in (citations or [])[:10]:
+        for field in ('title', 'citation_full', 'snippet', 'section'):
+            val = (cit.get(field) or '').strip()
+            if not val:
+                continue
+            # Laganumer: nr. 123, nr. 123/2021, 2021 nr. 123
+            for m in re.finditer(r'(?:nr\.?\s*)?(\d{1,4})\s*(?:/\s*(\d{4}))?', val, flags=re.IGNORECASE):
+                if m.group(2):
+                    tokens.add(f'{m.group(1)}/{m.group(2)}')
+                elif len(m.group(1)) <= 3:
+                    tokens.add(m.group(1))
+            # Artol: 1944, 1991, 2018, etc.
+            for m in re.finditer(r'((?:1[89]|20)\d{2})', val):
+                tokens.add(m.group(1))
+    return list(tokens)
+
 def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
     text = (response_text or "").strip()
     if not text:
@@ -280,7 +301,14 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
                     "samkvæmt lögum",
                 ]
             )
-            if not mentions_any_source and not has_generic_grounding and len(text) > 280:
+            # Opus P4: Draga laganumer/artol ur raunverulegum citations
+            citation_tokens = _extract_legal_tokens(citations)
+            has_citation_token_grounding = any(
+                tok in lowered
+                for tok in citation_tokens
+                if len(tok) >= 2  # Sleppa of stuttum
+            ) if citation_tokens else False
+            if not mentions_any_source and not has_generic_grounding and not has_citation_token_grounding and len(text) > 280:
                 return False, _build_deterministic_fallback(citations)
 
     return True, text

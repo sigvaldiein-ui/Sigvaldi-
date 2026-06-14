@@ -5118,10 +5118,15 @@ async def notify_pending(org_id: str, request: Request):
 @app.post("/api/auth/refresh")
 async def refresh_token(request: Request):
     """Sprint 99: Refresh token rotation — revoke old, issue new."""
-    if not hasattr(request.state, "user_claims"):
-        return JSONResponse(status_code=401, content={"error": "Authentication required"})
     import aiosqlite, time, jwt, os
-    claims = request.state.user_claims
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+    token_str = auth_header[7:]
+    try:
+        claims = jwt.decode(token_str, os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+    except Exception:
+        return JSONResponse(status_code=401, content={"error": "Invalid token"})
     old_jti = claims.get("jti", "")
     if old_jti:
         async with aiosqlite.connect("/workspace/Sigvaldi-/state_store.db") as db:
