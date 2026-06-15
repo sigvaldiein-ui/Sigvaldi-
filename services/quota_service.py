@@ -28,12 +28,34 @@ def check_email_quota(email: str) -> dict:
     return {"allowed": q["count"] < q["limit"], "remaining": q["limit"] - q["count"], "mb_remaining": q["mb_limit"] - q["mb_used"]}
 
 def use_email_quota(email: str, mb: float = 0.0) -> dict:
-    """Notar eina netfangs-fyrirspurn. Skilar nýja stöðu."""
+    """Notar eina netfangs-fyrirspurn. Vistar netfang varanlega í SQLite."""
+    import sqlite3, time
     if email not in EMAIL_QUOTA:
         check_email_quota(email)
+        # Vista nýtt netfang varanlega
+        try:
+            now = time.time()
+            with sqlite3.connect("/workspace/Sigvaldi-/state_store.db") as db:
+                db.execute(
+                    "INSERT OR IGNORE INTO email_subscribers (email, first_seen, last_seen, total_queries, source) VALUES (?, ?, ?, ?, ?)",
+                    (email, now, now, 0, "soft-gate")
+                )
+                db.commit()
+        except Exception:
+            pass
     q = EMAIL_QUOTA[email]
     q["count"] += 1
     q["mb_used"] += mb
+    # Uppfæra seinast séð og teljara
+    try:
+        with sqlite3.connect("/workspace/Sigvaldi-/state_store.db") as db:
+            db.execute(
+                "UPDATE email_subscribers SET last_seen = ?, total_queries = total_queries + 1 WHERE email = ?",
+                (time.time(), email)
+            )
+            db.commit()
+    except Exception:
+        pass
     return {"remaining": q["limit"] - q["count"], "mb_remaining": q["mb_limit"] - q["mb_used"]}
 
 

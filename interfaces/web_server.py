@@ -3949,8 +3949,12 @@ async def vitinn_stream_endpoint(request: Request):
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
     hvelfingin_search = request.query_params.get("hvelfingin_search", "false").lower() == "true"
-    # Default-AF: bakendi treystir ekki framenda einum — þvingar PII-scrub ef Hvelfingin-leit er virk
+    # CTO: Hvelfingin-leit = 403 fyrir óinnskráða og Vitinn
+    user = getattr(request.state, "user_claims", None)
+    tier_u = user.get("tier", "Hvelfingin") if user else "Hvelfingin"
     if hvelfingin_search:
+        if tier_u not in ("Hvelfingin", "Starfsmaður"):
+            return JSONResponse(status_code=403, content={"error": "Protected tier required"})
         web_search = True
         query = pii_scrub(query).scrubbed
     
@@ -3958,12 +3962,6 @@ async def vitinn_stream_endpoint(request: Request):
         return JSONResponse(status_code=422, content={"error_code": "empty_prompt"})
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
-    
-    # CTO: Stórmeistari opinn öllum, Hvelfingin-leit varin
-    user = getattr(request.state, "user_claims", None)
-    tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
-    if hvelfingin_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
-        return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
     queries_remaining = None
@@ -4099,6 +4097,7 @@ async def vitinn_endpoint(request: Request):
     quality = body.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
+    hvelfingin_search = body.get("hvelfingin_search", False)
     attachments = body.get("attachments", [])
     
     if not query:
@@ -4109,7 +4108,7 @@ async def vitinn_endpoint(request: Request):
     # CTO: Stórmeistari opinn öllum, Hvelfingin-leit varin
     user = getattr(request.state, "user_claims", None)
     tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
-    if web_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
+    if hvelfingin_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
         return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
@@ -4639,6 +4638,10 @@ async def _call_leid_a(system_prompt, user_msg, quality="brons", max_tokens=1500
         "silfur": [("anthropic/claude-sonnet-4.5", 0.25), ("openai/gpt-5", 0.20), ("google/gemini-2.5-pro", 0.22)],
         "gull":   [("anthropic/claude-opus-4.8", 1.00), ("openai/gpt-5.5", 0.95), ("anthropic/claude-opus-4.7", 0.90)],
     }
+    # Kill-switch: athuga dagsþak áður en kallað er á OpenRouter
+    if not openrouter_budget_ok():
+        logger.warning("[ALVITUR] leid_a: Dagsþaki náð — felli á sovereign Qwen")
+        return (None, None, None)
     chain = [m[0] for m in QUALITY_MODELS.get(quality, QUALITY_MODELS["brons"])]
     async with httpx.AsyncClient() as c:
         for idx, model in enumerate(chain):

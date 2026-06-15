@@ -510,17 +510,16 @@ function showEmailGate(query, webSearch, stormeistari, msg) {
     if (inp) inp.addEventListener('keydown', function(e){ if(e.key==='Enter') submit(); });
 }
 
-// P7: Upplyst samþykki — birtast þegar toggle er kveikt
+// P7: Upplyst samþykki — ein sameiginleg viðvörun
 document.addEventListener('DOMContentLoaded', function() {
-    function bindConsent(toggleId, consentId) {
-        var toggle = document.getElementById(toggleId);
-        var consent = document.getElementById(consentId);
-        if (!toggle || !consent) return;
-        toggle.addEventListener('change', function() {
-            if (toggle.checked) consent.removeAttribute('hidden');
-            else consent.setAttribute('hidden','');
-        });
+    var notice = document.getElementById('sm-consent');
+    var ws = document.getElementById('web-search-toggle');
+    var sm = document.getElementById('stormeistari-toggle');
+    function updateConsent() {
+        if (!notice) return;
+        if ((ws && ws.checked) || (sm && sm.checked)) notice.removeAttribute('hidden');
+        else notice.setAttribute('hidden','');
     }
-    bindConsent('web-search-toggle', 'ws-consent');
-    bindConsent('stormeistari-toggle', 'sm-consent');
+    if (ws) ws.addEventListener('change', updateConsent);
+    if (sm) sm.addEventListener('change', updateConsent);
 });
