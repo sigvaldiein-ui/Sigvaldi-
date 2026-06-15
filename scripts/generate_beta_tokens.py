@@ -1,7 +1,18 @@
+from pathlib import Path
+
+def _load_jwt_key(key_type="private"):
+    """Les JWT lykil úr PEM skrá ef slóð er til, annars úr env."""
+    env_key = f"JWT_{key_type.upper()}_KEY"
+    path_key = f"JWT_{key_type.upper()}_KEY_PATH"
+    path = os.environ.get(path_key, "")
+    if path and Path(path).exists():
+        with open(path, 'r') as f:
+            return f.read()
+    return os.environ.get(env_key, "dummy-dev-key")
 import jwt
 import os
 
-key = os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key")
+key = _load_jwt_key("public")
 
 tokens = [
     {"sub": "beta-admin", "org_id": "orkuskipti-prod", "tier": "Hvelfingin", "jti": "beta-admin-001"},

@@ -1,3 +1,14 @@
+from pathlib import Path
+
+def _load_jwt_key(key_type="private"):
+    """Les JWT lykil úr PEM skrá ef slóð er til, annars úr env."""
+    env_key = f"JWT_{key_type.upper()}_KEY"
+    path_key = f"JWT_{key_type.upper()}_KEY_PATH"
+    path = os.environ.get(path_key, "")
+    if path and Path(path).exists():
+        with open(path, 'r') as f:
+            return f.read()
+    return os.environ.get(env_key, "dummy-dev-key")
 """Magic Link routes — POST request, GET verify."""
 import logging, time, os, secrets, aiosqlite, jwt
 from fastapi import APIRouter, Request
@@ -63,7 +74,7 @@ async def magic_verify(token: str):
             return JSONResponse({"error": "Notandi ekki virkur"}, status_code=401)
         org_id, tier = urow
         await db.commit()
-    key = os.environ.get("JWT_PRIVATE_KEY", "dummy-dev-key")
+    key = _load_jwt_key("private")
     payload = {"sub": user_sub, "org_id": org_id, "tier": tier, "jti": secrets.token_hex(16), "iat": int(time.time()), "exp": int(time.time()) + 3600}
     access_token = jwt.encode(payload, key, algorithm="RS256")
     return {"access_token": access_token, "token_type": "bearer"}

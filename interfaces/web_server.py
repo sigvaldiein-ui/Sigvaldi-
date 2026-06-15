@@ -76,6 +76,16 @@ from typing import Optional
 
 from pathlib import Path
 
+def _load_jwt_key(key_type="private"):
+    """Les JWT lykil úr PEM skrá ef slóð er til, annars úr env."""
+    env_key = f"JWT_{key_type.upper()}_KEY"
+    path_key = f"JWT_{key_type.upper()}_KEY_PATH"
+    path = os.environ.get(path_key, "")
+    if path and Path(path).exists():
+        with open(path, 'r') as f:
+            return f.read()
+    return os.environ.get(env_key, "dummy-dev-key")
+
 import asyncio as _bg_asyncio
 import aiosqlite as _bg_aiosqlite
 import time as _bg_time
@@ -285,7 +295,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
                 token = auth_header[7:]
                 try:
                     import jwt, os
-                    payload = jwt.decode(token, os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+                    payload = jwt.decode(token, _load_jwt_key("public"), algorithms=["RS256"])
                     sub = payload.get("sub", "")
                     if sub:
                         import sqlite3
@@ -306,7 +316,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
         try:
             import jwt, os, logging
             logger = logging.getLogger("alvitur.web")
-            payload = jwt.decode(token, key=os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+            payload = jwt.decode(token, key=_load_jwt_key("public"), algorithms=["RS256"])
             
             # S5-2 Fail-CLOSED DB Lookup (Standard sqlite3)
             sub = payload.get("sub", "")
@@ -3967,7 +3977,7 @@ async def vitinn_stream_endpoint(request: Request):
     queries_remaining = None
     mb_remaining = None
     if not user:
-        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown").split(",")[0].strip()
+        client_ip = request.headers.get("CF-Connecting-IP", request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")).split(",")[0].strip()
         email = request.query_params.get("email", "").strip()
         if email:
             eq = check_email_quota(email)
@@ -4115,7 +4125,7 @@ async def vitinn_endpoint(request: Request):
     queries_remaining = None
     mb_remaining = None
     if not user:
-        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown").split(",")[0].strip()
+        client_ip = request.headers.get("CF-Connecting-IP", request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")).split(",")[0].strip()
         email = body.get("email", "").strip()
         if email:
             eq = check_email_quota(email)
@@ -4318,7 +4328,7 @@ async def zero_disk_status(request: Request):
 
 @app.get("/um", response_class=HTMLResponse)
 async def um_page():
-    """Um Alvitur — saga og sýn verkefnisins."""
+    """Um Alvitur — saga og syn verkefnisins."""
     return HTMLResponse(content="""<!DOCTYPE html>
 <html lang="is">
 <head>
@@ -4352,37 +4362,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <a href="/" class="um-back"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>Til baka</a>
 <article class="um-card">
 <h1 class="um-title">Um Alvitur</h1>
-<p class="um-subtitle">Hvað þetta er og hvers vegna</p>
+<p class="um-subtitle">Saga verkefnisins og sýnin á bak við þ að</p>
 
 <div class="um-section">
-<p>Ég er á sjötugsaldri og kann ekki að forrita. Samt smíðaði ég Alvitur — heilt verkfæri með gervigreind — á rúmlega hundrað dögum og um þúsund vinnustundum. Það sem ég vil sýna er einfalt: ef ég get þetta, þá geta allir þetta. Ungir sem aldnir.</p>
-<p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú byggt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
+<p>Ég er á sjötugsaldri og kann ekki að forrita. Samt smíðaði ég Alvitur — heilt verkfæri með gervigreind — á rúmlega hundrаð dögum og um þúsund vinnustundum. Það sem ég vil sýna er einfalt: ef ég get þtta, þá geta allir þtta. Ungir sem aldnir.</p>
+</div>
+
+<div class="um-section">
+<h2>Upphafitð</h2>
+<p>Fyrir tveimur árum rakst ég á tækni sem gerði mér kleift að smíða staðbundið íslenskt blendingsmállíkan — lítið mállíkan sem blandar saman þVí besta úr ólíkum gerðum gervigreindar. Ég reyndi að fá stjórnvöld og fjárfesta til að smíða þtta. Áætlaður tími með fimm manns og einni gervigreind var níu mánuðir. Enginn tók þátt. Að lokum framkvæmdi ég þtta einn — með fimm gervigreindum.</p>
+<p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú bygt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
 </div>
 
 <div class="um-section">
 <h2>Markmiðið</h2>
-<p>Meginmarkmið mitt var að smíða verkfæri sem byggi á Íslandi (það er í Frankfurt sem stendur) og gæti þrennt:</p>
+<p>Meginmarkmið mitt var að smíða verkfæri sem gæti þrennt:</p>
 <div class="um-tiers">
-<div class="um-tier"><strong>Vitinn</strong><span>Leitað og rannsakað á netinu með heimildum.</span></div>
+<div class="um-tier"><strong>Vitinn</strong><span>Leitað og rannsaðað á netinu með heimildum.</span></div>
 <div class="um-tier"><strong>Hvelfingin</strong><span>Unnið með trúnaðargögn og skjöl í harðlæstu umhverfi þar sem ekkert fer úr húsi.</span></div>
-<div class="um-tier"><strong>Starfsmaður</strong><span>Stafrænn starfsmaður sem getur framkvæmt verk sjálfur, undir stöðugri umsjón notandans — allt sem hægt er að gera í tölvu með lyklaborði og mús.</span></div>
+<div class="um-tier"><strong>Erindreki</strong><span>Stafrann starfsmaður sem getur framkvæmt verk sjálfur, undir stöðugri umsón notandans — allt sem hægt er að gera í tölvu með lyklaborði og mús.</span></div>
 </div>
 </div>
 
 <div class="um-section">
-<h2>Af hverju lítið, íslenskt mállíkan</h2>
-<p>Við vildum sanna að lítil þjóð geti smíðað sitt eigið staðbundna mállíkan — og með því nýtt það besta sem gervigreindin býður upp á í dag, en dregið úr stærstu göllum tækninnar: sjónhverfingum og uppspuna. Markmiðið er að svör byggi alltaf á raunverulegum heimildum, ekki ágiskunum.</p>
-<p>Alvitur er ekki spjallforrit. Það er stærra en svo — verkfæri sem hugsar á íslensku, svarar með heimildum, og heldur gögnunum þínum heima.</p>
+<h2>Fullvalda gervigreind á Íslandi</h2>
+<p>Við vildum sanna að lítil þjóð geti smíðað sitt eigið staðbundið mállíkan — og með þVí nýt það besta sem gervigreindin býður upp á í dag, en dregið úr stærstu göllum tækninnar: sjónhverfingum og uppspuna. Markmiðið er að svör byggi alltaf á raunverulegum heimildum, ekki ágiskunum.</p>
+<p>Alvitur er ekki spjallforrit. Það er stærra en svo — verkfæri sem hugsar á íslensku, svarar með heimildum, og heldur gögnunum þinum heima.</p>
 </div>
 
 <div class="um-section">
 <h2>Prófaðu sjálf</h2>
-<p>Þú getur prófað Alvitur með fimm fyrirspurnum, með takmörkunum á stærð skjala og umfangi verkefna — það er til að tryggja að kerfið haldi. Eins og stendur ræður Alvitur við um þrjátíu notendur samtímis, en það fer alfarið eftir viðtökum ykkar hversu stórt Alvitur verður. Til að stækka þarf aðeins öflugri vélbúnað — hönnunin og arkitektúrinn er þegar klár.</p>
+<p>Þu getur prófað Alvitur með fimm fyrirspurnum, með takmörkunum á stærð skjala og umfangi verkefna — það er til að tryggja að kerfið haldi. Eins og stendur ræður Alvitur við um þrjátíu notendur samtiímis, en það fer alfarelt eftir viðtökum ykkar hversu stórt Alvitur verður. Til að stækka þarf aðeins öflugri vélbúnaður — hönnunin og arkitektúrinn er þegar klár.</p>
 </div>
 
 <div class="um-section">
 <h2>Styðja verkefnið</h2>
-<p>Þeim sem vilja styðja þetta framtak er bent á að nota „Styðja verkefnið" hnappinn í valstikunni. Hver króna hjálpar til við að halda Alvitri sjálfstæðum og íslenskum.</p>
+<p>Þeim sem vilja styðja þetta framtak er bent á að nota „Styðja verkefnið“ hnappinn í valstikunni. Hver króna hjálpar til við að halda Alvitri sjálf stæðum og íslensku m.</p>
 </div>
 
 <div class="um-cta">
@@ -5212,7 +5227,7 @@ async def refresh_token(request: Request):
         return JSONResponse(status_code=401, content={"error": "Authentication required"})
     token_str = auth_header[7:]
     try:
-        claims = jwt.decode(token_str, os.environ.get("JWT_PUBLIC_KEY", "dummy-dev-key"), algorithms=["RS256"])
+        claims = jwt.decode(token_str, _load_jwt_key("public"), algorithms=["RS256"])
     except Exception:
         return JSONResponse(status_code=401, content={"error": "Invalid token"})
     old_jti = claims.get("jti", "")
@@ -5225,6 +5240,6 @@ async def refresh_token(request: Request):
             await db.execute("INSERT OR REPLACE INTO token_revocation (jti, expiry_date) VALUES (?, ?)", (old_jti, time.time() + 3600))
             await db.commit()
     new_payload = {"sub": claims["sub"], "org_id": claims["org_id"], "tier": claims["tier"], "jti": str(__import__("uuid").uuid4())}
-    key = os.environ.get("JWT_PRIVATE_KEY", "dummy-dev-key")
+    key = _load_jwt_key("private")
     new_token = jwt.encode(new_payload, key, algorithm="RS256")
     return {"access_token": new_token, "token_type": "bearer"}
