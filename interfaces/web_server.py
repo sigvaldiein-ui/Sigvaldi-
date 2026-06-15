@@ -4328,7 +4328,7 @@ async def zero_disk_status(request: Request):
 
 @app.get("/um", response_class=HTMLResponse)
 async def um_page():
-    """Um Alvitur — saga og syn verkefnisins."""
+    """Um Alvitur."""
     return HTMLResponse(content="""<!DOCTYPE html>
 <html lang="is">
 <head>
@@ -4362,47 +4362,45 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <a href="/" class="um-back"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>Til baka</a>
 <article class="um-card">
 <h1 class="um-title">Um Alvitur</h1>
-<p class="um-subtitle">Saga verkefnisins og sýnin á bak við þ að</p>
+<p class="um-subtitle">Saga verkefnisins og sýnin á bak við það</p>
 
 <div class="um-section">
-<p>Ég er á sjötugsaldri og kann ekki að forrita. Samt smíðaði ég Alvitur — heilt verkfæri með gervigreind — á rúmlega hundrаð dögum og um þúsund vinnustundum. Það sem ég vil sýna er einfalt: ef ég get þtta, þá geta allir þtta. Ungir sem aldnir.</p>
+<p>Ég er á sjötugsaldri og kann ekki að forrita. Samt smíðaði ég Alvitur — heilt verkfæri með gervigreind — á rúmlega hundrað dögum og um þúsund vinnustundum. Það sem ég vil sýna er einfalt: ef ég get þetta, þá geta allir þetta. Ungir sem aldnir.</p>
 </div>
 
 <div class="um-section">
 <h2>Upphafið</h2>
-<p>Fyrir tveimur árum rakst ég á tækni sem gerði mér kleift að smíða staðbundið íslenskt blendingsmállíkan — lítið mállíkan sem blandar saman þVí besta úr ólíkum gerðum gervigreindar. Ég reyndi að fá stjórnvöld og fjárfesta til að smíða þtta. Áætlaður tími með fimm manns og einni gervigreind var níu mánuðir. Enginn tók þátt. Að lokum framkvæmdi ég þtta einn — með fimm gervigreindum.</p>
-<p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú bygt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
+<p>Fyrir tveimur árum rakst ég á tækni sem gerði mér kleift að smíða staðbundið íslenskt blendingsmállíkan — lítið mállíkan sem blandar saman því besta úr ólíkum gerðum gervigreindar. Ég reyndi að fá stjórnvöld og fjárfesta til að smíða þetta. Áætlaður tími með fimm manns og einni gervigreind var níu mánuðir. Enginn tók þátt. Að lokum framkvæmdi ég þetta einn — með fimm gervigreindum.</p>
+<p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú byggt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
 </div>
 
 <div class="um-section">
 <h2>Markmiðið</h2>
 <p>Meginmarkmið mitt var að smíða verkfæri sem gæti þrennt:</p>
 <div class="um-tiers">
-<div class="um-tier"><strong>Vitinn</strong><span>Leitað og rannsaðað á netinu með heimildum.</span></div>
+<div class="um-tier"><strong>Vitinn</strong><span>Leitað og rannsakað á netinu með heimildum.</span></div>
 <div class="um-tier"><strong>Hvelfingin</strong><span>Unnið með trúnaðargögn og skjöl í harðlæstu umhverfi þar sem ekkert fer úr húsi.</span></div>
-<div class="um-tier"><strong>Erindreki</strong><span>Stafrann starfsmaður sem getur framkvæmt verk sjálfur, undir stöðugri umsón notandans — allt sem hægt er að gera í tölvu með lyklaborði og mús.</span></div>
+<div class="um-tier"><strong>Erindreki</strong><span>Stafrænn starfsmaður sem getur framkvæmt verk sjálfur, undir stöðugri umsjón notandans — allt sem hægt er að gera í tölvu með lyklaborði og mús.</span></div>
 </div>
 </div>
 
 <div class="um-section">
 <h2>Fullvalda gervigreind á Íslandi</h2>
-<p>Við vildum sanna að lítil þjóð geti smíðað sitt eigið staðbundið mállíkan — og með þVí nýt það besta sem gervigreindin býður upp á í dag, en dregið úr stærstu göllum tækninnar: sjónhverfingum og uppspuna. Markmiðið er að svör byggi alltaf á raunverulegum heimildum, ekki ágiskunum.</p>
-<p>Alvitur er ekki spjallforrit. Það er stærra en svo — verkfæri sem hugsar á íslensku, svarar með heimildum, og heldur gögnunum þinum heima.</p>
+<p>Við vildum sanna að lítil þjóð geti smíðað sitt eigið staðbundið mállíkan — og með því nýtt það besta sem gervigreindin býður upp á í dag, en dregið úr stærstu göllum tækninnar: sjónhverfingum og uppspuna. Markmiðið er að svör byggi alltaf á raunverulegum heimildum, ekki ágiskunum.</p>
+<p>Alvitur er ekki spjallforrit. Það er stærra en svo — verkfæri sem hugsar á íslensku, svarar með heimildum, og heldur gögnunum þínum heima.</p>
 </div>
 
 <div class="um-section">
 <h2>Prófaðu sjálf</h2>
-<p>Þu getur prófað Alvitur með fimm fyrirspurnum, með takmörkunum á stærð skjala og umfangi verkefna — það er til að tryggja að kerfið haldi. Eins og stendur ræður Alvitur við um þrjátíu notendur samtiímis, en það fer alfarelt eftir viðtökum ykkar hversu stórt Alvitur verður. Til að stækka þarf aðeins öflugri vélbúnaður — hönnunin og arkitektúrinn er þegar klár.</p>
+<p>Þú getur prófað Alvitur með fimm fyrirspurnum, með takmörkunum á stærð skjala og umfangi verkefna — það er til að tryggja að kerfið haldi. Eins og stendur ræður Alvitur við um þrjátíu notendur samtímis, en það fer alfarið eftir viðtökum ykkar hversu stórt Alvitur verður. Til að stækka þarf aðeins öflugri vélbúnaður — hönnunin og arkitektúrinn er þegar klár.</p>
 </div>
 
 <div class="um-section">
 <h2>Styðja verkefnið</h2>
-<p>Þeim sem vilja styðja þetta framtak er bent á að nota „Styðja verkefnið“ hnappinn í valstikunni. Hver króna hjálpar til við að halda Alvitri sjálf stæðum og íslensku m.</p>
+<p>Þeim sem vilja styðja þetta framtak er bent á að nota „Styðja verkefnið" hnappinn í valstikunni. Hver króna hjálpar til við að halda Alvitri sjálfstæðum og íslenskum.</p>
 </div>
 
-<div class="um-cta">
-<a href="/">Prófa Alvitur</a>
-</div>
+<div class="um-cta"><a href="/">Prófa Alvitur</a></div>
 <p class="um-footer-note">Orkuskipti ehf. &middot; sigvaldi@alvitur.is</p>
 </article>
 </div>
