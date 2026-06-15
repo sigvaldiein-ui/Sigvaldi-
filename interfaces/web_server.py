@@ -3973,9 +3973,9 @@ async def vitinn_stream_endpoint(request: Request):
             eq = check_email_quota(email)
             if not eq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
-            use_email_quota(email)
-            queries_remaining = eq["remaining"] - 1
-            mb_remaining = eq["mb_remaining"]
+            use_result = use_email_quota(email)
+            queries_remaining = use_result["remaining"]
+            mb_remaining = use_result["mb_remaining"]
         else:
             iq = check_ip_quota(client_ip)
             if not iq["allowed"]:
@@ -4121,9 +4121,9 @@ async def vitinn_endpoint(request: Request):
             eq = check_email_quota(email)
             if not eq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
-            use_email_quota(email)
-            queries_remaining = eq["remaining"] - 1
-            mb_remaining = eq["mb_remaining"]
+            use_result = use_email_quota(email)
+            queries_remaining = use_result["remaining"]
+            mb_remaining = use_result["mb_remaining"]
         else:
             iq = check_ip_quota(client_ip)
             if not iq["allowed"]:
