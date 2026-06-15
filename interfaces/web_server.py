@@ -4369,7 +4369,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <div class="um-section">
-<h2>Upphafitð</h2>
+<h2>Upphafið</h2>
 <p>Fyrir tveimur árum rakst ég á tækni sem gerði mér kleift að smíða staðbundið íslenskt blendingsmállíkan — lítið mállíkan sem blandar saman þVí besta úr ólíkum gerðum gervigreindar. Ég reyndi að fá stjórnvöld og fjárfesta til að smíða þtta. Áætlaður tími með fimm manns og einni gervigreind var níu mánuðir. Enginn tók þátt. Að lokum framkvæmdi ég þtta einn — með fimm gervigreindum.</p>
 <p>Þetta er kjarninn í verkefninu. Ég vil sýna stjórnvöldum og almenningi á sama tíma hvað er hægt að gera með aðstoð gervigreindar í dag. Frumkvöðlar á öllum aldri geta nú bygt fyrirtæki frá grunni — með bókhaldskerfi og öllu sem til þarf — án þess að kaupa dýra utanaðkomandi þjónustu. Tæknin sem áður var aðeins á færi stórra fyrirtækja er núna í höndum hvers sem er.</p>
 </div>
