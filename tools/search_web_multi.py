@@ -211,16 +211,43 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
         c["rank"] = i
     return merged
 
+
+async def _translate_to_english(query: str) -> str:
+    """Þýðir íslenska fyrirspurn yfir á ensku með sovereign Qwen."""
+    import json
+    try:
+        payload = {
+            "model": "/workspace/models/qwen3-32b-awq",
+            "messages": [
+                {"role": "system", "content": "Translate the following Icelandic text to English. Return ONLY the English translation, nothing else."},
+                {"role": "user", "content": query}
+            ],
+            "max_tokens": 100,
+            "chat_template_kwargs": {"enable_thinking": False}
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post("http://127.0.0.1:8002/v1/chat/completions", json=payload)
+            if r.status_code == 200:
+                data = r.json()
+                return data["choices"][0]["message"]["content"].strip()
+            else:
+                logger.warning(f"Þýðing á Qwen mistókst: {r.status_code}")
+                return query
+    except Exception as e:
+        logger.warning(f"Þýðingarvilla: {type(e).__name__}: {e}")
+        return query
+
 async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     # Phase D: BÍN-based query normalization
     normalized_query = await lemmatize_query_terms(query)
+    en_query = await _translate_to_english(query)
 
     # Keyra allar heimildir samtímis
     staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa = await asyncio.gather(
-        fetch_staan(normalized_query, max_results),
+        fetch_staan(en_query, max_results),
         fetch_stjornarradid(normalized_query, 30),
         fetch_stjornartidindi(normalized_query, max_results),
-        _fetch_mojeek(normalized_query, max_results),
+        _fetch_mojeek(en_query, max_results),
         fetch_wayback_snapshots(normalized_query, max_results),
         fetch_visindavefur(normalized_query, max_results),
         fetch_althingi(normalized_query, max_results),

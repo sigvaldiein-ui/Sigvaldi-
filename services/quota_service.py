@@ -35,3 +35,24 @@ def use_email_quota(email: str, mb: float = 0.0) -> dict:
     q["count"] += 1
     q["mb_used"] += mb
     return {"remaining": q["limit"] - q["count"], "mb_remaining": q["mb_limit"] - q["mb_used"]}
+
+
+# ── P5: Kill-switch fyrir OpenRouter ─────────────────────────────
+_DAILY_BUDGET = 5000  # ISK
+_DAILY_SPENT = 0.0
+_LAST_RESET = None
+
+def openrouter_budget_ok(estimated_cost_usd: float = 0.05) -> bool:
+    """Skilar True ef við erum innan dagsþaks. Breytir USD í ISK með föstu gengi."""
+    global _DAILY_SPENT, _LAST_RESET
+    import time
+    now = time.time()
+    # Endurstilla á miðnætti
+    if _LAST_RESET is None or now - _LAST_RESET > 86400:
+        _DAILY_SPENT = 0.0
+        _LAST_RESET = now
+    cost_isk = estimated_cost_usd * 140  # Fast gengi
+    if _DAILY_SPENT + cost_isk > _DAILY_BUDGET:
+        return False
+    _DAILY_SPENT += cost_isk
+    return True

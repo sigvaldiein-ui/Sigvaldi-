@@ -107,7 +107,7 @@ def apply_tier_prompt(tier: str, base_prompt: str) -> str:
     return base_prompt + soft
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
-from services.quota_service import check_ip_quota, use_ip_quota, check_email_quota, use_email_quota
+from services.quota_service import check_ip_quota, use_ip_quota, check_email_quota, use_email_quota, openrouter_budget_ok
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, validator
 # Sprint 64 B2-V2: Intent Gateway observability (lazy import, never raises)
@@ -3945,6 +3945,9 @@ async def vitinn_stream_endpoint(request: Request):
     query = request.query_params.get("query", "").strip()
     web_search = request.query_params.get("web_search", "false").lower() == "true"
     stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
+    quality = request.query_params.get("quality", "brons").lower()
+    if quality not in ("brons", "silfur", "gull"):
+        quality = "brons"
     hvelfingin_search = request.query_params.get("hvelfingin_search", "false").lower() == "true"
     # Default-AF: bakendi treystir ekki framenda einum — þvingar PII-scrub ef Hvelfingin-leit er virk
     if hvelfingin_search:
@@ -3956,10 +3959,10 @@ async def vitinn_stream_endpoint(request: Request):
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
     
-    # CTO: 403 fyrir Hvelfingin-leit og Stórmeistara án réttinda
+    # CTO: Stórmeistari opinn öllum, Hvelfingin-leit varin
     user = getattr(request.state, "user_claims", None)
     tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
-    if (stormeistari or hvelfingin_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
+    if hvelfingin_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
         return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
@@ -3972,13 +3975,15 @@ async def vitinn_stream_endpoint(request: Request):
             eq = check_email_quota(email)
             if not eq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
-            queries_remaining = eq["remaining"]
+            use_email_quota(email)
+            queries_remaining = eq["remaining"] - 1
             mb_remaining = eq["mb_remaining"]
         else:
             iq = check_ip_quota(client_ip)
             if not iq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "EMAIL_REQUIRED", "message": "Sláðu inn netfang til að fá 20 fríar fyrirspurnir í dag."})
-            queries_remaining = iq["remaining"]
+            use_ip_quota(client_ip)
+            queries_remaining = iq["remaining"] - 1
     
     async def sse_generator():
         t_start = _time.time()
@@ -4020,7 +4025,7 @@ async def vitinn_stream_endpoint(request: Request):
                     "Tilgreindu alltaf heimildir.\n\n"
                     f"HEIMILDIR:\n{safe_c}\n\nSvaraðu á íslensku."
                 )
-                content, model, usage = await _call_leid_a(system_prompt, safe_q, max_tokens=1500)
+                content, model, usage = await _call_leid_a(system_prompt, safe_q, quality=quality, max_tokens=1500)
                 if content:
                     import re
                     storm_response = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
@@ -4091,6 +4096,9 @@ async def vitinn_endpoint(request: Request):
     query = body.get("query", "").strip()
     web_search = body.get("web_search", False)
     stormeistari = body.get("stormeistari", False)
+    quality = body.get("quality", "brons").lower()
+    if quality not in ("brons", "silfur", "gull"):
+        quality = "brons"
     attachments = body.get("attachments", [])
     
     if not query:
@@ -4098,10 +4106,10 @@ async def vitinn_endpoint(request: Request):
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
     
-    # CTO: 403 fyrir Hvelfingin-leit og Stórmeistara án réttinda
+    # CTO: Stórmeistari opinn öllum, Hvelfingin-leit varin
     user = getattr(request.state, "user_claims", None)
     tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
-    if (stormeistari or web_search) and tier_u not in ("Hvelfingin", "Starfsmaður"):
+    if web_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
         return JSONResponse(status_code=403, content={"error": "Protected tier required"})
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
@@ -4114,13 +4122,15 @@ async def vitinn_endpoint(request: Request):
             eq = check_email_quota(email)
             if not eq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "Netfang þitt hefur náð hámarki fyrirspurna í dag (20). Reyndu aftur á morgun."})
-            queries_remaining = eq["remaining"]
+            use_email_quota(email)
+            queries_remaining = eq["remaining"] - 1
             mb_remaining = eq["mb_remaining"]
         else:
             iq = check_ip_quota(client_ip)
             if not iq["allowed"]:
                 return JSONResponse(status_code=429, content={"error": "EMAIL_REQUIRED", "message": "Sláðu inn netfang til að fá 20 fríar fyrirspurnir í dag."})
-            queries_remaining = iq["remaining"]
+            use_ip_quota(client_ip)
+            queries_remaining = iq["remaining"] - 1
     
     t_start = _time.time()
     tier = "vitinn"
@@ -4159,7 +4169,7 @@ async def vitinn_endpoint(request: Request):
                 f"HEIMILDIR:\n{safe_context2}\n\n"
                 "Svaraðu á íslensku."
             )
-            content, model, usage = await _call_leid_a(system_prompt, safe_query2, max_tokens=1500)
+            content, model, usage = await _call_leid_a(system_prompt, safe_query2, quality=quality, max_tokens=1500)
             if content:
                 cleaned = __import__("re").sub(r"<think>.*?</think>", "", content, flags=__import__("re").DOTALL).strip()
                 return JSONResponse(content={
@@ -4612,7 +4622,8 @@ async def serve_demo():
 # Sprint 61 - Leid A/B helpers (sovereign separation)
 # ═══════════════════════════════════════════════════════════════════════
 
-async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
+async def _call_leid_a(system_prompt, user_msg, quality="brons", max_tokens=1500):
+    """OpenRouter með gæðaflokkum: brons ($0.05), silfur ($0.25), gull ($1.00)."""
     """OpenRouter chain: Haiku -> Sonnet -> gpt-4o-mini. Returns (content, model, usage)."""
     from interfaces.config import MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY
     _key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -4622,7 +4633,13 @@ async def _call_leid_a(system_prompt, user_msg, max_tokens=1500):
     if os.environ.get("OPENROUTER_ZDR_CONFIRMED", "false") != "true":
         logger.warning("[ALVITUR] leid_a: ZDR_CONFIRMED=false - refusing call")
         return (None, None, None)
-    chain = [MODEL_LEIDA_A_PRIMARY, MODEL_LEIDA_A_SECONDARY, MODEL_LEIDA_A_TERTIARY]
+    # Gæðaflokkar: velja módel eftir quality
+    QUALITY_MODELS = {
+        "brons":  [("anthropic/claude-3.5-haiku", 0.05), ("openai/gpt-5-nano", 0.03), ("google/gemini-2.5-flash-lite", 0.02)],
+        "silfur": [("anthropic/claude-sonnet-4.5", 0.25), ("openai/gpt-5", 0.20), ("google/gemini-2.5-pro", 0.22)],
+        "gull":   [("anthropic/claude-opus-4.8", 1.00), ("openai/gpt-5.5", 0.95), ("anthropic/claude-opus-4.7", 0.90)],
+    }
+    chain = [m[0] for m in QUALITY_MODELS.get(quality, QUALITY_MODELS["brons"])]
     async with httpx.AsyncClient() as c:
         for idx, model in enumerate(chain):
             try:

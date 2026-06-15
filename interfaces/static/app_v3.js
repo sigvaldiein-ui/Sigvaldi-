@@ -259,11 +259,14 @@ document.addEventListener('DOMContentLoaded', function() {
         var acc = '';
         var hvToggle = document.getElementById('hvelfingin-search-toggle');
         var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
+        var alviturEmail = localStorage.getItem('alvitur_email') || '';
         var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
                 + '&web_search=' + (webSearch?'true':'false')
                 + '&stormeistari=' + (stormeistari?'true':'false')
-                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false');
+                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false')
+                + (alviturEmail ? '&email=' + encodeURIComponent(alviturEmail) : '');
         fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
+            if (resp.status === 429) { return resp.json().then(function(d){ showEmailGate(query,webSearch,stormeistari,d.message); }); }
             if (!resp.ok) throw new Error('HTTP '+resp.status);
             var reader = resp.body.getReader();
             var decoder = new TextDecoder();
@@ -475,4 +478,49 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
+});
+
+
+// === P6: Email gate + P7: Upplyst samþykki ===
+function showEmailGate(query, webSearch, stormeistari, msg) {
+    var old = document.getElementById('email-gate-ov');
+    if (old) old.remove();
+    var ov = document.createElement('div');
+    ov.id = 'email-gate-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+    ov.innerHTML =
+        '<div style="background:var(--color-surface,#fff);border-radius:.875rem;padding:1.5rem;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.15);box-sizing:border-box">' +
+        '<div style="font-size:1rem;font-weight:600;color:var(--color-text,#111);margin-bottom:.5rem">Haltu áfram með Alvitur</div>' +
+        '<div style="font-size:.85rem;color:var(--color-text-muted,#666);margin-bottom:1rem;line-height:1.5">' + (msg || 'Sláðu inn netfang til að fá 20 fríjar fyrirspurnir í dag.') + '</div>' +
+        '<input id="email-gate-inp" type="email" placeholder="netfang@example.com" style="width:100%;padding:.625rem .75rem;border:1px solid var(--color-border,#ddd);border-radius:.5rem;font-size:.9rem;box-sizing:border-box;margin-bottom:.75rem;font-family:inherit">' +
+        '<button id="email-gate-btn" style="width:100%;padding:.625rem;background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.5rem;font-size:.9rem;font-weight:500;cursor:pointer;font-family:inherit">Halda áfram</button>' +
+        '</div>';
+    document.body.appendChild(ov);
+    var inp = document.getElementById('email-gate-inp');
+    var btn = document.getElementById('email-gate-btn');
+    if (inp) inp.focus();
+    function submit() {
+        var email = inp ? inp.value.trim() : '';
+        if (!email || !email.includes('@')) { if(inp) inp.style.borderColor='#e53e3e'; return; }
+        localStorage.setItem('alvitur_email', email);
+        ov.remove();
+        sendVitinn(query, webSearch, stormeistari);
+    }
+    if (btn) btn.addEventListener('click', submit);
+    if (inp) inp.addEventListener('keydown', function(e){ if(e.key==='Enter') submit(); });
+}
+
+// P7: Upplyst samþykki — birtast þegar toggle er kveikt
+document.addEventListener('DOMContentLoaded', function() {
+    function bindConsent(toggleId, consentId) {
+        var toggle = document.getElementById(toggleId);
+        var consent = document.getElementById(consentId);
+        if (!toggle || !consent) return;
+        toggle.addEventListener('change', function() {
+            if (toggle.checked) consent.removeAttribute('hidden');
+            else consent.setAttribute('hidden','');
+        });
+    }
+    bindConsent('web-search-toggle', 'ws-consent');
+    bindConsent('stormeistari-toggle', 'sm-consent');
 });
