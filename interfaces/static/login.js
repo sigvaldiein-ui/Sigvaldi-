@@ -49,7 +49,7 @@
   var token = new URLSearchParams(window.location.search).get('token');
   if (token) {
     msg.className='msg info';
-    msg.textContent='Þu ert að skrá þig inn með innskráningartengli. Smelltu á Halda áfram til að ljúka innskráningu.';
+    msg.textContent='Þú ert að skrá þig inn með innskráningartengli. Smelltu á Halda áfram til að ljúka innskráningu.';
     var cBtn = document.createElement('button');
     cBtn.textContent = 'Halda áfram';
     cBtn.style.cssText = 'margin-top:.75rem;width:100%;padding:.75rem;background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.625rem;font-size:.9rem;font-weight:600;cursor:pointer;font-family:inherit';
