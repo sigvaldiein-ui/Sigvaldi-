@@ -447,6 +447,28 @@ document.addEventListener('DOMContentLoaded', function() {
         var cl = document.getElementById('agt-cl');
         if (cl) cl.addEventListener('click', function() { ov.remove(); });
     }
+    function showLoginPanel() {
+        var old = document.getElementById('login-gate-ov');
+        if (old) { old.remove(); return; }
+        var ov = document.createElement('div');
+        ov.id = 'login-gate-ov';
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+        ov.innerHTML =
+            '<div style="background:var(--color-surface,#fff);border-radius:.875rem;padding:1.5rem;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.15);position:relative;box-sizing:border-box;text-align:center">' +
+            '<button id="lgp-cl" style="position:absolute;top:.75rem;right:.75rem;background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--color-text-muted,#999)">&#xd7;</button>' +
+            '<div style="font-size:1.75rem;margin-bottom:.75rem">&#x1F512;</div>' +
+            '<div style="font-size:1rem;font-weight:600;color:var(--color-text,#111);margin-bottom:.5rem">Innskráning nauðsynleg</div>' +
+            '<div style="font-size:.85rem;color:var(--color-text-muted,#666);margin-bottom:1.25rem;line-height:1.5">Þessi hluti krefst innskráningar eða boðsaðgangs.</div>' +
+            '<button onclick="window.location.href=&#39;/login&#39;" style="width:100%;padding:.75rem;background:var(--color-accent,#1a5c3a);color:#fff;border:none;border-radius:.5rem;font-size:.9rem;font-weight:500;cursor:pointer;font-family:inherit;margin-bottom:.5rem">Skrá inn</button>' +
+            '<button id="lgp-cancel" style="width:100%;padding:.5rem;background:none;border:none;color:var(--color-text-muted,#888);font-size:.85rem;cursor:pointer;font-family:inherit">Loka</button>' +
+            '</div>';
+        document.body.appendChild(ov);
+        ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+        var cl = document.getElementById('lgp-cl');
+        if (cl) cl.addEventListener('click', function() { ov.remove(); });
+        var cancel = document.getElementById('lgp-cancel');
+        if (cancel) cancel.addEventListener('click', function() { ov.remove(); });
+    }
     var tier = getTier();
     var fullAccess = tier && tier !== 'vitinn';
     if (!fullAccess) {
@@ -460,7 +482,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopImmediatePropagation();
                 e.preventDefault();
                 if (mode === 'employee') { showAgentShowcase(); }
-                else { showGateTip(tab, 'Þessi hluti krefst innskráningar eða boðsaðgangs.'); }
+                else { showLoginPanel(); }
             }, true);
         });
     }
