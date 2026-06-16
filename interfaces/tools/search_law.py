@@ -80,7 +80,7 @@ class SearchLawTool(BaseTool):
             from sentence_transformers import SentenceTransformer
 
             model = _get_embedding_model()
-            vector = model.encode([query], convert_to_numpy=True)[0]
+            vector = model.encode(["query: " + query], convert_to_numpy=True)[0]
 
             client = QdrantClient(host="127.0.0.1", port=6333)
             cols = [c.name for c in client.get_collections().collections]
@@ -117,7 +117,7 @@ class SearchLawTool(BaseTool):
             except Exception as _e:
                 logger.warning("[ALVITUR] reranker fellur til baka: %s", _e)
             logger.info("[ALVITUR] search_law hits=%d query=%r org_id=%s", len(hits[:10]), query[:60], org_id)
-            return hits[:10]
+            return hits[:5]
         except Exception as e:
             logger.warning("[ALVITUR] search_law villa (graceful degradation): %s", e)
             return []
