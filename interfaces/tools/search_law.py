@@ -6,6 +6,7 @@ Byggir á _rag_retrieve() í chat_routes.py.
 """
 import logging
 import os
+from FlagEmbedding import FlagReranker
 from interfaces.tools.base import BaseTool
 
 logger = logging.getLogger("alvitur.web")
@@ -13,6 +14,7 @@ logger = logging.getLogger("alvitur.web")
 _QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/Sigvaldi-/data/qdrant_laws_v2")
 _RAG_COLLECTION = "alvitur_laws_v2"
 _RAG_TOP_K = 10
+_RERANK_POOL = 40
 _RAG_SCORE_THRESHOLD = 0.40
 
 
@@ -34,6 +36,7 @@ def secure_qdrant_query(org_id: str, query_vector, client, collection_name: str,
 
 # Sprint 103 latency fix: embeddari er geymdur milli kalla
 _EMBEDDING_MODEL = None
+_RERANKER_MODEL = None  # Singleton: FlagReranker hlaðið einu sinni
 
 def _get_embedding_model():
     global _EMBEDDING_MODEL
@@ -88,7 +91,7 @@ class SearchLawTool(BaseTool):
             results = client.query_points(
                 collection_name=_RAG_COLLECTION,
                 query=vector.tolist(),
-                limit=_RAG_TOP_K,
+                limit=_RERANK_POOL,
             )
             hits = []
             for h in results.points:
@@ -102,8 +105,19 @@ class SearchLawTool(BaseTool):
                     "domain": h.payload.get("domain", ""),
                     "score": round(h.score, 4),
                 })
-            logger.info("[ALVITUR] search_law hits=%d query=%r org_id=%s", len(hits), query[:60], org_id)
-            return hits
+            # Reranker: endurraða niðurstöðum með bge-reranker-v2-m3
+            global _RERANKER_MODEL
+            try:
+                if _RERANKER_MODEL is None:
+                    _RERANKER_MODEL = FlagReranker('BAAI/bge-reranker-v2-m3', use_fp16=True)
+                _pairs = [(query, h.get('text', '')) for h in hits]
+                _scores = _RERANKER_MODEL.compute_score(_pairs, normalize=True)
+                _ranked = sorted(zip(hits, _scores), key=lambda x: -x[1])
+                hits = [h for h, _ in _ranked]
+            except Exception as _e:
+                logger.warning("[ALVITUR] reranker fellur til baka: %s", _e)
+            logger.info("[ALVITUR] search_law hits=%d query=%r org_id=%s", len(hits[:10]), query[:60], org_id)
+            return hits[:10]
         except Exception as e:
             logger.warning("[ALVITUR] search_law villa (graceful degradation): %s", e)
             return []
