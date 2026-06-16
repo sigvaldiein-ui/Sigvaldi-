@@ -12,7 +12,7 @@ logger = logging.getLogger("alvitur.web")
 
 _QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/Sigvaldi-/data/qdrant_laws_v2")
 _RAG_COLLECTION = "alvitur_laws_v2"
-_RAG_TOP_K = 3
+_RAG_TOP_K = 10
 _RAG_SCORE_THRESHOLD = 0.40
 
 
