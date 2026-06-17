@@ -3955,6 +3955,8 @@ async def vitinn_stream_endpoint(request: Request):
     query = request.query_params.get("query", "").strip()
     web_search = request.query_params.get("web_search", "false").lower() == "true"
     stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
+    # Tímabundin vörn: Stórmeistari slökkt á meðan innri ferlavandamál eru leyst
+    stormeistari = False
     quality = request.query_params.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
@@ -4102,6 +4104,8 @@ async def vitinn_endpoint(request: Request):
     query = body.get("query", "").strip()
     web_search = body.get("web_search", False)
     stormeistari = body.get("stormeistari", False)
+    # Tímabundin vörn: Stórmeistari slökkt á meðan innri ferlavandamál eru leyst
+    stormeistari = False
     quality = body.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
@@ -4646,9 +4650,9 @@ async def _call_leid_a(system_prompt, user_msg, quality="brons", max_tokens=1500
         return (None, None, None)
     # Gæðaflokkar: velja módel eftir quality
     QUALITY_MODELS = {
-        "brons":  [("anthropic/claude-3.5-haiku", 0.05), ("openai/gpt-5-nano", 0.03), ("google/gemini-2.5-flash-lite", 0.02)],
-        "silfur": [("anthropic/claude-sonnet-4.5", 0.25), ("openai/gpt-5", 0.20), ("google/gemini-2.5-pro", 0.22)],
-        "gull":   [("anthropic/claude-opus-4.8", 1.00), ("openai/gpt-5.5", 0.95), ("anthropic/claude-opus-4.7", 0.90)],
+        "brons":  [("deepseek/deepseek-chat", 0.0003), ("openai/gpt-5-nano", 0.03), ("google/gemini-2.5-flash-lite", 0.02)],
+        "silfur": [("deepseek/deepseek-chat", 0.0003), ("openai/gpt-5", 0.20), ("google/gemini-2.5-pro", 0.22)],
+        "gull":   [("anthropic/claude-opus-4.8", 1.00), ("deepseek/deepseek-chat", 0.0003), ("openai/gpt-5.5", 0.95)],
     }
     # Kill-switch: athuga dagsþak áður en kallað er á OpenRouter
     if not openrouter_budget_ok():
