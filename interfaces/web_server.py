@@ -3959,13 +3959,10 @@ async def vitinn_stream_endpoint(request: Request):
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
     hvelfingin_search = request.query_params.get("hvelfingin_search", "false").lower() == "true"
-    # CTO: Hvelfingin-leit = 403 fyrir óinnskráða og Vitinn
-    user = getattr(request.state, "user_claims", None)
-    tier_u = user.get("tier", "Hvelfingin") if user else "Hvelfingin"
+    # Sovereign-lás: Hvelfingin er alltaf local Qwen — ekkert frontier, engin ytri vefleit
     if hvelfingin_search:
-        if tier_u not in ("Hvelfingin", "Starfsmaður"):
-            return JSONResponse(status_code=403, content={"error": "Protected tier required"})
-        web_search = True
+        stormeistari = False
+        web_search = False
         query = pii_scrub(query).scrubbed
     
     if not query:
