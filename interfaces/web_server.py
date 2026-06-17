@@ -286,7 +286,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
-        if request.url.path.startswith(("/api/health", "/api/auth")):
+        if request.url.path.startswith(("/api/health", "/api/auth", "/api/vitinn")):
             return await call_next(request)
         # CTO-leikplan: Leyfa óinnskráðum að nota Vitann
         if request.url.path.startswith("/api/vitinn"):
@@ -3974,6 +3974,7 @@ async def vitinn_stream_endpoint(request: Request):
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
+    user = getattr(request.state, "user_claims", None)
     queries_remaining = None
     mb_remaining = None
     if not user:
@@ -4108,6 +4109,10 @@ async def vitinn_endpoint(request: Request):
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
     hvelfingin_search = body.get("hvelfingin_search", False)
+    # Sovereign-lás: Hvelfingin er alltaf local Qwen — ekkert frontier, engin ytri vefleit
+    if hvelfingin_search:
+        stormeistari = False
+        web_search = False
     attachments = body.get("attachments", [])
     
     if not query:
@@ -4115,13 +4120,10 @@ async def vitinn_endpoint(request: Request):
     if len(query) > 4000:
         return JSONResponse(status_code=422, content={"error_code": "query_too_long"})
     
-    # CTO: Stórmeistari opinn öllum, Hvelfingin-leit varin
-    user = getattr(request.state, "user_claims", None)
-    tier_u = user.get("tier", "Vitinn") if user else "Vitinn"
-    if hvelfingin_search and tier_u not in ("Hvelfingin", "Starfsmaður"):
-        return JSONResponse(status_code=403, content={"error": "Protected tier required"})
+    # CTO: Stórmeistari opinn öllum, Hvelfingin-leit opin fyrir alla (2 fríar)
     
     # CTO: Kvótagátun — IP fyrir óinnskráða, netfang eftir skráningu
+    user = getattr(request.state, "user_claims", None)
     queries_remaining = None
     mb_remaining = None
     if not user:
