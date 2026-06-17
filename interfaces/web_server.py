@@ -3955,8 +3955,6 @@ async def vitinn_stream_endpoint(request: Request):
     query = request.query_params.get("query", "").strip()
     web_search = request.query_params.get("web_search", "false").lower() == "true"
     stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
-    # Tímabundin vörn: Stórmeistari slökkt á meðan innri ferlavandamál eru leyst
-    stormeistari = False
     quality = request.query_params.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
@@ -4037,7 +4035,12 @@ async def vitinn_stream_endpoint(request: Request):
                 if content:
                     import re
                     storm_response = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                    yield f'data: {{"chunk": {json.dumps(storm_response)}}}\n\n'
+                    # Grounding-vörður: sannreyna Stórmeistara-svar gegnum sama vörð og sovereign
+                    is_valid, guarded = _validate_response(storm_response, citations)
+                    if is_valid:
+                        yield f'data: {{"chunk": {json.dumps(storm_response)}}}\n\n'
+                    else:
+                        storm_response = None  # fellur í sovereign fallback
             except Exception:
                 pass
         
@@ -4104,8 +4107,6 @@ async def vitinn_endpoint(request: Request):
     query = body.get("query", "").strip()
     web_search = body.get("web_search", False)
     stormeistari = body.get("stormeistari", False)
-    # Tímabundin vörn: Stórmeistari slökkt á meðan innri ferlavandamál eru leyst
-    stormeistari = False
     quality = body.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
@@ -4184,6 +4185,10 @@ async def vitinn_endpoint(request: Request):
             content, model, usage = await _call_leid_a(system_prompt, safe_query2, quality=quality, max_tokens=1500)
             if content:
                 cleaned = __import__("re").sub(r"<think>.*?</think>", "", content, flags=__import__("re").DOTALL).strip()
+                # Grounding-vörður: sannreyna Stórmeistara-svar gegnum sama vörð og sovereign
+                is_valid, guarded = _validate_response(cleaned, citations)
+                if not is_valid:
+                    cleaned = guarded
                 return JSONResponse(content={
                     "success": True,
                     "response": cleaned,
