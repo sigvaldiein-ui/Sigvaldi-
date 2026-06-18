@@ -5,7 +5,8 @@ logger = logging.getLogger("alvitur.fusion")
 
 FUSION_PANEL = [
     ("deepseek/deepseek-chat", "DeepSeek"),
-    ("google/gemini-2.5-flash-lite", "Gemini Flash"),
+    ("z-ai/glm-5.2", "GLM-5.2"),
+    ("moonshotai/kimi-k2.6", "Kimi K2.6"),
 ]
 FUSION_JUDGE = "deepseek/deepseek-chat"
 
