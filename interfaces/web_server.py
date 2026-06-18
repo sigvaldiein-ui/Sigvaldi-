@@ -3955,6 +3955,8 @@ async def vitinn_stream_endpoint(request: Request):
     query = request.query_params.get("query", "").strip()
     web_search = request.query_params.get("web_search", "false").lower() == "true"
     stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
+    # C1: NEYDARVORN - Stormeistari slokktur thar til Fusion-gate GREEN
+    stormeistari = False
     quality = request.query_params.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
@@ -4107,6 +4109,8 @@ async def vitinn_endpoint(request: Request):
     query = body.get("query", "").strip()
     web_search = body.get("web_search", False)
     stormeistari = body.get("stormeistari", False)
+    # C1: NEYDARVORN - Stormeistari slokktur thar til Fusion-gate GREEN
+    stormeistari = False
     quality = body.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"

@@ -263,6 +263,23 @@ def _extract_legal_tokens(citations: list) -> list:
                 tokens.add(m.group(1))
     return list(tokens)
 
+def _verify_cited_articles(response_text: str, citations: list) -> tuple[bool, str]:
+    """Athugar hvort greinarnúmer sem nefnd eru í svari séu í veittum heimildum."""
+    import re
+    cited_articles = set(re.findall(r'(\d+)\s*\.\s*gr', response_text))
+    if not cited_articles:
+        return True, ""
+    doc_articles = set()
+    for c in citations:
+        snippet = (c.get('snippet') or c.get('text') or '').strip()
+        doc_articles.update(re.findall(r'(\d+)\s*\.\s*gr', snippet))
+        title = (c.get('title') or '').strip()
+        doc_articles.update(re.findall(r'(\d+)\s*\.\s*gr', title))
+    missing = cited_articles - doc_articles
+    if missing:
+        return False, f"Ógrundaðar tilvísanir í greinar: {', '.join(sorted(missing))}. gr."
+    return True, ""
+
 def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
     text = (response_text or "").strip()
     if not text:
@@ -310,6 +327,11 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
             ) if citation_tokens else False
             if not mentions_any_source and not has_generic_grounding and not has_citation_token_grounding and len(text) > 280:
                 return False, _build_deterministic_fallback(citations)
+
+    # G0: sannreyna að greinarnúmer sem nefnd eru í svari séu í veittum heimildum
+    article_ok, article_msg = _verify_cited_articles(text, citations)
+    if not article_ok:
+        return False, _build_deterministic_fallback(citations)
 
     return True, text
 
