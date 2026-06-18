@@ -4338,6 +4338,13 @@ async def zero_disk_status(request: Request):
     }
 
 
+
+@app.get("/fjarfestar", response_class=HTMLResponse)
+async def fjarfestar_page():
+    """Fjárfestar."""
+    import pathlib
+    return HTMLResponse(content=pathlib.Path("interfaces/fjarfestar.html").read_text(encoding="utf-8"))
+
 @app.get("/um", response_class=HTMLResponse)
 async def um_page():
     """Um Alvitur."""
