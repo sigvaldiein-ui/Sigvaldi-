@@ -105,18 +105,29 @@ class SearchLawTool(BaseTool):
                     "domain": h.payload.get("domain", ""),
                     "score": round(h.score, 4),
                 })
-            # Reranker: endurraða niðurstöðum með bge-reranker-v2-m3
+            # Reranker (ÓVIRKT): endurraða niðurstöðum með bge-reranker-v2-m3
+            # Reranker slökktur skv. Opus 4.8 — embedding-eingöngu gefur betri röðun fyrir lögfræði
             global _RERANKER_MODEL
-            try:
-                if _RERANKER_MODEL is None:
-                    _RERANKER_MODEL = FlagReranker('BAAI/bge-reranker-v2-m3', use_fp16=True)
-                _pairs = [(query, h.get('text', '')) for h in hits]
-                _scores = _RERANKER_MODEL.compute_score(_pairs, normalize=True)
-                _ranked = sorted(zip(hits, _scores), key=lambda x: -x[1])
-                hits = [h for h, _ in _ranked]
-            except Exception as _e:
-                logger.warning("[ALVITUR] reranker fellur til baka: %s", _e)
+            if False:  # reranker slökktur
+                try:
+                    if _RERANKER_MODEL is None:
+                        _RERANKER_MODEL = FlagReranker('BAAI/bge-reranker-v2-m3', use_fp16=True)
+                    _pairs = [(query, h.get('text', '')) for h in hits]
+                    _scores = _RERANKER_MODEL.compute_score(_pairs, normalize=True)
+                    _ranked = sorted(zip(hits, _scores), key=lambda x: -x[1])
+                    hits = [h for h, _ in _ranked]
+                except Exception as _e:
+                    logger.warning("[ALVITUR] reranker fellur til baka: %s", _e)
             logger.info("[ALVITUR] search_law hits=%d query=%r org_id=%s", len(hits[:10]), query[:60], org_id)
+            # Dedup eftir titli (Sprint 90: fjarlægja tvítekningar)
+            seen = set()
+            deduped = []
+            for h in hits:
+                t = h.get('title', '')
+                if t not in seen:
+                    seen.add(t)
+                    deduped.append(h)
+            hits = deduped
             return hits[:5]
         except Exception as e:
             logger.warning("[ALVITUR] search_law villa (graceful degradation): %s", e)
