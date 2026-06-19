@@ -263,6 +263,25 @@ def _extract_legal_tokens(citations: list) -> list:
                 tokens.add(m.group(1))
     return list(tokens)
 
+
+def _verify_cited_laws(response_text: str, citations: list) -> tuple[bool, str]:
+    """Athugar hvort laganúmer sem nefnd eru í svari séu í veittum heimildum.
+    Mýkri útgáfa: ef bæði tölur (t.d. 45 OG 2007) finnast í einhverri heimild, telst hún rétt.
+    """
+    import re
+    # Finna pör af tölum (t.d. 45/2007 eða 2007 nr. 45)
+    pairs = re.findall(r'(\d{2,4})\s*(?:/|nr\.?)\s*(\d{4})', response_text)
+    for a, b in pairs:
+        found_pair = False
+        for c in citations:
+            combined = ' '.join([str(c.get(f, '')) for f in ('title', 'citation_full', 'snippet', 'section')])
+            if a in combined and b in combined:
+                found_pair = True
+                break
+        if not found_pair:
+            return False, f"Ógrundað laganúmer: {a}/{b}."
+    return True, ""
+
 def _verify_cited_articles(response_text: str, citations: list) -> tuple[bool, str]:
     """Athugar hvort greinarnúmer sem nefnd eru í svari séu í veittum heimildum."""
     import re
@@ -331,6 +350,10 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
     # G0: sannreyna að greinarnúmer sem nefnd eru í svari séu í veittum heimildum
     article_ok, article_msg = _verify_cited_articles(text, citations)
     if not article_ok:
+        return False, _build_deterministic_fallback(citations)
+    # G1: sannreyna að laganúmer sem nefnd eru í svari séu í veittum heimildum
+    laws_ok, laws_msg = _verify_cited_laws(text, citations)
+    if not laws_ok:
         return False, _build_deterministic_fallback(citations)
 
     return True, text
