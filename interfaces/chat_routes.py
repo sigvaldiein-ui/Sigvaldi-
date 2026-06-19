@@ -401,6 +401,7 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     
     return JSONResponse(content={
         "success": True,
+        "grounding_ok": is_valid,
         "response": guarded_response,
         "citations": final_citations,
         "pipeline_source": f"{result.agent_name}_{result.model_used}",
