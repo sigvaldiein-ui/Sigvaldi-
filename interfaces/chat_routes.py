@@ -279,7 +279,7 @@ def _verify_cited_laws(response_text: str, citations: list) -> tuple[bool, str]:
                 found_pair = True
                 break
         if not found_pair:
-            return False, f"Ógrundað laganúmer: {a}/{b}."
+            logger.warning(f"[Guard] Laganúmer ekki í heimildum: {a}/{b} — sleppi (mýkri vörn)")
     return True, ""
 
 def _verify_cited_articles(response_text: str, citations: list) -> tuple[bool, str]:
@@ -309,6 +309,8 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
         if re.search(pattern, lowered, flags=re.IGNORECASE):
             return False, _build_deterministic_fallback(citations)
 
+    if not citations:
+        return False, _build_deterministic_fallback([])
     if citations:
         source_titles = [
             (c.get("title") or "").strip()

@@ -10,7 +10,7 @@ PANEL = {
     "DeepSeek-V4-Pro": ("deepseek-ai/DeepSeek-V4-Pro", 500),
     "GPT-OSS-120B": ("openai/gpt-oss-120b", 500),
 }
-DÓMARI = ("deepseek-ai/DeepSeek-V4-Pro", 1000)
+DÓMARI = ("openai/gpt-oss-120b", 1000)
 
 async def call_model(client, model_id, max_tok, system_prompt, user_msg):
     t0 = time.time()
