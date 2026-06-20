@@ -3560,7 +3560,7 @@ async def analyze_document(request: Request, file: Optional[UploadFile] = File(N
                     _in_tok = _usage.get("prompt_tokens", 0); _out_tok = _usage.get("completion_tokens", 0)
                     logger.info(f"[ALVITUR] leid_b sovereign tokens in={_in_tok} out={_out_tok}")
                 else:
-                    _summary, _model_used, _usage = await _call_leid_a(_system_prompt, query.strip())
+                    _summary, _model_used, _usage = await _call_nebius_fusion(_system_prompt, query.strip())
                     if _summary is None:
                         logger.warning("[ALVITUR] Sprint62C text-only: Leið A None, reyni fallback á Leið B")
                         try:
@@ -4186,7 +4186,7 @@ async def vitinn_endpoint(request: Request):
                 f"HEIMILDIR:\n{safe_context2}\n\n"
                 "Svaraðu á íslensku."
             )
-            content, model, usage = await _call_leid_a(system_prompt, safe_query2, quality=quality, max_tokens=1500)
+            content, model, usage = await _call_nebius_fusion(system_prompt, safe_query2, quality=quality, max_tokens=1500)
             if content:
                 cleaned = __import__("re").sub(r"<think>.*?</think>", "", content, flags=__import__("re").DOTALL).strip()
                 # Grounding-vörður: sannreyna Stórmeistara-svar gegnum sama vörð og sovereign
@@ -4202,7 +4202,7 @@ async def vitinn_endpoint(request: Request):
                         "web_search": web_search,
                         "stormeistari": True,
                     },
-                    "pipeline": f"openrouter_{model.split('/')[-1] if model else 'stormeistari'}",
+                    "pipeline": f"nebius_fusion",
                     "tier": "vitinn",
                     "confidence": 0.9,
                     "latency_ms": (_time.time() - t_start) * 1000,
@@ -4652,6 +4652,69 @@ async def serve_demo():
 # ═══════════════════════════════════════════════════════════════════════
 # Sprint 61 - Leid A/B helpers (sovereign separation)
 # ═══════════════════════════════════════════════════════════════════════
+
+
+async def _call_nebius_fusion(system_prompt, user_msg, quality="brons", max_tokens=1500):
+    """Nebius Fusion panel (4 módel + dómari). ESB/UK hýsing."""
+    import asyncio
+    nebius_key = os.environ.get("NEBIUS_API_KEY", "")
+    if not nebius_key:
+        logger.error("[ALVITUR] Nebius: NEBIUS_API_KEY vantar")
+        return (None, None, None)
+    base = "https://api.tokenfactory.nebius.com/v1"
+    # Panel módel
+    panel = {
+        "GLM-5.2": "zai-org/GLM-5.2",
+        "Qwen3-235B": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "DeepSeek-V4-Pro": "deepseek-ai/DeepSeek-V4-Pro",
+        "GPT-OSS-120B": "openai/gpt-oss-120b",
+    }
+    # Dómari
+    judge_model = "openai/gpt-oss-120b"
+    
+    async def _call_one(client, model_id, max_tok):
+        try:
+            r = await client.post(f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {nebius_key}"},
+                json={"model": model_id, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg}
+                ], "max_tokens": max_tok if "glm" not in model_id.lower() else 2000,
+                 "temperature": 0.1}, timeout=120)
+            d = r.json()
+            return d["choices"][0]["message"]["content"] if "choices" in d else None
+        except Exception as e:
+            logger.warning(f"[Nebius] {model_id} villa: {e}")
+            return None
+
+    async with httpx.AsyncClient(timeout=180) as client:
+        # Fan-out til panel
+        tasks = [_call_one(client, mid, max_tokens) for mid in panel.values()]
+        results = await asyncio.gather(*tasks)
+        ok = [r for r in results if r]
+        if len(ok) < 2:
+            logger.warning("[Nebius] Of fá svör frá panel")
+            return (None, None, None)
+        
+        # Setja saman svör fyrir dómara
+        answers = "\n\n".join([f"Svar {i+1}:\n{r}" for i, r in enumerate(ok)])
+        judge_prompt = f"{system_prompt}\n\n{user_msg}\n\n{answers}\n\nSmíðaðu eitt sameinað svar úr þessum svörum."
+        
+        try:
+            r = await client.post(f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {nebius_key}"},
+                json={"model": judge_model, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": judge_prompt}
+                ], "max_tokens": 800, "temperature": 0.1}, timeout=120)
+            d = r.json()
+            content = d["choices"][0]["message"]["content"] if "choices" in d else None
+            model_used = f"Nebius-{judge_model}"
+            return (content, model_used, d.get("usage", {}))
+        except Exception as e:
+            logger.warning(f"[Nebius] Dómari villa: {e}")
+            return (None, None, None)
+
 
 async def _call_leid_a(system_prompt, user_msg, quality="brons", max_tokens=1500):
     """OpenRouter með gæðaflokkum: brons ($0.05), silfur ($0.25), gull ($1.00)."""
