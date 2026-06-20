@@ -279,7 +279,7 @@ def _verify_cited_laws(response_text: str, citations: list) -> tuple[bool, str]:
                 found_pair = True
                 break
         if not found_pair:
-            logger.warning(f"[Guard] Laganúmer ekki í heimildum: {a}/{b} — sleppi (mýkri vörn)")
+            return False, f"Ógrundað laganúmer: {a}/{b}."
     return True, ""
 
 def _verify_cited_articles(response_text: str, citations: list) -> tuple[bool, str]:
