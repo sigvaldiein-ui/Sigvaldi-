@@ -4023,7 +4023,7 @@ async def vitinn_stream_endpoint(request: Request):
         
         # 3. Stórmeistari ef hakað
         storm_response = None
-        if stormeistari:
+        if False:  # C1 aftengt (stormeistari)
             try:
                 safe_q = pii_scrub(query).scrubbed
                 safe_c = pii_scrub(search_text).scrubbed
@@ -4174,7 +4174,7 @@ async def vitinn_endpoint(request: Request):
             search_text += "\n[VEFFLET — ekki tiltæk í augnablikinu]"
     
     # 3. Stórmeistari — PII Sentry + Nebius Fusion
-    if stormeistari:
+    if False:  # C1 aftengt (stormeistari)
         safe_result = pii_scrub(query); safe_query2 = safe_result.scrubbed
         safe_result = pii_scrub(search_text); safe_context2 = safe_result.scrubbed
         # V5: Tengja við OpenRouter ZDR
@@ -4211,6 +4211,12 @@ async def vitinn_endpoint(request: Request):
             import logging, traceback; logging.getLogger("alvitur.web").warning(f"Stórmeistari fellur til baka: {e}\n{traceback.format_exc()}")
             # Fellur í gegn í sovereign svarið
     # Sovereign svar (Qwen)
+    # Stórmeistari (Nebius Fusion) — opt-in, ESB-hýst
+    if stormeistari and not hvelfingin_search:
+        from interfaces.stormeistari_fusion import run_stormeistari
+        _sm = await run_stormeistari(query, search_text, citations, hvelfingin_search, web_search, t_start)
+        if _sm:
+            return JSONResponse(content=_sm)
     from core.agents.yfir_erindreki import yfir_erindreki
     
     orchestrator_context = {
