@@ -3956,14 +3956,14 @@ async def vitinn_stream_endpoint(request: Request):
     web_search = request.query_params.get("web_search", "false").lower() == "true"
     stormeistari = request.query_params.get("stormeistari", "false").lower() == "true"
     # C1: NEYDARVORN - Stormeistari slokktur thar til Fusion-gate GREEN
-    stormeistari = True  # C1 fjarlægt
+    stormeistari = False
     quality = request.query_params.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
     hvelfingin_search = request.query_params.get("hvelfingin_search", "false").lower() == "true"
     # Sovereign-lás: Hvelfingin er alltaf local Qwen — ekkert frontier, engin ytri vefleit
     if hvelfingin_search:
-        stormeistari = True  # C1 fjarlægt
+        stormeistari = False
         web_search = False
         query = pii_scrub(query).scrubbed
     
@@ -4110,14 +4110,14 @@ async def vitinn_endpoint(request: Request):
     web_search = body.get("web_search", False)
     stormeistari = body.get("stormeistari", False)
     # C1: NEYDARVORN - Stormeistari slokktur thar til Fusion-gate GREEN
-    stormeistari = True  # C1 fjarlægt
+    stormeistari = False
     quality = body.get("quality", "brons").lower()
     if quality not in ("brons", "silfur", "gull"):
         quality = "brons"
     hvelfingin_search = body.get("hvelfingin_search", False)
     # Sovereign-lás: Hvelfingin er alltaf local Qwen — ekkert frontier, engin ytri vefleit
     if hvelfingin_search:
-        stormeistari = True  # C1 fjarlægt
+        stormeistari = False
         web_search = False
     attachments = body.get("attachments", [])
     
