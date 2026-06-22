@@ -113,118 +113,6 @@
     }
   }
 
-
-  // ─── HITL Queue polling ───
-  var _hitlPollTimer = null;
-
-  var HITL_TIER = {
-    1: {label:'Lítil áhætta', bg:'#f0fdf4', border:'#16a34a', text:'#14532d'},
-    2: {label:'Miðlungs áhætta', bg:'#fffbeb', border:'#d97706', text:'#78350f'},
-    3: {label:'Há áhætta — Stone-floor', bg:'#fef2f2', border:'#dc2626', text:'#7f1d1d'}
-  };
-
-  function renderHITLItem(item) {
-    var tier = HITL_TIER[item.risk_tier] || HITL_TIER[1];
-    var id = escapeHtml(item.id || '');
-    var tool = escapeHtml(item.tool_name || '');
-    var preview = escapeHtml(item.preview || '');
-    var ts = escapeHtml(item.created_at || '');
-
-    var html = '<div id="hitl-item-' + id + '" style="background:' + tier.bg + ';border:1.5px solid ' + tier.border + ';border-radius:.625rem;padding:.75rem;display:flex;flex-direction:column;gap:.5rem">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-    html += '<strong style="font-size:.85rem;color:' + tier.text + '">' + tool + '</strong>';
-    html += '<span style="font-size:.7rem;padding:2px 8px;border-radius:99px;background:' + tier.border + ';color:#fff">' + tier.label + '</span>';
-    html += '</div>';
-    if (preview) html += '<p style="font-size:.8rem;color:var(--color-text-muted);margin:0;white-space:pre-wrap">' + preview + '</p>';
-    if (ts) html += '<p style="font-size:.7rem;color:var(--color-text-faint);margin:0">Tími: ' + ts + '</p>';
-
-    if (item.risk_tier === 3) {
-      html += '<div style="display:flex;flex-direction:column;gap:.35rem;padding:.5rem;background:#fee2e2;border-radius:.375rem">';
-      html += '<label style="font-size:.8rem;color:#7f1d1d;display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="hitl-read-' + id + '" style="margin:0"> Ég hef lesið og skilið aðgerðina</label>';
-      html += '<label style="font-size:.8rem;color:#7f1d1d;display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="hitl-conf-' + id + '" style="margin:0"> Ég samþykki að aðgerðin verði framkvæmd</label>';
-      html += '</div>';
-      html += '<div style="display:flex;gap:.5rem">';
-      html += '<button onclick="hitlApprove('' + id + '',' + item.risk_tier + ')" style="flex:1;padding:.45rem;background:#dc2626;color:#fff;border:none;border-radius:.5rem;font-size:.82rem;cursor:pointer">Samþykkja</button>';
-      html += '<button onclick="hitlReject('' + id + '')" style="flex:1;padding:.45rem;background:none;border:1.5px solid #dc2626;color:#7f1d1d;border-radius:.5rem;font-size:.82rem;cursor:pointer">Hafna</button>';
-      html += '</div>';
-    } else {
-      html += '<div style="display:flex;gap:.5rem">';
-      html += '<button onclick="hitlApprove('' + id + '',' + item.risk_tier + ')" style="flex:1;padding:.45rem;background:' + tier.border + ';color:#fff;border:none;border-radius:.5rem;font-size:.82rem;cursor:pointer">Samþykkja</button>';
-      html += '<button onclick="hitlReject('' + id + '')" style="flex:1;padding:.45rem;background:none;border:1.5px solid ' + tier.border + ';color:' + tier.text + ';border-radius:.5rem;font-size:.82rem;cursor:pointer">Hafna</button>';
-      html += '</div>';
-    }
-    html += '</div>';
-    return html;
-  }
-
-  function hitlShowPanel(items) {
-    var panel = document.getElementById('hitl-panel');
-    var container = document.getElementById('hitl-items');
-    if (!panel || !container) return;
-    if (!items || items.length === 0) {
-      panel.setAttribute('hidden','');
-      panel.style.display = 'none';
-      container.innerHTML = '';
-      return;
-    }
-    container.innerHTML = items.map(renderHITLItem).join('');
-    panel.removeAttribute('hidden');
-    panel.style.display = 'flex';
-  }
-
-  function hitlPoll() {
-    var tok = getToken();
-    if (!tok) return;
-    fetch('/api/hitl/queue', {
-      headers: {'Authorization': 'Bearer ' + tok}
-    }).then(function(r) {
-      if (r.status === 200) return r.json();
-      return null;
-    }).then(function(d) {
-      if (d && d.items) hitlShowPanel(d.items);
-    }).catch(function(){});
-  }
-
-  function hitlApprove(id, tier) {
-    if (tier === 3) {
-      var r = document.getElementById('hitl-read-' + id);
-      var c = document.getElementById('hitl-conf-' + id);
-      if (!r || !r.checked || !c || !c.checked) {
-        alert('Þú verður að haka við báðar staðfestingar fyrir Stone-floor aðgerð.');
-        return;
-      }
-    }
-    var tok = getToken();
-    if (!tok) return;
-    fetch('/api/hitl/approve/' + encodeURIComponent(id), {
-      method: 'POST',
-      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
-    }).then(function(r) { return r.json(); }).then(function() {
-      var el = document.getElementById('hitl-item-' + id);
-      if (el) el.remove();
-      hitlPoll();
-    }).catch(function(){});
-  }
-
-  function hitlReject(id) {
-    var tok = getToken();
-    if (!tok) return;
-    fetch('/api/hitl/reject/' + encodeURIComponent(id), {
-      method: 'POST',
-      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
-    }).then(function(r) { return r.json(); }).then(function() {
-      var el = document.getElementById('hitl-item-' + id);
-      if (el) el.remove();
-      hitlPoll();
-    }).catch(function(){});
-  }
-
-  function hitlStartPolling() {
-    hitlPoll();
-    if (_hitlPollTimer) clearInterval(_hitlPollTimer);
-    _hitlPollTimer = setInterval(hitlPoll, 8000);
-  }
-
   // ─── HITL widget ───
   function showHITLWidget(data) {
     if (!resultsBody || !resultsArea) return;
@@ -320,8 +208,7 @@ else{alert('Limdu token fyrst');}}
 document.addEventListener('DOMContentLoaded', function() {
     var wsToggle = document.getElementById('web-search-toggle');
     var smToggle = document.getElementById('stormeistari-toggle');
-    setTimeout(function(){ try { hitlStartPolling(); } catch(e){} }, 2000);
-  var approvalPanel = document.getElementById('approval-panel');
+    var approvalPanel = document.getElementById('approval-panel');
     var approvalQuery = document.getElementById('approval-query');
     var approvalConfirm = document.getElementById('approval-confirm');
     var approvalCancel = document.getElementById('approval-cancel');
