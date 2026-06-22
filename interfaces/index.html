@@ -122,6 +122,13 @@ Hengja við skjal</button>
 <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer"><input type="checkbox" id="web-search-toggle" style="margin-top:3px"><span><strong style="font-size:.875rem">Leita líka á vefnum</strong><small style="display:block;font-size:.75rem;color:var(--color-text-muted)">Persónugreinanleg gögn eru fjarlægð áður en fyrirspurn er send út.</small></span></label>
 <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer"><input type="checkbox" id="stormeistari-toggle" style="margin-top:3px"><span><strong style="font-size:.875rem">Virkja Stórmeistara</strong><small style="display:block;font-size:.75rem;color:var(--color-text-muted)">Sendir fyrirspurn til öflugra ytri mállíkana — persónugreinanleg gögn fjarlægð fyrst, ekkert er geymt.</small></span></label><p class="hvelfingin-search__visibility" id="sm-consent" hidden>⚠ Þessi fyrirspurn fer út úr kerfinu. Engin persónugreinanleg gögn fara með.</p>
 </div>
+<div id="hitl-panel" hidden style="display:none;flex-direction:column;gap:.75rem;margin-top:.75rem">
+  <div style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;font-weight:500;color:var(--color-text)">
+    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    Samþykktir bíða
+  </div>
+  <div id="hitl-items" style="display:flex;flex-direction:column;gap:.5rem"></div>
+</div>
 <div id="approval-panel" hidden style="background:var(--color-accent-light);border:1px solid var(--color-accent-border);border-radius:var(--radius-md);padding:.75rem;flex-direction:column;gap:.5rem;display:none">
 <strong style="font-size:.8rem;color:var(--color-accent)">Gögn fara úr húsi — samþykki þarf</strong>
 <div style="font-size:.75rem;color:var(--color-text-muted);display:flex;flex-direction:column;gap:3px">
