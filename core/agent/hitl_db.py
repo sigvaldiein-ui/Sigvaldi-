@@ -34,14 +34,15 @@ class HITLDatabase:
             conn.commit()
 
     def insert(self, item_id: str, tool_name: str, params: dict, 
-               preview: str, risk_tier: int = 1) -> bool:
+               preview: str, risk_tier: int = 1, requester_sub: str = "",
+               approval_policy: str = "single") -> bool:
         """Vista nýja beiðni."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
-                    "INSERT INTO hitl_queue (item_id, tool_name, params, preview, risk_tier, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-                    (item_id, tool_name, json.dumps(params), preview, risk_tier,
+                    "INSERT INTO hitl_queue (item_id, tool_name, params, preview, risk_tier, status, requester_sub, approval_policy, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+                    (item_id, tool_name, json.dumps(params), preview, risk_tier, requester_sub, approval_policy,
                      datetime.now(timezone.utc).isoformat())
                 )
                 conn.commit()
@@ -60,12 +61,23 @@ class HITLDatabase:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def update_status(self, item_id: str, status: str) -> bool:
+    def update_status(self, item_id: str, status: str, caller: str = '',
+                      approver_sub: str = '') -> bool:
         """Uppfæra stöðu beiðni."""
+        # HARÐUR VÖRÐUR: Aðeins hitl_router (mannlegur notandi) má samþykkja
+        if status == 'approved' and caller != 'hitl_router':
+            print(f"[HITL] ÖRYGGISVÖRN: {caller} má ekki samþykkja. Aðeins hitl_router.")
+            return False
         with sqlite3.connect(self.db_path) as conn:
+            # Two-person vörn: requester getur ekki samþykkt eigin beiðni
+            if approver_sub:
+                row = conn.execute("SELECT requester_sub FROM hitl_queue WHERE item_id = ?", (item_id,)).fetchone()
+                if row and row[0] and row[0] == approver_sub:
+                    print(f"[HITL] Two-person vörn: requester getur ekki samþykkt sína eigin beiðni")
+                    return False
             cursor = conn.execute(
-                "UPDATE hitl_queue SET status = ?, decided_at = ? WHERE item_id = ? AND status = 'pending'",
-                (status, datetime.now(timezone.utc).isoformat(), item_id)
+                "UPDATE hitl_queue SET status = ?, decided_at = ?, approver_sub = ? WHERE item_id = ? AND status = 'pending'",
+                (status, datetime.now(timezone.utc).isoformat(), approver_sub, item_id)
             )
             conn.commit()
             if cursor.rowcount > 0:
