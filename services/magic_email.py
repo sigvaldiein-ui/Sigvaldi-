@@ -28,8 +28,8 @@ Með netfanginu þínu hefur þú aðgang að:
 - 20 fyrirspurnum á dag í Vitann og Hvelfinguna
 - Vefleit — leitað á netinu með heimildum
 
-Næstu skref (koma fljótlega):
-- Stórmeistarinn — öflugustu mállíkön heims svara spurningunum þínum
+Næstu skref:
+- Stórmeistarinn — öflugustu mállíkön heims svara spurningunum þínum. Kominn í notkun.
 - Erindrekinn — stafrænn starfsmaður sem framkvæmir verk fyrir þig
 
 Ef þú vilt sjá Alvitur lifa og dafna geturðu styrkt verkefnið með því að smella á „Styðja verkefnið" í valstikunni. Hver króna fer beint í að halda þessu gangandi.
