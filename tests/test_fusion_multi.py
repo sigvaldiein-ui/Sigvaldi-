@@ -61,7 +61,7 @@ async def run_query(query):
             print("  [DÓMARI] Of fá svör")
             return
         answers_text = "\n\n".join([f"Svar {i+1} ({r['model']}):\n{r['content']}" for i, r in enumerate(ok)])
-        judge_prompt = f"HEIMILDIR:\n{rag_text}\n\nSpurning: {query}\n\n{answers_text}\n\nSmíðaðu EITT sameinað svar byggt á þessum svörum og HEIMILDUNUM. Vitnaðu eingöngu í greinar úr HEIMILDUM. Svaraðu á íslensku."
+        judge_prompt = f"HEIMILDIR:\n{rag_text}\n\nSpurning: {query}\n\n{answers_text}\n\nSmíðaðu EITT sameinað svar byggt á þessum svörum og HEIMILDUNUM. Vitnaðu eingöngu í greinar og laganúmer sem standa BERORÐUM í HEIMILDUM. Ef greinarnúmer vantar, tilgreindu þá bara lagið án greinar. Svaraðu á íslensku."
         dómari = await call_model(c, DÓMARI[0], DÓMARI[1], "Þú ert íslenskur lögfræðidómari.", judge_prompt)
         print(f"  DÓMARI: {dómari['status']} | {dómari['latency']:.0f}ms")
         from interfaces.chat_routes import _validate_response

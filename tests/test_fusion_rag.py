@@ -96,7 +96,7 @@ async def main():
             f"HEIMILDIR:\n{rag_text}\n\n"
             f"Spurning: {query}\n\n"
             f"{answers_text}\n\n"
-            "Smíðaðu EITT sameinað svar byggt á þessum svörum og HEIMILDUNUM. Vitnaðu eingöngu í greinar úr HEIMILDUM. Svaraðu á íslensku."
+            "Smíðaðu EITT sameinað svar byggt á þessum svörum og HEIMILDUNUM. Vitnaðu eingöngu í greinar og laganúmer sem standa BERORÐUM í HEIMILDUM. Ef greinarnúmer vantar, tilgreindu þá bara lagið án greinar. Svaraðu á íslensku."
         )
         print("\n" + "="*60)
         print("DÓMARI")

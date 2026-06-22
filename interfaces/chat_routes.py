@@ -388,7 +388,6 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     
     # Undirbúa context fyrir orchestrator
     search_res = await _get_search_context(query, domain)
-    import sys; sys.stderr.write(f"DEBUG search_res: text_len={len(search_res.get('text', ''))}, citations_len={len(search_res.get('citations', []))}\n")
     final_citations = search_res["citations"]
     
     # Kalla á YfirErindreka gegnum miðlægt fall
