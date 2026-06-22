@@ -22,7 +22,7 @@
 
   function _renderItem(item) {
     var t   = TIER[item.risk_tier] || TIER[1];
-    var id  = _htEsc(item.id || item.item_id || '');
+    var id  = _htEsc(item.item_id || item.id || '');
     var tol = _htEsc(item.tool_name || '');
     var pre = _htEsc(item.preview || '');
     var ts  = _htEsc(item.created_at || '');
@@ -74,7 +74,9 @@
     }).then(function(r) {
       return r.ok ? r.json() : null;
     }).then(function(d) {
-      if (d && d.items) _showPanel(d.items);
+      if (!d) return;
+      var items = Array.isArray(d) ? d : (d.items || []);
+      _showPanel(items);
     }).catch(function() {});
   }
 
