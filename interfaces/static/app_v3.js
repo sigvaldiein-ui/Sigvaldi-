@@ -117,13 +117,6 @@
   // ─── HITL Queue polling ───
   var _hitlPollTimer = null;
 
-  function esc(s) {
-    return String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
-      .replace(/'/g,'&#39;');
-  }
-
   var HITL_TIER = {
     1: {label:'Lítil áhætta', bg:'#f0fdf4', border:'#16a34a', text:'#14532d'},
     2: {label:'Miðlungs áhætta', bg:'#fffbeb', border:'#d97706', text:'#78350f'},
@@ -132,10 +125,10 @@
 
   function renderHITLItem(item) {
     var tier = HITL_TIER[item.risk_tier] || HITL_TIER[1];
-    var id = esc(item.id || '');
-    var tool = esc(item.tool_name || '');
-    var preview = esc(item.preview || '');
-    var ts = esc(item.created_at || '');
+    var id = escapeHtml(item.id || '');
+    var tool = escapeHtml(item.tool_name || '');
+    var preview = escapeHtml(item.preview || '');
+    var ts = escapeHtml(item.created_at || '');
 
     var html = '<div id="hitl-item-' + id + '" style="background:' + tier.bg + ';border:1.5px solid ' + tier.border + ';border-radius:.625rem;padding:.75rem;display:flex;flex-direction:column;gap:.5rem">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center">';
