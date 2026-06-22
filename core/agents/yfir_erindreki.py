@@ -93,12 +93,6 @@ class YfirErindreki:
     async def handle(self, query: str, tier: str = "general",
                      attached_files: list = None,
                      search_context: dict = None) -> AgentResult:
-        import sys
-        if search_context:
-            print(f"DEBUG2 Yfir: search_context type={type(search_context).__name__}, keys={list(search_context.keys()) if hasattr(search_context, 'keys') else 'N/A'}", file=sys.stderr)
-            print(f"DEBUG2 Yfir: citations={search_context.get('citations', 'KEY_MISSING')}", file=sys.stderr)
-        else:
-            print(f"DEBUG2 Yfir: search_context is None", file=sys.stderr)
         """Aðal-aðferðin. Tekur á móti fyrirspurn og skilar niðurstöðu."""
         start = time.time()
         

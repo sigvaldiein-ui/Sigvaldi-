@@ -391,15 +391,11 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     import sys; sys.stderr.write(f"DEBUG search_res: text_len={len(search_res.get('text', ''))}, citations_len={len(search_res.get('citations', []))}\n")
     final_citations = search_res["citations"]
     
-    orchestrator_context = {
-        "search_text": search_res["text"],
-        "citations": final_citations,
-        "file_context": file_context,
-        "domain": domain,
-    }
-    
-    # Kalla á YfirErindreka
-    result = await yfir_erindreki.handle(query, tier, attached_files, orchestrator_context)
+    # Kalla á YfirErindreka gegnum miðlægt fall
+    from core.agents.call_orchestrator import call_orchestrator
+    result = await call_orchestrator(query, tier, attached_files,
+                                     search_res["text"], final_citations,
+                                     file_context, domain)
     
     # Ef orchestrator skilar villu
     if result.response is None or result.confidence == 0.0:

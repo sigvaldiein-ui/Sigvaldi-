@@ -312,7 +312,6 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"error": "Missing Bearer token"})
         token = auth_header[7:]
         # S5-2: Import JSONResponse BEFORE try block
-        from fastapi.responses import JSONResponse
         try:
             import jwt, os, logging
             logger = logging.getLogger("alvitur.web")
@@ -321,7 +320,6 @@ class IdentityMiddleware(BaseHTTPMiddleware):
             # S5-2 Fail-CLOSED DB Lookup (Standard sqlite3)
             sub = payload.get("sub", "")
             if not sub:
-                from fastapi.responses import JSONResponse
                 return JSONResponse(status_code=403, content={"error": "Missing subject in token"})
             
             import sqlite3
@@ -332,17 +330,14 @@ class IdentityMiddleware(BaseHTTPMiddleware):
                     _user = _cursor.fetchone()
                     
                     if not _user:
-                        from fastapi.responses import JSONResponse
                         return JSONResponse(status_code=403, content={"error": "User not found in database"})
                     if not _user["active"]:
-                        from fastapi.responses import JSONResponse
                         return JSONResponse(status_code=403, content={"error": "Account disabled"})
                     
                     # Yfirskrifum claims með 100% sannleika úr DB
                     payload["org_id"] = _user["org_id"]
                     payload["tier"] = _user["tier"]
             except Exception as e:
-                from fastapi.responses import JSONResponse
                 return JSONResponse(status_code=503, content={"error": f"Database unavailable: {str(e)}"})
             jti = payload.get("jti", "")
             # Sprint 99.6: In-Memory blacklist check
@@ -4048,14 +4043,10 @@ async def vitinn_stream_endpoint(request: Request):
         
         # 4. Sovereign svar (Qwen) ef Stórmeistari gaf ekkert
         if not storm_response:
-            from core.agents.yfir_erindreki import yfir_erindreki
-            orchestrator_context = {
-                "search_text": search_text,
-                "citations": citations,
-                "file_context": "",
-                "domain": "legal",
-            }
-            result = await yfir_erindreki.handle(query, "vitinn", [], orchestrator_context)
+            from core.agents.call_orchestrator import call_orchestrator
+            result = await call_orchestrator(query, "vitinn", [],
+                                              search_text, citations,
+                                              "", "legal")
             import re
             cleaned = re.sub(r"<think>.*?</think>", "", result.response or "", flags=re.DOTALL).strip()
             is_valid, guarded = _validate_response(cleaned, citations)
@@ -4217,16 +4208,10 @@ async def vitinn_endpoint(request: Request):
         _sm = await run_stormeistari(query, search_text, citations, hvelfingin_search, web_search, t_start)
         if _sm:
             return JSONResponse(content=_sm)
-    from core.agents.yfir_erindreki import yfir_erindreki
-    
-    orchestrator_context = {
-        "search_text": search_text,
-        "citations": citations,
-        "file_context": "",
-        "domain": "legal",
-    }
-    
-    result = await yfir_erindreki.handle(query, tier, attachments, orchestrator_context)
+    from core.agents.call_orchestrator import call_orchestrator
+    result = await call_orchestrator(query, tier, attachments,
+                                     search_text, citations,
+                                     "", "legal")
     
     cleaned = __import__("re").sub(r"<think>.*?</think>", "", result.response or "", flags=__import__("re").DOTALL).strip()
     is_valid, guarded_response = _validate_response(cleaned, citations)
@@ -4835,7 +4820,6 @@ CRITICAL_HITL_TOOLS = {"mail_send", "pdf_gen", "api_exec"}
 async def _handle_starfsmadur_request(request, body_data, query):
     """Sprint 99.9: Starfsmaður tier — non-streaming vLLM call with tools, HITL for critical actions."""
     import httpx, json as _json, time as _time, uuid as _uuid, hashlib as _hashlib, sqlite3 as _sqlite3
-    from fastapi.responses import JSONResponse
     import logging as _logging
     _log = _logging.getLogger("alvitur.web")
     
