@@ -419,6 +419,10 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "de
 app.include_router(auth_router)
 from interfaces.routes.magic import router as magic_router
 app.include_router(magic_router)
+# HITL samþykkis-endapunktar (Fasi A2)
+from interfaces.hitl_router import router as hitl_router
+app.include_router(hitl_router)
+
 
 # Sprint 18: Static mount commentuð út — var eingöngu notuð fyrir /minarsidur vefspjall
 from fastapi.staticfiles import StaticFiles
