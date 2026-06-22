@@ -327,7 +327,8 @@ else{alert('Limdu token fyrst');}}
 document.addEventListener('DOMContentLoaded', function() {
     var wsToggle = document.getElementById('web-search-toggle');
     var smToggle = document.getElementById('stormeistari-toggle');
-    var approvalPanel = document.getElementById('approval-panel');
+    hitlStartPolling();
+  var approvalPanel = document.getElementById('approval-panel');
     var approvalQuery = document.getElementById('approval-query');
     var approvalConfirm = document.getElementById('approval-confirm');
     var approvalCancel = document.getElementById('approval-cancel');
