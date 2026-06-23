@@ -63,7 +63,20 @@
       var query = queryInput ? queryInput.value.trim() : '';
       if (!query) { showStatus('error', 'Sláðu inn fyrirspurn.'); return; }
       busy = true;
-      showStatus('loading', 'Greining í gangi…');
+      var _ws = document.getElementById('web-search-toggle');
+      var _sm = document.getElementById('stormeistari-toggle');
+      var _hv = document.getElementById('hvelfingin-search-toggle');
+      var _wsOn = _ws ? _ws.checked : false;
+      var _smOn = _sm ? _sm.checked : false;
+      var _hvOn = _hv ? _hv.checked : false;
+      var _loadMsg = _hvOn
+        ? 'Leita í trúnaðargeymslu…'
+        : _smOn
+          ? 'Leita í bókasafni — spyrja fjögur líkön…'
+          : _wsOn
+            ? 'Leita í bókasafni og á vefnum…'
+            : 'Leita í bókasafni…';
+      showStatus('loading', _loadMsg);
 
       fetch('/api/chat/stream', {
         method: 'POST',
