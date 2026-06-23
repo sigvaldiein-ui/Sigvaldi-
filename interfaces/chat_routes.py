@@ -19,29 +19,48 @@ def _audit_log(timestamp: str, tier: str, query: str, domain: str,
                search_context_len: int, citations_count: int,
                pipeline_source: str, response_len: int, response_time_ms: float,
                user_id: str = "anonymous", result: any = None, context: dict = None):
-    """SOP v4.2 / Lesson #112 — sameinad audit i audit/alvitur.jsonl (ein slod)."""
-    from core.audit_writer import log_query
-
+    """
+    SOP v4.2 / Lesson #112 Compliant Audit Logger.
+    Hnífskörp þrískipting gagna: actions_logged, observations_logged, final_response.
+    """
+    import os, json
+    audit_dir = os.path.join(os.path.dirname(__file__), '..', 'audit')
+    os.makedirs(audit_dir, exist_ok=True)
+    log_file = os.path.join(audit_dir, f"{timestamp[:10]}.jsonl")
+    
+    # 1. ACTIONS LOGGED: Innri hugsanir (Inference Narrative)
     actions_logged = ""
-    grounding_ok = None
     if result is not None:
         metadata = getattr(result, "metadata", {}) if hasattr(result, "metadata") else {}
-        if isinstance(metadata, dict):
-            actions_logged = metadata.get("actions_logged", "")
-        grounding_ok = getattr(result, "grounding_ok", None)
-
-    observations = {
+        actions_logged = metadata.get("actions_logged", "")
+    
+    # 2. OBSERVATIONS LOGGED: Empirical gögn
+    observations_logged = {
         "search_text": context.get("search_text", "") if context else "",
         "file_context": context.get("file_context", "") if context else "",
-        "citations": getattr(result, "citations", []) if hasattr(result, "citations") else [],
+        "citations": getattr(result, "citations", []) if hasattr(result, "citations") else []
     }
-
+    
+    # 3. FINAL RESPONSE: Hreint svar til notanda
     final_response = getattr(result, "response", "") if hasattr(result, "response") else ""
-
-    log_query(datetime.now(timezone.utc).isoformat(), user_id, tier, query, domain,
-              citations_count, pipeline_source, final_response,
-              response_time_ms, grounding_ok,
-              actions_logged, observations, search_context_len)
+    
+    entry = {
+        "timestamp": timestamp,
+        "user_id": user_id,
+        "tier": tier,
+        "query": query[:200],
+        "domain": domain,
+        "actions_logged": actions_logged,
+        "observations_logged": observations_logged,
+        "final_response": final_response[:500],
+        "search_context_len": search_context_len,
+        "citations_count": citations_count,
+        "pipeline_source": pipeline_source,
+        "response_len": response_len,
+        "response_time_ms": round(response_time_ms, 2),
+    }
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
 
 async def _get_rag_context(query: str, domain: str) -> dict:
@@ -369,13 +388,18 @@ async def handle_chat(request: Request, query: str, tier: str = "general", attac
     
     # Undirbúa context fyrir orchestrator
     search_res = await _get_search_context(query, domain)
+    import sys; sys.stderr.write(f"DEBUG search_res: text_len={len(search_res.get('text', ''))}, citations_len={len(search_res.get('citations', []))}\n")
     final_citations = search_res["citations"]
     
-    # Kalla á YfirErindreka gegnum miðlægt fall
-    from core.agents.call_orchestrator import call_orchestrator
-    result = await call_orchestrator(query, tier, attached_files,
-                                     search_res["text"], final_citations,
-                                     file_context, domain)
+    orchestrator_context = {
+        "search_text": search_res["text"],
+        "citations": final_citations,
+        "file_context": file_context,
+        "domain": domain,
+    }
+    
+    # Kalla á YfirErindreka
+    result = await yfir_erindreki.handle(query, tier, attached_files, orchestrator_context)
     
     # Ef orchestrator skilar villu
     if result.response is None or result.confidence == 0.0:
