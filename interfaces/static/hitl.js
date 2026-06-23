@@ -148,8 +148,6 @@
     try { _pollBadge(); } catch(e) {}
     setInterval(function() { try { _pollBadge(); } catch(e) {} }, 15000);
     setInterval(function() { try { _poll(); } catch(e) {} }, 10000);
-    try { _pollBadge(); } catch(e) {}
-    setInterval(function() { try { _pollBadge(); } catch(e) {} }, 15000);
   }, 3000);
 
 })();
