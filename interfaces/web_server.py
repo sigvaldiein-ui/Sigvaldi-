@@ -4163,7 +4163,7 @@ async def vitinn_endpoint(request: Request):
     _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
     
     # Sjálfvirk vefleit fyrir almennar spurningar (F-STARF-5)
-    if _domain == "general" and not web_search:
+    if _domain == "general" and not web_search and not hvelfingin_search:
         web_search = True
     
     rag_result = await _get_rag_context(query, _domain)
@@ -4171,7 +4171,7 @@ async def vitinn_endpoint(request: Request):
     citations = rag_result.get("citations", [])
     
     # 2. Vefleit — PII Sentry → Staan/Mojeek
-    if web_search:
+    if web_search and not hvelfingin_search:
         if KillSwitch().is_active():
             return JSONResponse(status_code=503, content={"error": "Kill-Switch virkur", "detail": "Þjónusta tímabundið ótiltæk"})
         safe_result = pii_scrub(query); safe_query = safe_result.scrubbed  # Aðeins hreinsa leitarstrenginn
