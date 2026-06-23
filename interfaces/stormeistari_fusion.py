@@ -1,23 +1,24 @@
-"""Stórmeistari Fusion — Nebius panel með dómara. ESB/UK hýsing."""
-import os, httpx, asyncio, logging, re, time
+"""Stórmeistari Fusion — Nebius panel með dómara gegnum LiteLLM gátt."""
+import httpx, asyncio, logging, re, time
 
 logger = logging.getLogger("alvitur.stormeistari")
 
-NEBIUS_BASE = "https://api.tokenfactory.nebius.com/v1"
+GATT_URL = "http://127.0.0.1:4000/v1/chat/completions"
+GATT_KEY = "alvitur-gatt-2026"
 
 PANEL = {
-    "GLM-5.2": "zai-org/GLM-5.2",
-    "Qwen3-235B": "Qwen/Qwen3-235B-A22B-Instruct-2507",
-    "DeepSeek-V4-Pro": "deepseek-ai/DeepSeek-V4-Pro",
-    "GPT-OSS-120B": "openai/gpt-oss-120b",
+    "GLM-5.2": "nebius-glm",
+    "Qwen3-235B": "nebius-qwen",
+    "DeepSeek-V4-Pro": "nebius-deepseek",
+    "GPT-OSS-120B": "nebius-gpt-oss",
 }
-JUDGE_MODEL = "openai/gpt-oss-120b"
+JUDGE_MODEL = "nebius-gpt-oss"
 
 
-async def _call_one(client, model_id, system_prompt, user_msg, max_tok, api_key):
+async def _call_one(client, model_id, system_prompt, user_msg, max_tok):
     try:
-        r = await client.post(f"{NEBIUS_BASE}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+        r = await client.post(GATT_URL,
+            headers={"Authorization": f"Bearer {GATT_KEY}"},
             json={
                 "model": model_id,
                 "messages": [
@@ -35,15 +36,10 @@ async def _call_one(client, model_id, system_prompt, user_msg, max_tok, api_key)
 
 
 async def _call_nebius_fusion(system_prompt, user_msg, max_tokens=1500):
-    """Keyrir 4-módela panel + dómara."""
-    nebius_key = os.environ.get("NEBIUS_API_KEY", "")
-    if not nebius_key:
-        logger.error("[Stórmeistari] NEBIUS_API_KEY vantar")
-        return None, None, None
-
+    """Keyrir 4-módela panel + dómara í gegnum LiteLLM gátt."""
     async with httpx.AsyncClient(timeout=180) as client:
         tasks = [
-            _call_one(client, mid, system_prompt, user_msg, max_tokens, nebius_key)
+            _call_one(client, mid, system_prompt, user_msg, max_tokens)
             for mid in PANEL.values()
         ]
         results = await asyncio.gather(*tasks)
@@ -56,8 +52,8 @@ async def _call_nebius_fusion(system_prompt, user_msg, max_tokens=1500):
         judge_prompt = f"{system_prompt}\n\n{user_msg}\n\n{answers}\n\nSmíðaðu eitt sameinað svar úr þessum svörum."
 
         try:
-            r = await client.post(f"{NEBIUS_BASE}/chat/completions",
-                headers={"Authorization": f"Bearer {nebius_key}"},
+            r = await client.post(GATT_URL,
+                headers={"Authorization": f"Bearer {GATT_KEY}"},
                 json={
                     "model": JUDGE_MODEL,
                     "messages": [
@@ -70,7 +66,7 @@ async def _call_nebius_fusion(system_prompt, user_msg, max_tokens=1500):
             d = r.json()
             content = d["choices"][0]["message"]["content"] if "choices" in d else None
             usage = d.get("usage", {})
-            return content, f"Nebius-{JUDGE_MODEL}", usage
+            return content, f"Gatt-{JUDGE_MODEL}", usage
         except Exception as e:
             logger.warning(f"[Stórmeistari] Dómari villa: {e}")
             return None, None, None
@@ -78,7 +74,6 @@ async def _call_nebius_fusion(system_prompt, user_msg, max_tokens=1500):
 
 async def run_stormeistari(query, search_text, citations, hvelfingin_search, web_search, t_start):
     """Inngangsfall fyrir Stórmeistara. Skilar dict eða None."""
-    # HARÐUR VÖRÐUR: Hvelfing fer ALDREI út
     if hvelfingin_search:
         return None
 

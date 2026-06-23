@@ -1,0 +1,35 @@
+general_settings:
+  master_key: "alvitur-gatt-2026"
+
+model_list:
+  - model_name: nebius-deepseek
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-V4-Pro
+      api_base: https://api.tokenfactory.nebius.com/v1
+      api_key: os.environ/NEBIUS_API_KEY
+  - model_name: nebius-glm
+    litellm_params:
+      model: openai/zai-org/GLM-5.2
+      api_base: https://api.tokenfactory.nebius.com/v1
+      api_key: os.environ/NEBIUS_API_KEY
+  - model_name: nebius-qwen
+    litellm_params:
+      model: openai/Qwen/Qwen3-235B-A22B-Instruct-2507
+      api_base: https://api.tokenfactory.nebius.com/v1
+      api_key: os.environ/NEBIUS_API_KEY
+  - model_name: nebius-gpt-oss
+    litellm_params:
+      model: openai/openai/gpt-oss-120b
+      api_base: https://api.tokenfactory.nebius.com/v1
+      api_key: os.environ/NEBIUS_API_KEY
+  - model_name: openrouter-deepseek
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat
+      api_key: os.environ/OPENROUTER_API_KEY
+
+litellm_settings:
+  drop_params: True
+  set_verbose: False
+  num_retries: 2
+  max_budget: 5.0
+  budget_duration: 1d
