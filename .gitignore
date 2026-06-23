@@ -62,3 +62,4 @@ backups/
 # Qdrant vektorar og þung gögn
 data/qdrant_laws_v2/
 audit/*.jsonl
+data/
