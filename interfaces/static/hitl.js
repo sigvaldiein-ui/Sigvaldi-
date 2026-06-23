@@ -1,6 +1,13 @@
 (function() {
   'use strict';
 
+  if (!document.getElementById('hitl-style')) {
+    var s = document.createElement('style');
+    s.id = 'hitl-style';
+    s.textContent = '@keyframes hitl-pulse{0%,100%{opacity:1}50%{opacity:.55}}';
+    document.head.appendChild(s);
+  }
+
   // Nota localStorage beint - óháð app_v3.js
   function _hitlToken() {
     try { return localStorage.getItem('alvitur_token') || ''; } catch(e) { return ''; }
@@ -51,10 +58,30 @@
     return h;
   }
 
+  function _showBadge(n) {
+    var b = document.getElementById('hitl-badge');
+    if (!b) return;
+    if (n > 0) {
+      b.textContent = String(n);
+      b.style.display = 'inline-block';
+    } else {
+      b.style.display = 'none';
+    }
+  }
+
+  // Opinber badge-poll - án token, fyrir alla
+  function _pollBadge() {
+    fetch('/api/hitl/count')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { if (d) _showBadge(d.count || 0); })
+      .catch(function() {});
+  }
+
   function _showPanel(items) {
     var panel = document.getElementById('hitl-panel');
     var box   = document.getElementById('hitl-items');
     if (!panel || !box) return;
+    _showBadge(items ? items.length : 0);
     if (!items || items.length === 0) {
       panel.hidden = true;
       panel.style.display = 'none';
