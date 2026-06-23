@@ -81,6 +81,18 @@ class ErindrekiOrchestrator:
                 return {"status": "frozen", "step": i+1, "tool": tool_name, "message": "Bíður samþykkis"}
 
             # Keyra tól
+            # PII-scrub fail-closed á egress-tólum
+            if self.registry.requires_approval(tool_name):
+                try:
+                    from core.safety.pii_sentry import scrub as pii_scrub
+                    for k, v in params.items():
+                        if isinstance(v, str):
+                            scrubbed = pii_scrub(v)
+                            params[k] = scrubbed.scrubbed if hasattr(scrubbed, 'scrubbed') else v
+                except Exception as e:
+                    print(f"   🔴 PII-scrub villa: {e} — STÖÐVA!")
+                    self.audit.log_kill_switch(task_id)
+                    return {"status": "frozen", "reason": f"PII-scrub failed: {e}"}
             print(f"   🟢 SKREF {i+1}: {tool_name} — KEYRT")
             self.audit.log_tool_call(task_id, tool_name, params)
             self.checkpointer.save_state(task_id, json.dumps(plan_steps), i+1, total_steps)
@@ -106,12 +118,17 @@ class ErindrekiOrchestrator:
 
         print(f"\n[ORCH] Endurræsi {task_id} frá skrefi {current_step+1}/{total_steps}")
 
-        # Athuga HITL samþykki
-        pending = self.hitl_db.get_pending()
-        for item in pending:
-            if item["item_id"].startswith(task_id):
-                print(f"   ⚠️ Beiðni {item['item_id']} er enn pending — get ekki haldið áfram")
-                return {"status": "waiting", "message": "Samþykki vantar"}
+        # Athuga HITL samþykki — VERÐUR að vera approved af hitl_router
+        import sqlite3
+        with sqlite3.connect(self.hitl_db.db_path) as conn:
+            rows = conn.execute(
+                "SELECT status, approver_sub FROM hitl_queue WHERE item_id LIKE ? || '-%' AND status = 'approved' AND approver_sub != ''",
+                (task_id,)
+            ).fetchall()
+        if not rows:
+            print(f"   ⚠️ Ekkert gilt samþykki fyrir {task_id} — get ekki haldið áfram")
+            return {"status": "waiting", "message": "Samþykki vantar eða ógilt"}
+        print(f"   ✅ Samþykki staðfest fyrir {task_id}")
 
         # Halda áfram
         self.checkpointer.save_state(task_id, json.dumps(plan_steps), current_step, total_steps, "in_progress")
@@ -128,6 +145,18 @@ class ErindrekiOrchestrator:
                 self.checkpointer.save_state(task_id, json.dumps(plan_steps), i, total_steps, "frozen")
                 return {"status": "frozen", "reason": str(e)}
 
+            # PII-scrub fail-closed á egress-tólum
+            if self.registry.requires_approval(tool_name):
+                try:
+                    from core.safety.pii_sentry import scrub as pii_scrub
+                    for k, v in params.items():
+                        if isinstance(v, str):
+                            scrubbed = pii_scrub(v)
+                            params[k] = scrubbed.scrubbed if hasattr(scrubbed, 'scrubbed') else v
+                except Exception as e:
+                    print(f"   🔴 PII-scrub villa: {e} — STÖÐVA!")
+                    self.audit.log_kill_switch(task_id)
+                    return {"status": "frozen", "reason": f"PII-scrub failed: {e}"}
             print(f"   🟢 SKREF {i+1}: {tool_name} — KEYRT")
             self.audit.log_tool_call(task_id, tool_name, params)
             self.checkpointer.save_state(task_id, json.dumps(plan_steps), i+1, total_steps)
