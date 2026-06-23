@@ -4333,6 +4333,29 @@ async def chat_endpoint(request: Request):
 
 
 # ─── Sprint 80b: Zero-Disk admin endpoint ─────────────────────────────────────
+# ─── F-STARF-5: Kill-Switch Admin ─────────────────────────────────────────────
+@app.get("/admin/killswitch")
+async def killswitch_status(request: Request):
+    """F-STARF-5: Skilar stöðu Kill-Switch."""
+    from core.agent.killswitch import KillSwitch
+    ks = KillSwitch()
+    return {"killswitch_active": ks.is_active(), "lock_file": ks.lock_path}
+
+@app.post("/admin/killswitch/toggle")
+async def killswitch_toggle(request: Request):
+    """F-STARF-5: Kveikir/slökkir á Kill-Switch (Admin protected)."""
+    from core.agent.killswitch import KillSwitch
+    client_ip = request.client.host if request.client else "unknown"
+    if client_ip not in ["127.0.0.1", "localhost"]:
+        return JSONResponse(status_code=403, content={"error": "Aðeins aðgengilegt frá localhost"})
+    ks = KillSwitch()
+    if ks.is_active():
+        ks.deactivate()
+        return {"killswitch_active": False, "action": "deactivated"}
+    else:
+        ks.activate()
+        return {"killswitch_active": True, "action": "activated"}
+
 @app.get("/admin/zero-disk-status")
 async def zero_disk_status(request: Request):
     """Gate 11: Return /dev/shm usage for monitoring."""
