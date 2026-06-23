@@ -4100,6 +4100,7 @@ async def vitinn_endpoint(request: Request):
     from interfaces.chat_routes import _get_rag_context, _validate_response
     from core.safety.pii_sentry import scrub as pii_scrub
     from core.audit_writer import log_query
+    from core.agent.killswitch import KillSwitch
     
     try:
         body = await request.json()
@@ -4159,6 +4160,8 @@ async def vitinn_endpoint(request: Request):
     
     # 2. Vefleit — PII Sentry → Staan/Mojeek
     if web_search:
+        if KillSwitch().is_active():
+            return JSONResponse(status_code=503, content={"error": "Kill-Switch virkur", "detail": "Þjónusta tímabundið ótiltæk"})
         safe_result = pii_scrub(query); safe_query = safe_result.scrubbed  # Aðeins hreinsa leitarstrenginn
         # V4: Tengja við Staan/Mojeek
         try:
@@ -4175,6 +4178,8 @@ async def vitinn_endpoint(request: Request):
     
     # 3. Stórmeistari — PII Sentry + Nebius Fusion
     if stormeistari:
+        if KillSwitch().is_active():
+            return JSONResponse(status_code=503, content={"error": "Kill-Switch virkur", "detail": "Þjónusta tímabundið ótiltæk"})
         safe_result = pii_scrub(query); safe_query2 = safe_result.scrubbed
         safe_result = pii_scrub(search_text); safe_context2 = safe_result.scrubbed
         # V5: Tengja við OpenRouter ZDR
@@ -4337,6 +4342,10 @@ async def chat_endpoint(request: Request):
 @app.get("/admin/killswitch")
 async def killswitch_status(request: Request):
     """F-STARF-5: Skilar stöðu Kill-Switch."""
+    cf_ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "unknown")
+    admin_token = request.headers.get("X-Admin-Auth-Token", "")
+    if cf_ip not in ["127.0.0.1", "localhost"] and admin_token != os.environ.get("ADMIN_TOKEN", "stub"):
+        return JSONResponse(status_code=403, content={"error": "Aðeins aðgengilegt með réttum admin-token eða frá localhost"})
     from core.agent.killswitch import KillSwitch
     ks = KillSwitch()
     return {"killswitch_active": ks.is_active(), "lock_file": ks.lock_path}
