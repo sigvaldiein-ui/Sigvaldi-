@@ -72,10 +72,10 @@
       var _loadMsg = _hvOn
         ? 'Leita í trúnaðargeymslu…'
         : _smOn
-          ? 'Leita í bókasafni — spyrja fjögur líkön…'
+          ? 'Leita í bókasafninu — spyrja fjögur líkön…'
           : _wsOn
-            ? 'Leita í bókasafni og á vefnum…'
-            : 'Leita í bókasafni…';
+            ? 'Leita í bókasafninu og á vefnum…'
+            : 'Leita í bókasafninu…';
       showStatus('loading', _loadMsg);
 
       fetch('/api/chat/stream', {
