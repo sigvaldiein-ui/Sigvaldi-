@@ -4002,7 +4002,10 @@ async def vitinn_stream_endpoint(request: Request):
         
         # 1. Sovereign — Qdrant + Qwen
         try:
-            rag_result = await _get_rag_context(query, "legal")
+            _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]
+            _query_lower = query.lower()
+            _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
+            rag_result = await _get_rag_context(query, _domain)
             search_text = rag_result.get("text", "")
             citations = rag_result.get("citations", [])
         except Exception:
@@ -4153,8 +4156,12 @@ async def vitinn_endpoint(request: Request):
     t_start = _time.time()
     tier = "vitinn"
     
-    # 1. Sovereign — alltaf Qdrant + Qwen
-    rag_result = await _get_rag_context(query, "legal")
+    # 1. Sovereign — Qdrant + Qwen
+    # Skynsamleg domain-greining: lögfræði vs almenn
+    _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]
+    _query_lower = query.lower()
+    _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
+    rag_result = await _get_rag_context(query, _domain)
     search_text = rag_result.get("text", "")
     citations = rag_result.get("citations", [])
     
@@ -4195,9 +4202,10 @@ async def vitinn_endpoint(request: Request):
             if content:
                 cleaned = __import__("re").sub(r"<think>.*?</think>", "", content, flags=__import__("re").DOTALL).strip()
                 # Grounding-vörður: sannreyna Stórmeistara-svar gegnum sama vörð og sovereign
-                is_valid, guarded = _validate_response(cleaned, citations)
-                if not is_valid:
-                    cleaned = guarded
+                if citations:
+                    is_valid, guarded = _validate_response(cleaned, citations)
+                    if not is_valid:
+                        cleaned = guarded
                 return JSONResponse(content={
                     "success": True,
                     "response": cleaned,
@@ -4237,10 +4245,13 @@ async def vitinn_endpoint(request: Request):
                                      "", "legal")
     
     cleaned = __import__("re").sub(r"<think>.*?</think>", "", result.response or "", flags=__import__("re").DOTALL).strip()
-    is_valid, guarded_response = _validate_response(cleaned, citations)
-    
-    # Ef vörðurinn samþykkir, nota UPPRUNALEGA svarið (cleaned), ekki fallback
-    final_response = cleaned if is_valid else guarded_response
+    # Aðeins grunda ef við erum í lögfræði-domain EÐA höfum raunverulegar citations
+    is_valid = True  # sjálfgefið fyrir almennar spurningar
+    if citations or _domain == "legal":
+        is_valid, guarded_response = _validate_response(cleaned, citations)
+        final_response = cleaned if is_valid else guarded_response
+    else:
+        final_response = cleaned
     
     # Audit: skrá fyrirspurn
     _user = getattr(request.state, "user_claims", None)
