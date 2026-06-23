@@ -299,9 +299,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 return reader.read().then(function(res){
                     if (res.done) return;
                     buffer += decoder.decode(res.value, {stream:true});
-                    var lines = buffer.split('\n');
-                    buffer = lines.pop();
-                    lines.forEach(function(line){
+                    var events = buffer.split('\n\n');
+                    buffer = events.pop();
+                    events.forEach(function(event){
+                        var line = '';
+                        event.split('\n').forEach(function(l){ if(l.indexOf('data:')===0) line=l; });
                         line = line.trim();
                         if (!line || line.indexOf('data:')!==0) return;
                         var payload = line.slice(5).trim();
