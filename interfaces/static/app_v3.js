@@ -316,12 +316,21 @@ document.addEventListener('DOMContentLoaded', function() {
                             } else if (obj.metadata) {
                                 var s = obj.metadata.sources || {};
                                 var cits = (obj.metadata.citations||[]).map(function(c){
-                                    return '<li style="font-size:.75rem;color:var(--color-text-muted);margin:.2rem 0">'+esc(c.title||c.citation_full||'')+'</li>';
+                                    var titill = esc(c.title||c.citation_full||'');
+                                    var slod = c.url ? c.url : '';
+                                    var heimild = slod
+                                        ? '<a href="'+esc(slod)+'" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--color-accent);text-decoration:none;display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;border-radius:.375rem;background:var(--color-accent-light);margin:.25rem 0">'
+                                          + '<span style="flex-shrink:0;margin-top:1px">📄</span>'
+                                          + '<span><span style="display:block;font-weight:500;color:var(--color-text)">'+ titill +'</span>'
+                                          + '<span style="font-size:.7rem;color:var(--color-accent)">Skoða heimild →</span></span></a>'
+                                        : '<div style="font-size:.75rem;color:var(--color-text-muted);display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;margin:.25rem 0">'
+                                          + '<span style="flex-shrink:0">📄</span><span>'+ titill +'</span></div>';
+                                    return heimild;
                                 }).join('');
                                 if (resultsBody) resultsBody.innerHTML =
                                     '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
                                     +'<p style="font-size:.875rem;white-space:pre-wrap">'+esc(acc)+'</p>'
-                                    +(cits?'<ul style="padding-left:1rem;margin-top:.5rem">'+cits+'</ul>':'');
+                                    +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
                             }
                         } catch(e) {}
                     });
