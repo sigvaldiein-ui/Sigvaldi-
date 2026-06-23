@@ -286,7 +286,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
-        if request.url.path.startswith(("/api/health", "/api/auth", "/api/vitinn")):
+        if request.url.path.startswith(("/api/health", "/api/auth", "/api/vitinn", "/api/chat")):
             return await call_next(request)
         # CTO-leikplan: Leyfa óinnskráðum að nota Vitann
         if request.url.path.startswith("/api/vitinn"):
@@ -3311,10 +3311,13 @@ _quota_tracker_doc: dict = {}   # /api/analyze-document quota per IP
 # ── Sprint 90: InMemoryRateLimiter ─────────────────────────────────────────
 _rate_limit_tracker: dict = {}  # user_id -> list of timestamps
 
+_rate_limit_tracker: dict = {}
+_last_limiter_cleanup: float = 0.0
+
 def _check_rate_limit(user_id: str, max_req: int = 100, window_sec: int = 3600) -> bool:
     """Skilar True ef notandi er undir hámarki. Inniheldur minnisvörn."""
     import time as _time
-    global _last_limiter_cleanup
+    global _last_limiter_cleanup, _rate_limit_tracker
     now = _time.time()
     
     # Reglubundin minnishreinsun (á 10 mínútna fresti)
@@ -4241,7 +4244,7 @@ async def vitinn_endpoint(request: Request):
 # ── /Sprint F1-V2 ──────────────────────────────────────────────────────
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
-    """Sprint 45: Production chat endpoint.
+    """Sprint 45: Production chat endpoint. Sprint 46 Phase 1: Quota check + CF-Connecting-IP fix."""
     # Sprint 90: Rate limiting
     _rl_user = request.client.host if request.client else "unknown"
     if not _check_rate_limit(_rl_user):
@@ -4251,8 +4254,6 @@ async def chat_endpoint(request: Request):
             "upgrade_required": True,
             "upgrade_url": "/askrift"
         })
-    Sprint 46 Phase 1: Quota check + CF-Connecting-IP fix.
-    """
     try:
         body = await request.json()
     except Exception:
