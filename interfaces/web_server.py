@@ -4064,7 +4064,6 @@ async def vitinn_stream_endpoint(request: Request):
             yield f'data: {{"chunk": {json.dumps(final)}}}\n\n'
         
         # Metadata með sources + citations
-        yield "data: [DONE]\n\n"
         meta = {
             "metadata": {
                 "sources": {
@@ -4079,6 +4078,7 @@ async def vitinn_stream_endpoint(request: Request):
             }
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
     
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
