@@ -145,7 +145,11 @@
   // Byrja polling 3 sek eftir load - app_v3.js þarf tíma til að ræsast
   setTimeout(function() {
     try { _poll(); } catch(e) {}
+    try { _pollBadge(); } catch(e) {}
+    setInterval(function() { try { _pollBadge(); } catch(e) {} }, 15000);
     setInterval(function() { try { _poll(); } catch(e) {} }, 10000);
+    try { _pollBadge(); } catch(e) {}
+    setInterval(function() { try { _pollBadge(); } catch(e) {} }, 15000);
   }, 3000);
 
 })();
