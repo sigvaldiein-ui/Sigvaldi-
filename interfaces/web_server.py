@@ -4381,6 +4381,12 @@ async def killswitch_toggle(request: Request):
         ks.activate()
         return {"killswitch_active": True, "action": "activated"}
 
+@app.get("/admin/monitor")
+async def admin_monitor():
+    """Skilar rauntíma vöktunartölfræði."""
+    from core.monitor import get_monitor
+    return get_monitor().stats()
+
 @app.get("/admin/zero-disk-status")
 async def zero_disk_status(request: Request):
     """Gate 11: Return /dev/shm usage for monitoring."""

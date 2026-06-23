@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from core.agent_core_v5 import Agent, AgentResult, ComplexityScore, calculate_complexity
 from core.agents.hvelfingar_erindreki import HvelfingarErindreki
 from core.agents.vitans_erindreki import VitansErindreki
+from core.monitor import get_monitor
 from core.agents.pii_sentry import detect_pii, strip_pii_for_search
 
 logger = logging.getLogger("alvitur.orchestrator")
@@ -62,10 +63,12 @@ class SemanticCache:
             result, timestamp = entry
             if time.time() - timestamp < self._ttl:
                 logger.info(f"Skyndiminni HITT: {query[:60]}... (sparaði LLM-kall)")
+                get_monitor().record_cache_hit()
                 return result
             else:
                 del self._cache[key]
                 logger.info(f"Skyndiminni ÚTRUNNIÐ: {query[:60]}...")
+        get_monitor().record_cache_miss()
         return None
     
     def set(self, query: str, result: AgentResult):

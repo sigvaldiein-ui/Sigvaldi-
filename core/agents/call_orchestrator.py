@@ -3,6 +3,7 @@ Miðlægt kall á YfirErindreka — eitt fall, allir staðir.
 """
 import logging, time
 from core.agents.yfir_erindreki import yfir_erindreki
+from core.monitor import get_monitor
 
 logger = logging.getLogger("alvitur.orchestrator")
 
@@ -22,5 +23,6 @@ async def call_orchestrator(query: str, tier: str, attachments: list, search_tex
     start = time.time()
     result = await yfir_erindreki.handle(query, tier, attachments, orchestrator_context)
     elapsed = (time.time() - start) * 1000
+    monitor = get_monitor(); monitor.record_latency(elapsed)
     logger.debug(f"[Orchestrator] {result.agent_name} | {elapsed:.0f}ms | confidence={result.confidence}")
     return result
