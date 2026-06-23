@@ -1,6 +1,0 @@
-{"timestamp": "2026-06-11T15:19:50.788827+00:00", "event_type": "TASK_START", "task_id": "task-011", "details": {"description": "Greina samning og senda niðurstöður í tölvupósti á jon@internet.is"}}
-{"timestamp": "2026-06-11T15:19:50.791792+00:00", "event_type": "TOOL_CALL", "task_id": "task-011", "details": {"tool": "tool_analyze_text", "params": {"text": "Samningur um..."}}}
-{"timestamp": "2026-06-11T15:19:50.794453+00:00", "event_type": "TOOL_CALL", "task_id": "task-011", "details": {"tool": "tool_draft_document", "params": {"topic": "Samninganalýsa", "context": "Greining"}}}
-{"timestamp": "2026-06-11T15:19:50.797033+00:00", "event_type": "HITL_INTERRUPT", "task_id": "task-011", "details": {"tool": "tool_send_email", "reason": "Krefst samþykkis"}}
-{"timestamp": "2026-06-11T15:19:50.807933+00:00", "event_type": "TOOL_CALL", "task_id": "task-011", "details": {"tool": "tool_send_email", "params": {"to": "jon@internet.is", "subject": "Niðurstöður", "body": "..."}}}
-{"timestamp": "2026-06-11T15:19:50.810559+00:00", "event_type": "TASK_COMPLETE", "task_id": "task-011", "details": {"steps_completed": 3}}
