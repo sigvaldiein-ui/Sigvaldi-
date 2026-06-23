@@ -95,6 +95,15 @@ class ErindrekiOrchestrator:
                     return {"status": "frozen", "reason": f"PII-scrub failed: {e}"}
             print(f"   🟢 SKREF {i+1}: {tool_name} — KEYRT")
             self.audit.log_tool_call(task_id, tool_name, params)
+            if self.registry.requires_approval(tool_name):
+                try:
+                    from core.audit_writer import log_egress
+                    import sqlite3 as _sq
+                    with _sq.connect(self.hitl_db.db_path) as _c:
+                        _r = _c.execute("SELECT approver_sub FROM hitl_queue WHERE item_id LIKE ? || '-%' AND status='approved' ORDER BY decided_at DESC LIMIT 1", (task_id,)).fetchone()
+                    log_egress(tool_name, params, task_id, _r[0] if _r else "")
+                except Exception as _e:
+                    print(f"   [audit] egress-log villa: {_e}")
             self.checkpointer.save_state(task_id, json.dumps(plan_steps), i+1, total_steps)
 
         # 5. Klárað
@@ -159,6 +168,15 @@ class ErindrekiOrchestrator:
                     return {"status": "frozen", "reason": f"PII-scrub failed: {e}"}
             print(f"   🟢 SKREF {i+1}: {tool_name} — KEYRT")
             self.audit.log_tool_call(task_id, tool_name, params)
+            if self.registry.requires_approval(tool_name):
+                try:
+                    from core.audit_writer import log_egress
+                    import sqlite3 as _sq
+                    with _sq.connect(self.hitl_db.db_path) as _c:
+                        _r = _c.execute("SELECT approver_sub FROM hitl_queue WHERE item_id LIKE ? || '-%' AND status='approved' ORDER BY decided_at DESC LIMIT 1", (task_id,)).fetchone()
+                    log_egress(tool_name, params, task_id, _r[0] if _r else "")
+                except Exception as _e:
+                    print(f"   [audit] egress-log villa: {_e}")
             self.checkpointer.save_state(task_id, json.dumps(plan_steps), i+1, total_steps)
 
         self.audit.log_task_complete(task_id, total_steps)
