@@ -4161,6 +4161,11 @@ async def vitinn_endpoint(request: Request):
     _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]
     _query_lower = query.lower()
     _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
+    
+    # Sjálfvirk vefleit fyrir almennar spurningar (F-STARF-5)
+    if _domain == "general" and not web_search:
+        web_search = True
+    
     rag_result = await _get_rag_context(query, _domain)
     search_text = rag_result.get("text", "")
     citations = rag_result.get("citations", [])
