@@ -14,6 +14,12 @@ db = HITLDatabase()
 def _write_hitl_audit(item_id, decision, approver_sub):
     log_hitl(item_id, decision, approver_sub)
 
+@router.get("/count")
+async def get_pending_count() -> dict:
+    """Skilar fjölda beiðna í biðröð — opinn endapunktur."""
+    items = db.get_pending()
+    return {"count": len(items)}
+
 @router.get("/queue")
 async def get_pending() -> List[dict]:
     items = db.get_pending()

@@ -286,7 +286,7 @@ class IdentityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
-        if request.url.path.startswith(("/api/health", "/api/auth", "/api/vitinn", "/api/chat")):
+        if request.url.path.startswith(("/api/health", "/api/auth", "/api/vitinn", "/api/chat", "/api/hitl/count")):
             return await call_next(request)
         # CTO-leikplan: Leyfa óinnskráðum að nota Vitann
         if request.url.path.startswith("/api/vitinn"):
