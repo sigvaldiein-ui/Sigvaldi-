@@ -4098,6 +4098,7 @@ async def vitinn_endpoint(request: Request):
     import time as _time
     from interfaces.chat_routes import _get_rag_context, _validate_response
     from core.safety.pii_sentry import scrub as pii_scrub
+    from core.audit_writer import log_query
     
     try:
         body = await request.json()
@@ -4214,6 +4215,15 @@ async def vitinn_endpoint(request: Request):
         from interfaces.stormeistari_fusion import run_stormeistari
         _sm = await run_stormeistari(query, search_text, citations, hvelfingin_search, web_search, t_start)
         if _sm:
+            # Audit: skrá fyrirspurn
+            _user = getattr(request.state, "user_claims", None)
+            _uid = _user.get("sub", "anonymous") if _user else "anonymous"
+            log_query(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                user_id=_uid, tier="vitinn", query=query, domain="legal",
+                citations_count=len(citations), pipeline_source="nebius_fusion",
+                response=_sm.get("response", ""), response_time_ms=(_time.time() - t_start) * 1000
+            )
             return JSONResponse(content=_sm)
     from core.agents.call_orchestrator import call_orchestrator
     result = await call_orchestrator(query, tier, attachments,
@@ -4226,6 +4236,18 @@ async def vitinn_endpoint(request: Request):
     # Ef vörðurinn samþykkir, nota UPPRUNALEGA svarið (cleaned), ekki fallback
     final_response = cleaned if is_valid else guarded_response
     
+    # Audit: skrá fyrirspurn
+    _user = getattr(request.state, "user_claims", None)
+    _uid = _user.get("sub", "anonymous") if _user else "anonymous"
+    from datetime import datetime, timezone
+    log_query(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        user_id=_uid, tier=tier, query=query, domain="legal",
+        citations_count=len(citations),
+        pipeline_source=f"{result.agent_name}_{result.model_used if hasattr(result, 'model_used') else 'qwen'}",
+        response=final_response, response_time_ms=(_time.time() - t_start) * 1000,
+        grounding_ok=is_valid
+    )
     return JSONResponse(content={
         "success": True,
         "response": final_response,
