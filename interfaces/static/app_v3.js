@@ -77,6 +77,17 @@
             ? 'Leita í bókasafninu og á vefnum…'
             : 'Leita í bókasafninu…';
       showStatus('loading', _loadMsg);
+      var _timerSec = 0;
+      var _timerBase = _loadMsg;
+      if (window._statusTimer) clearInterval(window._statusTimer);
+      window._statusTimer = setInterval(function() {
+        _timerSec++;
+        if (_timerSec >= 30) {
+          showStatus('loading', 'Lengri tími — flókin fyrirspurn. Hinkraðu… (' + _timerSec + ' sek)');
+        } else {
+          showStatus('loading', _timerBase + ' (' + _timerSec + ' sek)');
+        }
+      }, 1000);
 
       fetch('/api/chat/stream', {
         method: 'POST',
@@ -300,6 +311,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             if (obj.chunk != null) {
                                 acc += obj.chunk;
                                 if (streamP) streamP.textContent = acc;
+                                if (window._statusTimer) { clearInterval(window._statusTimer); window._statusTimer = null; }
                                 if (statusArea) statusArea.textContent = '';
                             } else if (obj.metadata) {
                                 var s = obj.metadata.sources || {};
