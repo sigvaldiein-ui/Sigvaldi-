@@ -4162,9 +4162,6 @@ async def vitinn_endpoint(request: Request):
     _query_lower = query.lower()
     _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
     
-    # Sjálfvirk vefleit fyrir almennar spurningar (F-STARF-5)
-    if _domain == "general" and not web_search and not hvelfingin_search:
-        web_search = True
     
     rag_result = await _get_rag_context(query, _domain)
     search_text = rag_result.get("text", "")
@@ -4256,7 +4253,10 @@ async def vitinn_endpoint(request: Request):
         is_valid, guarded_response = _validate_response(cleaned, citations)
         final_response = cleaned if is_valid else guarded_response
     elif _domain == "general":
-        final_response = "Leitaði á vefnum að upplysingum. Vinsamlegast hakaðu í Vefleit fyrir ítarlegri niðurstöður með heimildum."
+        if hvelfingin_search:
+            final_response = "Hvelfingin svarar aðeins úr sovereign bókasafninu — ytri leit er ekki í boði í vault-ham."
+        else:
+            final_response = "Ég finn ekki svar í bókasafninu. Hakaðu í Vefleit svo ég geti leitað á netinu."
     
     # Audit: skrá fyrirspurn
     _user = getattr(request.state, "user_claims", None)
