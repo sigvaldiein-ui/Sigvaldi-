@@ -4025,7 +4025,7 @@ async def vitinn_stream_endpoint(request: Request):
         
         # 3. Stórmeistari ef hakað
         storm_response = None
-        if False:  # C1 aftengt (stormeistari)
+        if stormeistari:
             try:
                 safe_q = pii_scrub(query).scrubbed
                 safe_c = pii_scrub(search_text).scrubbed
@@ -4096,6 +4096,7 @@ async def vitinn_endpoint(request: Request):
     - Bæði = sovereign + vefur + frontier
     """
     import time as _time
+    from datetime import datetime, timezone
     from interfaces.chat_routes import _get_rag_context, _validate_response
     from core.safety.pii_sentry import scrub as pii_scrub
     from core.audit_writer import log_query
@@ -4173,7 +4174,7 @@ async def vitinn_endpoint(request: Request):
             search_text += "\n[VEFFLET — ekki tiltæk í augnablikinu]"
     
     # 3. Stórmeistari — PII Sentry + Nebius Fusion
-    if False:  # C1 aftengt (stormeistari)
+    if stormeistari:
         safe_result = pii_scrub(query); safe_query2 = safe_result.scrubbed
         safe_result = pii_scrub(search_text); safe_context2 = safe_result.scrubbed
         # V5: Tengja við OpenRouter ZDR
@@ -4239,7 +4240,6 @@ async def vitinn_endpoint(request: Request):
     # Audit: skrá fyrirspurn
     _user = getattr(request.state, "user_claims", None)
     _uid = _user.get("sub", "anonymous") if _user else "anonymous"
-    from datetime import datetime, timezone
     log_query(
         timestamp=datetime.now(timezone.utc).isoformat(),
         user_id=_uid, tier=tier, query=query, domain="legal",
