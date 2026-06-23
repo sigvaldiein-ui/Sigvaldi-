@@ -1,4 +1,0 @@
-{"type": "hitl_decision", "timestamp": "2026-06-22T18:44:20.336159+00:00", "item_id": "mock-0001", "decision": "approved", "approver_sub": "sigvaldi-sub-001"}
-{"type": "hitl_decision", "timestamp": "2026-06-22T18:44:20.346065+00:00", "item_id": "mock-0002", "decision": "rejected", "approver_sub": "sigvaldi-sub-001"}
-{"type": "hitl_decision", "timestamp": "2026-06-23T01:32:46.847515+00:00", "item_id": "mock-0001", "decision": "approved", "approver_sub": "sigvaldi-sub-001"}
-{"type": "hitl_decision", "timestamp": "2026-06-23T01:32:46.865854+00:00", "item_id": "mock-0002", "decision": "rejected", "approver_sub": "sigvaldi-sub-001"}
