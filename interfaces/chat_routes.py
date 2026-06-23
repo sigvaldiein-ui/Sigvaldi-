@@ -73,16 +73,16 @@ async def _get_rag_context(query: str, domain: str) -> dict:
         tool = SearchLawTool()
         hits = await tool.run(query)
         if hits:
-            lines = ["[Heimildir — íslensk lög og reglugerðir]"]
             citations = []
+            texts = []
             for h in hits:
-                lines.append(f"• {h.get('title', '')}: {h.get('text', '')[:300]}")
+                texts.append(h.get('text', '')[:300])
                 citations.append({
                     "url": h.get("source", ""),
                     "title": h.get("title", ""),
                     "snippet": h.get("text", "")[:200]
                 })
-            return {"text": "\n".join(lines), "citations": citations}
+            return {"text": "\n\n".join(texts), "citations": citations}
     except Exception as e:
         import sys
         print(f"RAG villa: {e}", file=sys.stderr)
@@ -346,7 +346,7 @@ def _validate_response(response_text: str, citations: list) -> tuple[bool, str]:
                 for tok in citation_tokens
                 if len(tok) >= 2  # Sleppa of stuttum
             ) if citation_tokens else False
-            if not mentions_any_source and not has_generic_grounding and not has_citation_token_grounding and len(text) > 280:
+            if not mentions_any_source and not has_generic_grounding and not has_citation_token_grounding and len(text) > 600:
                 return False, _build_deterministic_fallback(citations)
 
     # G0: sannreyna að greinarnúmer sem nefnd eru í svari séu í veittum heimildum

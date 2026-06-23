@@ -4002,7 +4002,7 @@ async def vitinn_stream_endpoint(request: Request):
         
         # 1. Sovereign — Qdrant + Qwen
         try:
-            _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]
+            _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur", "veikindar", "veikindi", "orlof", "starfsmaður", "ráðningarsamningur", "ráðning", "kjarasamningur", "uppsögn", "vinnuréttur", "vinnuvernd", "atvinnuréttindi", "fæðingarorlof", "fæðingar", "sjúkra", "sjúklingar", "sjúkratryggingar", "tryggingar"]
             _query_lower = query.lower()
             _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
             rag_result = await _get_rag_context(query, _domain)
@@ -4158,7 +4158,7 @@ async def vitinn_endpoint(request: Request):
     
     # 1. Sovereign — Qdrant + Qwen
     # Skynsamleg domain-greining: lögfræði vs almenn
-    _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur"]
+    _legal_keywords = ["lög", "lag", "laga", "laganna", "réttur", "rétt", "persónuvernd", "personuvernd", "reglugerð", "reglugerd", "stjórnsýsla", "stjornsysla", "alþingi", "althingi", "gr.", "grein", "þingsályktun", "thingsalyktun", "skipulag", "dómur", "domur", "úrskurður", "urskurdur", "veikindar", "veikindi", "orlof", "starfsmaður", "ráðningarsamningur", "ráðning", "kjarasamningur", "uppsögn", "vinnuréttur", "vinnuvernd", "atvinnuréttindi", "fæðingarorlof", "fæðingar", "sjúkra", "sjúklingar", "sjúkratryggingar", "tryggingar"]
     _query_lower = query.lower()
     _domain = "legal" if any(kw in _query_lower for kw in _legal_keywords) else "general"
     
