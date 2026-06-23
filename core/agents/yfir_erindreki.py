@@ -49,20 +49,31 @@ class CircuitBreaker:
 # ── Semantic Cache ───────────────────────────────────────
 
 class SemanticCache:
-    """Einfalt skyndiminni fyrir samhljóða fyrirspurnir."""
-    def __init__(self, max_size: int = 100):
-        self._cache: Dict[str, AgentResult] = {}
+    """Einfalt skyndiminni fyrir samhljóða fyrirspurnir með tímatakmörkun."""
+    def __init__(self, max_size: int = 500, ttl_seconds: int = 1800):
+        self._cache: Dict[str, tuple] = {}  # (AgentResult, timestamp)
         self._max_size = max_size
+        self._ttl = ttl_seconds  # 30 mínútur
     
     def get(self, query: str) -> Optional[AgentResult]:
-        return self._cache.get(query.strip().lower())
+        key = query.strip().lower()
+        entry = self._cache.get(key)
+        if entry:
+            result, timestamp = entry
+            if time.time() - timestamp < self._ttl:
+                logger.info(f"Skyndiminni HITT: {query[:60]}... (sparaði LLM-kall)")
+                return result
+            else:
+                del self._cache[key]
+                logger.info(f"Skyndiminni ÚTRUNNIÐ: {query[:60]}...")
+        return None
     
     def set(self, query: str, result: AgentResult):
         if len(self._cache) >= self._max_size:
-            self._cache.pop(next(iter(self._cache)))
-        self._cache[query.strip().lower()] = result
-
-# ── YfirErindreki ────────────────────────────────────────
+            oldest = min(self._cache, key=lambda k: self._cache[k][1])
+            del self._cache[oldest]
+        self._cache[query.strip().lower()] = (result, time.time())
+        logger.info(f"Skyndiminni VISTAÐ: {query[:60]}... (stærð={len(self._cache)})")
 
 class YfirErindreki:
     """
