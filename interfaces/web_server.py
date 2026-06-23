@@ -4247,7 +4247,7 @@ async def vitinn_endpoint(request: Request):
     from core.agents.call_orchestrator import call_orchestrator
     result = await call_orchestrator(query, tier, attachments,
                                      search_text, citations,
-                                     "", "legal")
+                                     "", _domain)
     
     cleaned = __import__("re").sub(r"<think>.*?</think>", "", result.response or "", flags=__import__("re").DOTALL).strip()
     # Aðeins grunda ef við erum í lögfræði-domain EÐA höfum raunverulegar citations
