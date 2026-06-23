@@ -15,6 +15,7 @@ _QDRANT_PATH = os.environ.get("QDRANT_LOCAL_PATH", "/workspace/Sigvaldi-/data/qd
 _RAG_COLLECTION = "alvitur_laws_v2"
 _RAG_TOP_K = 10
 _RERANK_POOL = 40
+MAX_RAG_CHUNKS = 5  # Sprint 89: takmarka chunk í prompt
 _RAG_SCORE_THRESHOLD = 0.40
 
 
@@ -105,6 +106,7 @@ class SearchLawTool(BaseTool):
                     "domain": h.payload.get("domain", ""),
                     "score": round(h.score, 4),
                 })
+            hits = hits[:MAX_RAG_CHUNKS]  # Sprint 89: fækka chunkum í prompt
             # Reranker (ÓVIRKT): endurraða niðurstöðum með bge-reranker-v2-m3
             # Reranker slökktur skv. Opus 4.8 — embedding-eingöngu gefur betri röðun fyrir lögfræði
             global _RERANKER_MODEL
