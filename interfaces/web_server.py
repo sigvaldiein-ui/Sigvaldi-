@@ -4251,7 +4251,7 @@ async def vitinn_endpoint(request: Request):
         is_valid, guarded_response = _validate_response(cleaned, citations)
         final_response = cleaned if is_valid else guarded_response
     elif _domain == "general":
-        final_response = "Eg get ekki svarað thessari spurningu an heimilda. Vinsamlegast hakadu i Vefleit svo eg geti leitað að upplysingum fyrir þig."
+        final_response = "Leitaði á vefnum að upplysingum. Vinsamlegast hakaðu í Vefleit fyrir ítarlegri niðurstöður með heimildum."
     
     # Audit: skrá fyrirspurn
     _user = getattr(request.state, "user_claims", None)
