@@ -194,81 +194,6 @@
   else setMode('general');
 })();
 
-document.addEventListener('DOMContentLoaded',function(){
-var token=localStorage.getItem('alvitur_token')||'';
-var box=document.getElementById('loginbox');
-var intake=document.getElementById('main-intake');
- if(box)box.style.display='none';
- if(intake)intake.style.display='';
-var sBtn=document.getElementById('sidebar-login-btn');
-if(sBtn){sBtn.addEventListener('click',function(){window.location.href='/login';});}
-var lBtn=document.getElementById('loginbtn');
-if(lBtn){lBtn.addEventListener('click',function(){
-var tok=document.getElementById('logintok');
-if(tok){var val=tok.value.trim();
-if(val){localStorage.setItem('alvitur_token',val);location.reload();}
-else{alert('Limdu token fyrst');}}
-});}
-});
-// === V5: Vitinn tvö-hök + /api/vitinn ===
-document.addEventListener('DOMContentLoaded', function() {
-    var wsToggle = document.getElementById('web-search-toggle');
-    var smToggle = document.getElementById('stormeistari-toggle');
-    var approvalPanel = document.getElementById('approval-panel');
-    var approvalQuery = document.getElementById('approval-query');
-    var approvalConfirm = document.getElementById('approval-confirm');
-    var approvalCancel = document.getElementById('approval-cancel');
-    var statusArea = document.getElementById('status-area');
-    var resultsArea = document.getElementById('results-area');
-    var resultsBody = document.getElementById('results-body');
-    var submitBtn = document.getElementById('submit-btn');
-
-    submitBtn.addEventListener('click', function(e) {
-        var query = (document.getElementById('query-input') || {}).value || '';
-        if (smToggle.checked) {
-            approvalQuery.textContent = '"' + query.substring(0,80) + '"';
-            approvalPanel.removeAttribute('hidden');
-        } else if (wsToggle.checked) {
-            sendVitinn(query, true, false);
-        } else {
-            sendVitinn(query, false, false);
-        }
-    });
-
-    if (approvalConfirm) approvalConfirm.addEventListener('click', function() {
-        approvalPanel.setAttribute('hidden','');
-        var query = (document.getElementById('query-input') || {}).value || '';
-        sendVitinn(query, wsToggle.checked, true);
-    });
-
-    if (approvalCancel) approvalCancel.addEventListener('click', function() {
-        approvalPanel.setAttribute('hidden','');
-        smToggle.checked = false;
-    });
-
-    function esc(t){var d=document.createElement('div');d.textContent=(t==null?'':String(t));return d.innerHTML;}
-    function badgeHtml(s){
-        if (s.stormeistari) return '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>';
-        if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
-        return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
-    }
-    function renderMd(t) {
-      var s = escapeHtml(t);
-      // ### fyrirsögn
-      s = s.replace(/^###[ 	](.+)$/gm, '<strong style="display:block;font-size:.95rem;margin:.5rem 0 .15rem;color:var(--color-text)">$1</strong>');
-      // **feitt**
-      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // * listi og - listi
-      s = s.replace(/^[\*\-][ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
-      s = s.replace(/(<li[^>]*>.*<\/li>)/s, '<ul style="padding-left:1.25rem;margin:.35rem 0">$1</ul>');
-      // 1. númeraður listi
-      s = s.replace(/^\d+\.[ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
-      // Línubil
-      s = s.replace(/
-/g, '<br>');
-      return s;
-    }
-
     function sendVitinn(query, webSearch, stormeistari) {
         var token = localStorage.getItem('alvitur_token') || '';
         if (statusArea) statusArea.textContent = 'Greini...';
@@ -343,6 +268,70 @@ document.addEventListener('DOMContentLoaded', function() {
             if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
         });
     }
+document.addEventListener('DOMContentLoaded',function(){
+var token=localStorage.getItem('alvitur_token')||'';
+var box=document.getElementById('loginbox');
+var intake=document.getElementById('main-intake');
+ if(box)box.style.display='none';
+ if(intake)intake.style.display='';
+var sBtn=document.getElementById('sidebar-login-btn');
+if(sBtn){sBtn.addEventListener('click',function(){window.location.href='/login';});}
+var lBtn=document.getElementById('loginbtn');
+if(lBtn){lBtn.addEventListener('click',function(){
+var tok=document.getElementById('logintok');
+if(tok){var val=tok.value.trim();
+if(val){localStorage.setItem('alvitur_token',val);location.reload();}
+else{alert('Limdu token fyrst');}}
+});}
+});
+// === V5: Vitinn tvö-hök + /api/vitinn ===
+document.addEventListener('DOMContentLoaded', function() {
+    var wsToggle = document.getElementById('web-search-toggle');
+    var smToggle = document.getElementById('stormeistari-toggle');
+    var approvalPanel = document.getElementById('approval-panel');
+    var approvalQuery = document.getElementById('approval-query');
+    var approvalConfirm = document.getElementById('approval-confirm');
+    var approvalCancel = document.getElementById('approval-cancel');
+    var statusArea = document.getElementById('status-area');
+    var resultsArea = document.getElementById('results-area');
+    var resultsBody = document.getElementById('results-body');
+    var submitBtn = document.getElementById('submit-btn');
+
+
+
+    if (approvalConfirm) approvalConfirm.addEventListener('click', function() {
+        approvalPanel.setAttribute('hidden','');
+        var query = (document.getElementById('query-input') || {}).value || '';
+        sendVitinn(query, wsToggle.checked, true);
+    });
+
+    if (approvalCancel) approvalCancel.addEventListener('click', function() {
+        approvalPanel.setAttribute('hidden','');
+        smToggle.checked = false;
+    });
+
+    function esc(t){var d=document.createElement('div');d.textContent=(t==null?'':String(t));return d.innerHTML;}
+    function badgeHtml(s){
+        if (s.stormeistari) return '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>';
+        if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
+        return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
+    }
+    function renderMd(t) {
+      var s = escapeHtml(t);
+      // ### fyrirsögn
+      s = s.replace(/^###[ 	](.+)$/gm, '<strong style="display:block;font-size:.95rem;margin:.5rem 0 .15rem;color:var(--color-text)">$1</strong>');
+      // **feitt**
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // * listi og - listi
+      s = s.replace(/^[\*\-][ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      s = s.replace(/(<li[^>]*>.*<\/li>)/s, '<ul style="padding-left:1.25rem;margin:.35rem 0">$1</ul>');
+      // 1. númeraður listi
+      s = s.replace(/^\d+\.[ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      // Línubil
+      s = s.replace(/\n/g, '<br>');
+      return s;
+    }
+
 });
 // Fela hok a Hvelfingin/confidential flipa
 document.addEventListener('DOMContentLoaded', function() {
