@@ -89,26 +89,8 @@
         }
       }, 1000);
 
-      fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + getToken()
-        },
-        body: JSON.stringify({ query: query })
-      })
-      .then(function (r) {
-        if (r.status === 202) {
-          return r.json().then(function (d) { showHITLWidget(d); });
-        }
-        if (r.status === 401) { showStatus('error', 'Aðgangur óheimill.'); return; }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.text().then(function (text) { renderStream(text); });
-      })
-      .catch(function (err) {
-        showStatus('error', 'Villa: ' + (err.message || 'Óþekkt villa'));
-      })
-      .finally(function () { busy = false; });
+      sendVitinn(query, _wsOn, _smOn);
+      busy = false;
     });
   }
 
@@ -270,6 +252,23 @@ document.addEventListener('DOMContentLoaded', function() {
         if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
         return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
     }
+    function renderMd(t) {
+      var s = escapeHtml(t);
+      // ### fyrirsögn
+      s = s.replace(/^###[ 	](.+)$/gm, '<strong style="display:block;font-size:.95rem;margin:.5rem 0 .15rem;color:var(--color-text)">$1</strong>');
+      // **feitt**
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // * listi og - listi
+      s = s.replace(/^[\*\-][ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      s = s.replace(/(<li[^>]*>.*<\/li>)/s, '<ul style="padding-left:1.25rem;margin:.35rem 0">$1</ul>');
+      // 1. númeraður listi
+      s = s.replace(/^\d+\.[ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      // Línubil
+      s = s.replace(/
+/g, '<br>');
+      return s;
+    }
+
     function sendVitinn(query, webSearch, stormeistari) {
         var token = localStorage.getItem('alvitur_token') || '';
         if (statusArea) statusArea.textContent = 'Greini...';
@@ -331,7 +330,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 }).join('');
                                 if (resultsBody) resultsBody.innerHTML =
                                     '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
-                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+esc(acc)+'</p>'
+                                    +'<p style="font-size:.875rem;line-height:1.7">'+renderMd(acc)+'</p>'
                                     +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
                             }
                         } catch(e) {}
