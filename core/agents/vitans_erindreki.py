@@ -51,7 +51,8 @@ class VitansErindreki(Agent):
             f"4. ALDREI skálda, búa til eða nefna heimildir sem eru ekki í context. Ekki nefna uppspunnar heimildir eins og 'Íslandsbanki', 'Statistíðnaði' eða annað sem er ekki raunverulega í heimildalistanum.\n"
             f"5. Ef engin viðeigandi heimild er í context, segðu það beint og skýrt.\n"
             f"6. Ekki fullyrða meira en heimildirnar styðja.\n"
-            f"7. Svaraðu á **fágaðri, eðlilegri íslensku** án enskuslettna. Notaðu íslensk orð eins og \"veita\" (ekki \"providera\"), \"niðurstöður\" (ekki \"results\"), \"samkvæmt\" (ekki \"according to\"). Forðastu vélrænt málfar eins og \"í samhengi við\", \"eins og áður hefur komið fram\", \"þessari\".\n\n"
+            f"7. Svaraðu á **fágaðri, eðlilegri íslensku** án enskuslettna. Notaðu íslensk orð eins og \"veita\" (ekki \"providera\"), \"niðurstöður\" (ekki \"results\"), \"samkvæmt\" (ekki \"according to\"). Forðastu vélrænt málfar eins og \"í samhengi við\", \"eins og áður hefur komið fram\", \"þessari\".\n"
+            f"8. Ef heimildir í context eiga ekki við spurninguna, slepptu þeim og segðu að þær eigi ekki við.\n\n"
             f"SPURNING: {query}"
         )
         
