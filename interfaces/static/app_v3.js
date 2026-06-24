@@ -63,34 +63,28 @@
       var query = queryInput ? queryInput.value.trim() : '';
       if (!query) { showStatus('error', 'Sláðu inn fyrirspurn.'); return; }
       busy = true;
-      var _ws = document.getElementById('web-search-toggle');
-      var _sm = document.getElementById('stormeistari-toggle');
-      var _hv = document.getElementById('hvelfingin-search-toggle');
-      var _wsOn = _ws ? _ws.checked : false;
-      var _smOn = _sm ? _sm.checked : false;
-      var _hvOn = _hv ? _hv.checked : false;
-      var _loadMsg = _hvOn
-        ? 'Leita í trúnaðargeymslu…'
-        : _smOn
-          ? 'Leita í bókasafninu — spyrja fjögur líkön…'
-          : _wsOn
-            ? 'Leita í bókasafninu og á vefnum…'
-            : 'Leita í bókasafninu…';
-      showStatus('loading', _loadMsg);
-      var _timerSec = 0;
-      var _timerBase = _loadMsg;
-      if (window._statusTimer) clearInterval(window._statusTimer);
-      window._statusTimer = setInterval(function() {
-        _timerSec++;
-        if (_timerSec >= 30) {
-          showStatus('loading', 'Lengri tími — flókin fyrirspurn. Hinkraðu… (' + _timerSec + ' sek)');
-        } else {
-          showStatus('loading', _timerBase + ' (' + _timerSec + ' sek)');
-        }
-      }, 1000);
+      showStatus('loading', 'Greining í gangi…');
 
-      sendVitinn(query, _wsOn, _smOn);
-      busy = false;
+      fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + getToken()
+        },
+        body: JSON.stringify({ query: query })
+      })
+      .then(function (r) {
+        if (r.status === 202) {
+          return r.json().then(function (d) { showHITLWidget(d); });
+        }
+        if (r.status === 401) { showStatus('error', 'Aðgangur óheimill.'); return; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text().then(function (text) { renderStream(text); });
+      })
+      .catch(function (err) {
+        showStatus('error', 'Villa: ' + (err.message || 'Óþekkt villa'));
+      })
+      .finally(function () { busy = false; });
     });
   }
 
@@ -117,6 +111,125 @@
     if (output) {
       resultsBody.innerHTML = '<div style="white-space:pre-wrap;line-height:1.6;">' + output + '</div>';
     }
+  }
+
+
+  // ─── HITL Queue polling ───
+  var _hitlPollTimer = null;
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  var HITL_TIER = {
+    1: {label:'Lítil áhætta', bg:'#f0fdf4', border:'#16a34a', text:'#14532d'},
+    2: {label:'Miðlungs áhætta', bg:'#fffbeb', border:'#d97706', text:'#78350f'},
+    3: {label:'Há áhætta — Stone-floor', bg:'#fef2f2', border:'#dc2626', text:'#7f1d1d'}
+  };
+
+  function renderHITLItem(item) {
+    var tier = HITL_TIER[item.risk_tier] || HITL_TIER[1];
+    var id = esc(item.id || '');
+    var tool = esc(item.tool_name || '');
+    var preview = esc(item.preview || '');
+    var ts = esc(item.created_at || '');
+
+    var html = '<div id="hitl-item-' + id + '" style="background:' + tier.bg + ';border:1.5px solid ' + tier.border + ';border-radius:.625rem;padding:.75rem;display:flex;flex-direction:column;gap:.5rem">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<strong style="font-size:.85rem;color:' + tier.text + '">' + tool + '</strong>';
+    html += '<span style="font-size:.7rem;padding:2px 8px;border-radius:99px;background:' + tier.border + ';color:#fff">' + tier.label + '</span>';
+    html += '</div>';
+    if (preview) html += '<p style="font-size:.8rem;color:var(--color-text-muted);margin:0;white-space:pre-wrap">' + preview + '</p>';
+    if (ts) html += '<p style="font-size:.7rem;color:var(--color-text-faint);margin:0">Tími: ' + ts + '</p>';
+
+    if (item.risk_tier === 3) {
+      html += '<div style="display:flex;flex-direction:column;gap:.35rem;padding:.5rem;background:#fee2e2;border-radius:.375rem">';
+      html += '<label style="font-size:.8rem;color:#7f1d1d;display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="hitl-read-' + id + '" style="margin:0"> Ég hef lesið og skilið aðgerðina</label>';
+      html += '<label style="font-size:.8rem;color:#7f1d1d;display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="hitl-conf-' + id + '" style="margin:0"> Ég samþykki að aðgerðin verði framkvæmd</label>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:.5rem">';
+      html += '<button onclick="hitlApprove('' + id + '',' + item.risk_tier + ')" style="flex:1;padding:.45rem;background:#dc2626;color:#fff;border:none;border-radius:.5rem;font-size:.82rem;cursor:pointer">Samþykkja</button>';
+      html += '<button onclick="hitlReject('' + id + '')" style="flex:1;padding:.45rem;background:none;border:1.5px solid #dc2626;color:#7f1d1d;border-radius:.5rem;font-size:.82rem;cursor:pointer">Hafna</button>';
+      html += '</div>';
+    } else {
+      html += '<div style="display:flex;gap:.5rem">';
+      html += '<button onclick="hitlApprove('' + id + '',' + item.risk_tier + ')" style="flex:1;padding:.45rem;background:' + tier.border + ';color:#fff;border:none;border-radius:.5rem;font-size:.82rem;cursor:pointer">Samþykkja</button>';
+      html += '<button onclick="hitlReject('' + id + '')" style="flex:1;padding:.45rem;background:none;border:1.5px solid ' + tier.border + ';color:' + tier.text + ';border-radius:.5rem;font-size:.82rem;cursor:pointer">Hafna</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function hitlShowPanel(items) {
+    var panel = document.getElementById('hitl-panel');
+    var container = document.getElementById('hitl-items');
+    if (!panel || !container) return;
+    if (!items || items.length === 0) {
+      panel.setAttribute('hidden','');
+      panel.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML = items.map(renderHITLItem).join('');
+    panel.removeAttribute('hidden');
+    panel.style.display = 'flex';
+  }
+
+  function hitlPoll() {
+    var tok = getToken();
+    if (!tok) return;
+    fetch('/api/hitl/queue', {
+      headers: {'Authorization': 'Bearer ' + tok}
+    }).then(function(r) {
+      if (r.status === 200) return r.json();
+      return null;
+    }).then(function(d) {
+      if (d && d.items) hitlShowPanel(d.items);
+    }).catch(function(){});
+  }
+
+  function hitlApprove(id, tier) {
+    if (tier === 3) {
+      var r = document.getElementById('hitl-read-' + id);
+      var c = document.getElementById('hitl-conf-' + id);
+      if (!r || !r.checked || !c || !c.checked) {
+        alert('Þú verður að haka við báðar staðfestingar fyrir Stone-floor aðgerð.');
+        return;
+      }
+    }
+    var tok = getToken();
+    if (!tok) return;
+    fetch('/api/hitl/approve/' + encodeURIComponent(id), {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+    }).then(function(r) { return r.json(); }).then(function() {
+      var el = document.getElementById('hitl-item-' + id);
+      if (el) el.remove();
+      hitlPoll();
+    }).catch(function(){});
+  }
+
+  function hitlReject(id) {
+    var tok = getToken();
+    if (!tok) return;
+    fetch('/api/hitl/reject/' + encodeURIComponent(id), {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+    }).then(function(r) { return r.json(); }).then(function() {
+      var el = document.getElementById('hitl-item-' + id);
+      if (el) el.remove();
+      hitlPoll();
+    }).catch(function(){});
+  }
+
+  function hitlStartPolling() {
+    hitlPoll();
+    if (_hitlPollTimer) clearInterval(_hitlPollTimer);
+    _hitlPollTimer = setInterval(hitlPoll, 8000);
   }
 
   // ─── HITL widget ───
@@ -194,80 +307,6 @@
   else setMode('general');
 })();
 
-    function sendVitinn(query, webSearch, stormeistari) {
-        var token = localStorage.getItem('alvitur_token') || '';
-        if (statusArea) statusArea.textContent = 'Greini...';
-        wsToggle.checked = false;
-        smToggle.checked = false;
-        approvalPanel.setAttribute('hidden','');
-        // Undirbua nidurstodu-svaedi fyrir streymi
-        if (resultsBody) resultsBody.innerHTML = '<p id="vitinn-stream" style="font-size:.875rem;white-space:pre-wrap"></p>';
-        if (resultsArea) resultsArea.hidden = false;
-        var streamP = document.getElementById('vitinn-stream');
-        var acc = '';
-        var hvToggle = document.getElementById('hvelfingin-search-toggle');
-        var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
-        var alviturEmail = localStorage.getItem('alvitur_email') || '';
-        var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
-                + '&web_search=' + (webSearch?'true':'false')
-                + '&stormeistari=' + (stormeistari?'true':'false')
-                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false')
-                + (alviturEmail ? '&email=' + encodeURIComponent(alviturEmail) : '');
-        fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
-            if (resp.status === 429) { return resp.json().then(function(d){ showEmailGate(query,webSearch,stormeistari,d.message); }); }
-            if (!resp.ok) throw new Error('HTTP '+resp.status);
-            var reader = resp.body.getReader();
-            var decoder = new TextDecoder();
-            var buffer = '';
-            function pump(){
-                return reader.read().then(function(res){
-                    if (res.done) return;
-                    buffer += decoder.decode(res.value, {stream:true});
-                    var events = buffer.split('\n\n');
-                    buffer = events.pop();
-                    events.forEach(function(event){
-                        var line = '';
-                        event.split('\n').forEach(function(l){ if(l.indexOf('data:')===0) line=l; });
-                        line = line.trim();
-                        if (!line || line.indexOf('data:')!==0) return;
-                        var payload = line.slice(5).trim();
-                        if (payload === '[DONE]') return;
-                        try {
-                            var obj = JSON.parse(payload);
-                            if (obj.chunk != null) {
-                                acc += obj.chunk;
-                                if (streamP) streamP.textContent = acc;
-                                if (window._statusTimer) { clearInterval(window._statusTimer); window._statusTimer = null; }
-                                if (statusArea) statusArea.textContent = '';
-                            } else if (obj.metadata) {
-                                var s = obj.metadata.sources || {};
-                                var cits = (obj.metadata.citations||[]).map(function(c){
-                                    var titill = esc(c.title||c.citation_full||'');
-                                    var slod = c.url ? c.url : '';
-                                    var heimild = slod
-                                        ? '<a href="'+esc(slod)+'" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--color-accent);text-decoration:none;display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;border-radius:.375rem;background:var(--color-accent-light);margin:.25rem 0">'
-                                          + '<span style="flex-shrink:0;margin-top:1px">📄</span>'
-                                          + '<span><span style="display:block;font-weight:500;color:var(--color-text)">'+ titill +'</span>'
-                                          + '<span style="font-size:.7rem;color:var(--color-accent)">Skoða heimild →</span></span></a>'
-                                        : '<div style="font-size:.75rem;color:var(--color-text-muted);display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;margin:.25rem 0">'
-                                          + '<span style="flex-shrink:0">📄</span><span>'+ titill +'</span></div>';
-                                    return heimild;
-                                }).join('');
-                                if (resultsBody) resultsBody.innerHTML =
-                                    '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
-                                    +'<p style="font-size:.875rem;line-height:1.7">'+renderMd(acc)+'</p>'
-                                    +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
-                            }
-                        } catch(e) {}
-                    });
-                    return pump();
-                });
-            }
-            return pump();
-        }).catch(function(e){
-            if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
-        });
-    }
 document.addEventListener('DOMContentLoaded',function(){
 var token=localStorage.getItem('alvitur_token')||'';
 var box=document.getElementById('loginbox');
@@ -297,7 +336,17 @@ document.addEventListener('DOMContentLoaded', function() {
     var resultsBody = document.getElementById('results-body');
     var submitBtn = document.getElementById('submit-btn');
 
-
+    submitBtn.addEventListener('click', function(e) {
+        var query = (document.getElementById('query-input') || {}).value || '';
+        if (smToggle.checked) {
+            approvalQuery.textContent = '"' + query.substring(0,80) + '"';
+            approvalPanel.removeAttribute('hidden');
+        } else if (wsToggle.checked) {
+            sendVitinn(query, true, false);
+        } else {
+            sendVitinn(query, false, false);
+        }
+    });
 
     if (approvalConfirm) approvalConfirm.addEventListener('click', function() {
         approvalPanel.setAttribute('hidden','');
@@ -316,22 +365,68 @@ document.addEventListener('DOMContentLoaded', function() {
         if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
         return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
     }
-    function renderMd(t) {
-      var s = escapeHtml(t);
-      // ### fyrirsögn
-      s = s.replace(/^###[ 	](.+)$/gm, '<strong style="display:block;font-size:.95rem;margin:.5rem 0 .15rem;color:var(--color-text)">$1</strong>');
-      // **feitt**
-      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // * listi og - listi
-      s = s.replace(/^[\*\-][ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
-      s = s.replace(/(<li[^>]*>.*<\/li>)/s, '<ul style="padding-left:1.25rem;margin:.35rem 0">$1</ul>');
-      // 1. númeraður listi
-      s = s.replace(/^\d+\.[ 	](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
-      // Línubil
-      s = s.replace(/\n/g, '<br>');
-      return s;
+    function sendVitinn(query, webSearch, stormeistari) {
+        var token = localStorage.getItem('alvitur_token') || '';
+        if (statusArea) statusArea.textContent = 'Greini...';
+        wsToggle.checked = false;
+        smToggle.checked = false;
+        approvalPanel.setAttribute('hidden','');
+        // Undirbua nidurstodu-svaedi fyrir streymi
+        if (resultsBody) resultsBody.innerHTML = '<p id="vitinn-stream" style="font-size:.875rem;white-space:pre-wrap"></p>';
+        if (resultsArea) resultsArea.hidden = false;
+        var streamP = document.getElementById('vitinn-stream');
+        var acc = '';
+        var hvToggle = document.getElementById('hvelfingin-search-toggle');
+        var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
+        var alviturEmail = localStorage.getItem('alvitur_email') || '';
+        var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
+                + '&web_search=' + (webSearch?'true':'false')
+                + '&stormeistari=' + (stormeistari?'true':'false')
+                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false')
+                + (alviturEmail ? '&email=' + encodeURIComponent(alviturEmail) : '');
+        fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
+            if (resp.status === 429) { return resp.json().then(function(d){ showEmailGate(query,webSearch,stormeistari,d.message); }); }
+            if (!resp.ok) throw new Error('HTTP '+resp.status);
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+            function pump(){
+                return reader.read().then(function(res){
+                    if (res.done) return;
+                    buffer += decoder.decode(res.value, {stream:true});
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    lines.forEach(function(line){
+                        line = line.trim();
+                        if (!line || line.indexOf('data:')!==0) return;
+                        var payload = line.slice(5).trim();
+                        if (payload === '[DONE]') return;
+                        try {
+                            var obj = JSON.parse(payload);
+                            if (obj.chunk != null) {
+                                acc += obj.chunk;
+                                if (streamP) streamP.textContent = acc;
+                                if (statusArea) statusArea.textContent = '';
+                            } else if (obj.metadata) {
+                                var s = obj.metadata.sources || {};
+                                var cits = (obj.metadata.citations||[]).map(function(c){
+                                    return '<li style="font-size:.75rem;color:var(--color-text-muted);margin:.2rem 0">'+esc(c.title||c.citation_full||'')+'</li>';
+                                }).join('');
+                                if (resultsBody) resultsBody.innerHTML =
+                                    '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
+                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+esc(acc)+'</p>'
+                                    +(cits?'<ul style="padding-left:1rem;margin-top:.5rem">'+cits+'</ul>':'');
+                            }
+                        } catch(e) {}
+                    });
+                    return pump();
+                });
+            }
+            return pump();
+        }).catch(function(e){
+            if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
+        });
     }
-
 });
 // Fela hok a Hvelfingin/confidential flipa
 document.addEventListener('DOMContentLoaded', function() {
