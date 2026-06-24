@@ -176,9 +176,9 @@ def _relevance_score(query: str, citation: dict) -> float:
     coverage = len(intersection) / len(q_tokens) if q_tokens else 0.0
     return coverage
 
-RELEVANCE_THRESHOLD = 0.15
+RELEVANCE_THRESHOLD = 0.25
 
-def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
+def rrf_merge(source_groups: List[Dict], query: str, en_query: str = "", k: int = 60) -> List[Dict]:
     scores: Dict[str, dict] = {}
     for group in source_groups:
         source = group.get("source", "")
@@ -206,7 +206,7 @@ def rrf_merge(source_groups: List[Dict], query: str, k: int = 60) -> List[Dict]:
     if merged:
         merged = [c for c in merged if
                   c.get("tier") in ("government", "academic") or
-                  _relevance_score(query, c) >= RELEVANCE_THRESHOLD]
+                  max(_relevance_score(query, c), _relevance_score(en_query, c)) >= RELEVANCE_THRESHOLD]
     for i, c in enumerate(merged, 1):
         c["rank"] = i
     return merged
@@ -255,7 +255,7 @@ async def search_web_multi(query: str, max_results: int = 5) -> Dict:
     )
 
     # Sameina með RRF
-    merged = rrf_merge([staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa], query)
+    merged = rrf_merge([staan, stjornar, tidindi, mojeek, wayback, visindavefur, althingi, hagstofa], query, en_query)
     merged = deduplicate(merged)
     merged = source_cap(merged, max_per_source=2)
     merged = merged[:max_results]
