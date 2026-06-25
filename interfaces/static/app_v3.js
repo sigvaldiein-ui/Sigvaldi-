@@ -228,6 +228,80 @@
   else setMode('general');
 })();
 
+    function sendVitinn(query, webSearch, stormeistari) {
+        var token = localStorage.getItem('alvitur_token') || '';
+        if (statusArea) statusArea.textContent = 'Greini...';
+        wsToggle.checked = false;
+        smToggle.checked = false;
+        approvalPanel.setAttribute('hidden','');
+        // Undirbua nidurstodu-svaedi fyrir streymi
+        if (resultsBody) resultsBody.innerHTML = '<p id="vitinn-stream" style="font-size:.875rem;white-space:pre-wrap"></p>';
+        if (resultsArea) resultsArea.hidden = false;
+        var streamP = document.getElementById('vitinn-stream');
+        var acc = '';
+        var hvToggle = document.getElementById('hvelfingin-search-toggle');
+        var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
+        var alviturEmail = localStorage.getItem('alvitur_email') || '';
+        var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
+                + '&web_search=' + (webSearch?'true':'false')
+                + '&stormeistari=' + (stormeistari?'true':'false')
+                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false')
+                + (alviturEmail ? '&email=' + encodeURIComponent(alviturEmail) : '');
+        fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
+            if (resp.status === 429) { return resp.json().then(function(d){ showEmailGate(query,webSearch,stormeistari,d.message); }); }
+            if (!resp.ok) throw new Error('HTTP '+resp.status);
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+            function pump(){
+                return reader.read().then(function(res){
+                    if (res.done) return;
+                    buffer += decoder.decode(res.value, {stream:true});
+                    var events = buffer.split('\n\n');
+                    buffer = events.pop();
+                    events.forEach(function(event){
+                        var line = '';
+                        event.split('\n').forEach(function(l){ if(l.indexOf('data:')===0) line=l; });
+                        line = line.trim();
+                        if (!line || line.indexOf('data:')!==0) return;
+                        var payload = line.slice(5).trim();
+                        if (payload === '[DONE]') return;
+                        try {
+                            var obj = JSON.parse(payload);
+                            if (obj.chunk != null) {
+                                acc += obj.chunk;
+                                if (streamP) streamP.textContent = acc;
+                                if (window._statusTimer) { clearInterval(window._statusTimer); window._statusTimer = null; }
+                                if (statusArea) statusArea.textContent = '';
+                            } else if (obj.metadata) {
+                                var s = obj.metadata.sources || {};
+                                var cits = (obj.metadata.citations||[]).map(function(c){
+                                    var titill = escapeHtml(c.title||c.citation_full||'');
+                                    var slod = c.url ? c.url : '';
+                                    var heimild = slod
+                                        ? '<a href="'+escapeHtml(slod)+'" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--color-accent);text-decoration:none;display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;border-radius:.375rem;background:var(--color-accent-light);margin:.25rem 0">'
+                                          + '<span style="flex-shrink:0;margin-top:1px">📄</span>'
+                                          + '<span><span style="display:block;font-weight:500;color:var(--color-text)">'+ titill +'</span>'
+                                          + '<span style="font-size:.7rem;color:var(--color-accent)">Skoða heimild →</span></span></a>'
+                                        : '<div style="font-size:.75rem;color:var(--color-text-muted);display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;margin:.25rem 0">'
+                                          + '<span style="flex-shrink:0">📄</span><span>'+ titill +'</span></div>';
+                                    return heimild;
+                                }).join('');
+                                if (resultsBody) resultsBody.innerHTML =
+                                    '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
+                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+renderMd(acc)+'</p>'
+                                    +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
+                            }
+                        } catch(e) {}
+                    });
+                    return pump();
+                });
+            }
+            return pump();
+        }).catch(function(e){
+            if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
+        });
+    }
 document.addEventListener('DOMContentLoaded',function(){
 var token=localStorage.getItem('alvitur_token')||'';
 var box=document.getElementById('loginbox');
@@ -280,85 +354,10 @@ document.addEventListener('DOMContentLoaded', function() {
         smToggle.checked = false;
     });
 
-    function esc(t){var d=document.createElement('div');d.textContent=(t==null?'':String(t));return d.innerHTML;}
     function badgeHtml(s){
         if (s.stormeistari) return '<span style="background:var(--color-accent-light);color:var(--color-accent);font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Stórmeistari</span>';
         if (s.web_search) return '<span style="background:#e0f0ff;color:#0066cc;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">+Vefur</span>';
         return '<span style="background:#e6f4ea;color:#1a7a3c;font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:500">Sovereign</span>';
-    }
-    function sendVitinn(query, webSearch, stormeistari) {
-        var token = localStorage.getItem('alvitur_token') || '';
-        if (statusArea) statusArea.textContent = 'Greini...';
-        wsToggle.checked = false;
-        smToggle.checked = false;
-        approvalPanel.setAttribute('hidden','');
-        // Undirbua nidurstodu-svaedi fyrir streymi
-        if (resultsBody) resultsBody.innerHTML = '<p id="vitinn-stream" style="font-size:.875rem;white-space:pre-wrap"></p>';
-        if (resultsArea) resultsArea.hidden = false;
-        var streamP = document.getElementById('vitinn-stream');
-        var acc = '';
-        var hvToggle = document.getElementById('hvelfingin-search-toggle');
-        var hvelfinginSearch = hvToggle ? hvToggle.checked : false;
-        var alviturEmail = localStorage.getItem('alvitur_email') || '';
-        var url = '/api/vitinn/stream?query=' + encodeURIComponent(query)
-                + '&web_search=' + (webSearch?'true':'false')
-                + '&stormeistari=' + (stormeistari?'true':'false')
-                + '&hvelfingin_search=' + (hvelfinginSearch?'true':'false')
-                + (alviturEmail ? '&email=' + encodeURIComponent(alviturEmail) : '');
-        fetch(url, {headers:{'Authorization':'Bearer '+token}}).then(function(resp){
-            if (resp.status === 429) { return resp.json().then(function(d){ showEmailGate(query,webSearch,stormeistari,d.message); }); }
-            if (!resp.ok) throw new Error('HTTP '+resp.status);
-            var reader = resp.body.getReader();
-            var decoder = new TextDecoder();
-            var buffer = '';
-            function pump(){
-                return reader.read().then(function(res){
-                    if (res.done) return;
-                    buffer += decoder.decode(res.value, {stream:true});
-                    var events = buffer.split('\n\n');
-                    buffer = events.pop();
-                    events.forEach(function(event){
-                        var line = '';
-                        event.split('\n').forEach(function(l){ if(l.indexOf('data:')===0) line=l; });
-                        line = line.trim();
-                        if (!line || line.indexOf('data:')!==0) return;
-                        var payload = line.slice(5).trim();
-                        if (payload === '[DONE]') return;
-                        try {
-                            var obj = JSON.parse(payload);
-                            if (obj.chunk != null) {
-                                acc += obj.chunk;
-                                if (streamP) streamP.textContent = acc;
-                                if (window._statusTimer) { clearInterval(window._statusTimer); window._statusTimer = null; }
-                                if (statusArea) statusArea.textContent = '';
-                            } else if (obj.metadata) {
-                                var s = obj.metadata.sources || {};
-                                var cits = (obj.metadata.citations||[]).map(function(c){
-                                    var titill = esc(c.title||c.citation_full||'');
-                                    var slod = c.url ? c.url : '';
-                                    var heimild = slod
-                                        ? '<a href="'+esc(slod)+'" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--color-accent);text-decoration:none;display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;border-radius:.375rem;background:var(--color-accent-light);margin:.25rem 0">'
-                                          + '<span style="flex-shrink:0;margin-top:1px">📄</span>'
-                                          + '<span><span style="display:block;font-weight:500;color:var(--color-text)">'+ titill +'</span>'
-                                          + '<span style="font-size:.7rem;color:var(--color-accent)">Skoða heimild →</span></span></a>'
-                                        : '<div style="font-size:.75rem;color:var(--color-text-muted);display:flex;align-items:flex-start;gap:.4rem;padding:.35rem .5rem;margin:.25rem 0">'
-                                          + '<span style="flex-shrink:0">📄</span><span>'+ titill +'</span></div>';
-                                    return heimild;
-                                }).join('');
-                                if (resultsBody) resultsBody.innerHTML =
-                                    '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
-                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+renderMd(acc)+'</p>'
-                                    +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
-                            }
-                        } catch(e) {}
-                    });
-                    return pump();
-                });
-            }
-            return pump();
-        }).catch(function(e){
-            if (statusArea) statusArea.textContent = 'Tengivilla: '+e.message;
-        });
     }
 });
 // Fela hok a Hvelfingin/confidential flipa
