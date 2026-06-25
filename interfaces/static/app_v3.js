@@ -205,6 +205,22 @@
     div.textContent = text;
     return div.innerHTML;
   }
+    function renderMd(t) {
+      var s = escapeHtml(t);
+      // ### fyrirsögn
+      s = s.replace(/^###[      ](.+)$/gm, '<strong style="display:block;font-size:.95rem;margin:.5rem 0 .15rem;color:var(--color-text)">$1</strong>');
+      // **feitt**
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // * listi og - listi
+      s = s.replace(/^[\*\-][       ](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      s = s.replace(/(<li[^>]*>.*<\/li>)/s, '<ul style="padding-left:1.25rem;margin:.35rem 0">$1</ul>');
+      // 1. númeraður listi
+      s = s.replace(/^\d+\.[        ](.+)$/gm, '<li style="margin:.15rem 0">$1</li>');
+      // Línubil
+      s = s.replace(/\n/g, '<br>');
+      return s;
+    }
+
 
   // Init
   if (tabGeneral && tabGeneral.classList.contains('intake-tab--active')) setMode('general');
@@ -331,7 +347,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 }).join('');
                                 if (resultsBody) resultsBody.innerHTML =
                                     '<div style="margin-bottom:.5rem">'+badgeHtml(s)+'</div>'
-                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+esc(acc)+'</p>'
+                                    +'<p style="font-size:.875rem;white-space:pre-wrap">'+renderMd(acc)+'</p>'
                                     +(cits?'<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--color-border-light)"><p style="font-size:.75rem;color:var(--color-text-faint);margin:0 0 .35rem">Heimildir:</p>'+cits+'</div>':'');
                             }
                         } catch(e) {}
